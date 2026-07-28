@@ -150,7 +150,7 @@ flowchart TB
 | الحدث | المُنتِج | المستهلكون | الأثر |
 | --- | --- | --- | --- |
 | `cart.reserved` | inventory | orders | حجز مرن 15 دقيقة في السلة |
-| `order.created` | orders | inventory, notifications | تحويل الحجز إلى حجز مؤكَّد 48 ساعة، ورسالة واتساب للعميل |
+| `order.created` | orders | inventory, notifications | تحويل الحجز إلى حجز أوّلي ساعتين (يُمدَّد بعد التفاعل)، ورسالة واتساب بزرَّي التأكيد والإلغاء |
 | `order.confirmation-attempted` | orders | notifications | تسجيل `confirmation_attempts` وتنبيه الفريق |
 | `order.confirmed` | orders | inventory, fulfillment, notifications | خصم مؤكَّد وتجهيز وإشعار |
 | `order.cancelled` | orders | inventory, notifications | تحرير الحجز فوراً |

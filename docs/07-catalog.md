@@ -156,7 +156,7 @@ flowchart LR
     B -- no --> C[Reject 409]
     B -- yes --> D[SOFT_HOLD 15 min]
     D --> E[Place order]
-    E --> F[ORDER_HOLD 48h + price lock 48h]
+    E --> F[ORDER_HOLD 2h, extendable + price lock 48h]
     F --> G{Phone confirmation}
     G -- confirmed --> H[SALE: deduct on_hand, clear reserved]
     G -- 3 failed calls or 48h --> I[orders.expire-pending: CANCELLED]
@@ -173,7 +173,7 @@ WHERE variant_id = $vid AND warehouse_id = $wid
   AND (on_hand - reserved) >= $qty AND version = $ver;
 ```
 
-الحجوزات كلها صفوف في `inventory_reservations`: الحجز المرن (`SOFT_HOLD`) في السلة مدته **15 دقيقة** ويخص السلة وحدها، أما عند إنشاء الطلب فيُرقّى الصف نفسه إلى حجز مؤكَّد (`ORDER_HOLD`) بـ `expires_at = now() + interval '48 hours'` مرتبط بنافذة التأكيد الهاتفي، وهي **اللحظة نفسها** التي يُثبَّت فيها `orders.price_locked_until` (7.6). مهمة تحرير الحجوزات المنتهية اسمها الوحيد `inventory.release-reservations` وتعمل **كل 5 دقائق**، ومهمة `orders.expire-pending` تُلغي الطلب المعلَّق بعد 48 ساعة أو بعد 3 محاولات اتصال فاشلة (تفاصيل ربط الحجز بحالة الطلب في القسم رقم 8).
+الحجوزات كلها صفوف في `inventory_reservations`: الحجز المرن (`SOFT_HOLD`) في السلة مدته **15 دقيقة** ويخص السلة وحدها، أما عند إنشاء الطلب فيُرقّى الصف نفسه إلى حجز أوّلي (`ORDER_HOLD`) بـ `expires_at = now() + interval '2 hours'` فقط، ويُمدَّد إلى `ORDER_HOLD_EXT` (حتى 48 ساعة، أو 12 ساعة إذا كان `on_hand ≤ 2`) عند أول تفاعل ناجح مع العميل. **عمر الحجز ليس عمر الطلب**: نافذة التأكيد و`orders.price_locked_until` تبقيان 48 ساعة، لكن المخزون لا يُجمَّد طوال هذه المدة لأن جهازاً واحداً نادراً قد يُعطَّل بيعه بطلب غير جاد (التفصيل والتبرير في القسم رقم 3، وسلوك التأكيد في القسم رقم 8). مهمة تحرير الحجوزات المنتهية اسمها الوحيد `inventory.release-reservations` وتعمل **كل 5 دقائق**، ومهمة `orders.expire-pending` تُلغي الطلب المعلَّق بعد 48 ساعة أو بعد 3 محاولات اتصال فاشلة (تفاصيل ربط الحجز بحالة الطلب في القسم رقم 8).
 
 كل حركة مخزون تُقيَّد في دفتر `inventory_movements` وهو الاسم الوحيد لدفتر الحركات، بسبب من نوع `movement_reason` المعرَّف في القسم رقم 3 وبقيمه **بحروف كبيرة حصراً**: `RECEIPT`, `RESERVE`, `RELEASE`, `SALE`, `RETURN`, `TRANSFER_IN`, `TRANSFER_OUT`, `ADJUSTMENT`, `RMA` — لا قيمة خارج هذه القائمة ولا كتابة بحروف صغيرة. فلا تُعدَّل الأرصدة إلا عبر قيد، ولا تُشتق الكمية بـ `COUNT(*)` من أي جدول آخر بل من `inventory_levels` حصراً.
 

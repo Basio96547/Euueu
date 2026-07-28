@@ -9,7 +9,8 @@
 | البند | القاعدة |
 |---|---|
 | تسمية الجداول | `snake_case` بصيغة الجمع (`product_variants`, `returns`, `audit_logs`, `users`)، والنماذج في Prisma بصيغة `PascalCase` مع `@@map` |
-| المفتاح الأساسي | `id UUID` أصلي مولّد بنمط UUIDv7 (ترتيب زمني يقلل تشظّي فهرس B-Tree مقارنة بـ UUIDv4)، عبر امتداد `pg_uuidv7` أو في طبقة التطبيق عند غيابه. ويُعرض في JSON كسلسلة UUID قياسية مثل `0198f3a2-4b7c-7c31-9a55-2f0e6d1a8c44` بلا بادئات نوعية |
+| المفتاح الأساسي | `id UUID` أصلي مولّد بنمط UUIDv7 (ترتيب زمني يقلل تشظّي فهرس B-Tree مقارنة بـ UUIDv4)، عبر امتداد `pg_uuidv7` أو في طبقة التطبيق عند غيابه. **داخلي فقط** |
+| المعرّف العام | كل كيان يظهر في رابط عام أو في استجابة لغير مالكه يحمل `public_id CHAR(12) UNIQUE NOT NULL` مولَّداً عشوائياً (Base32 بلا حروف ملتبسة). **السبب**: UUIDv7 يحمل طابعاً زمنياً، فمن معرّفَي طلبين يمكن تقدير عدد الطلبات اليومية — وهي معلومة تجارية لا يجوز تسريبها في رابط. المعرّف الداخلي لا يخرج في أي استجابة عامة |
 | الطوابع الزمنية | `created_at`, `updated_at` من نوع `TIMESTAMPTZ` مخزّنة بـ UTC، والعرض بتوقيت `Asia/Damascus` في طبقة الواجهة |
 | المبالغ المالية | **التخزين المرجعي بالدولار الأمريكي**: أعداد صحيحة بالسنتات في أعمدة `*_usd_cents BIGINT` حصراً (ممنوع `FLOAT` وممنوع `NUMERIC`/`Decimal` للمبالغ). عمود `currency CHAR(3)` يخصّ **العرض** فقط وافتراضه `SYP`. المبالغ المشتقّة بالليرة السورية تُحسب من `fx_rates` وتُخزَّن فقط حيث يلزم تثبيتها (`orders`, `refunds`, `cash_settlements`) في أعمدة `*_syp BIGINT` بالليرة الكاملة بلا كسور |
 | التقريب النقدي | كل مبلغ يُطلب نقداً من العميل يُقرَّب لأقرب **1000 ليرة سورية** ويُخزَّن مقرَّباً (`CHECK (x % 1000 = 0)`) لأن الفئات النقدية الصغيرة غير متداولة عملياً |
@@ -116,16 +117,34 @@ CREATE TYPE governorate AS ENUM (
 | `inventory_movements` | `id`, `variant_id FK`, `warehouse_id FK`, `device_unit_id FK NULL`, `delta INT`, `reason movement_reason`, `ref_type`, `ref_id`, `actor_id`, `created_at` | دفتر حركات غير قابل للتعديل أو الحذف، فهرس `(variant_id, created_at DESC)` |
 | `device_units` | `id`, `variant_id FK`, `warehouse_id FK`, `imei VARCHAR(15) NULL`, `imei2 VARCHAR(15) NULL`, `serial NULL`, `state device_unit_state`, `grade`, `battery_health_pct SMALLINT NULL`, `imei_check_status imei_check_status`, `imei_check_at`, `imei_check_report JSONB`, `order_item_id FK NULL`, `warranty_type warranty_type`, `warranty_start_at`, `warranty_end_at` | `UNIQUE(imei) WHERE imei IS NOT NULL`، `CHECK (imei ~ '^[0-9]{15}$')` |
 
-نموذج المخزون **مزدوج**: `inventory_levels` هو مصدر الكمية الوحيد لكل (متغيّر، مستودع)، والكمية المتاحة = `on_hand − reserved` تُحسب من هذين العمودين مع **قفل متفائل** على `version` عند كل تحديث (`UPDATE … WHERE version = $1`)، ويُخزَّن ملخّصها في Redis بمهلة 60 ثانية. الحجوزات المرنة والمثبّتة تُسجَّل صفوفاً في `inventory_reservations`، وكل تغيّر في الكمية يُقيَّد في `inventory_movements` وهو الاسم الوحيد لدفتر الحركات. وبالتوازي يوفّر `device_units` تتبّعاً **بالوحدة (unit-level)** للأجهزة التي تتطلب IMEI، ما يتيح ربط الضمان والإرجاع وفحص IMEI بالجهاز نفسه؛ أما الملحقات (شواحن، أغطية) فلا صفوف لها في `device_units` وتُدار بالكمية فقط. قيد الاتساق المفروض بمهمة تدقيق دورية: للفئات التي تتطلب IMEI يجب أن يساوي عدد صفوف `device_units` بحالة `IN_STOCK` قيمة `on_hand` لنفس (المتغيّر، المستودع).
+نموذج المخزون **مزدوج**: `inventory_levels` هو مصدر الكمية الوحيد لكل (متغيّر، مستودع)، والكمية المتاحة = `on_hand − reserved` تُحسب من هذين العمودين مع **قفل متفائل** على `version` عند كل تحديث (`UPDATE … WHERE version = $1`)، ويُخزَّن ملخّصها في Redis بمهلة 60 ثانية. الحجوزات المرنة والمثبّتة تُسجَّل صفوفاً في `inventory_reservations`، وكل تغيّر في الكمية يُقيَّد في `inventory_movements` وهو الاسم الوحيد لدفتر الحركات. وبالتوازي يوفّر `device_units` تتبّعاً **بالوحدة (unit-level)** للأجهزة التي تتطلب IMEI، ما يتيح ربط الضمان والإرجاع وفحص IMEI بالجهاز نفسه؛ أما الملحقات (شواحن، أغطية) فلا صفوف لها في `device_units` وتُدار بالكمية فقط.
+
+**قيد الاتساق مفروض داخل المعاملة نفسها، لا بمهمة دورية.** للفئات التي تتطلب IMEI يجب أن يساوي عدد صفوف `device_units` بحالة `IN_STOCK` قيمة `on_hand` لنفس (المتغيّر، المستودع)، ويُفرض ذلك بمُحفِّز (trigger) مؤجَّل إلى نهاية المعاملة:
+
+```sql
+CREATE CONSTRAINT TRIGGER trg_units_match_levels
+  AFTER INSERT OR UPDATE OR DELETE ON device_units
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION assert_units_match_levels();
+-- الدالة تقارن COUNT(device_units WHERE state='IN_STOCK') بـ inventory_levels.on_hand
+-- لنفس (variant_id, warehouse_id) وترفع استثناءً عند الاختلاف، فتفشل المعاملة كلها.
+```
+
+سبب هذا التشديد أن الاعتماد على مهمة تدقيق أسبوعية يعني اكتشاف الانحراف **بعد أسبوع من البيع الزائد**، وهو زمن كافٍ لبيع أجهزة غير موجودة والوعد بتسليمها. مهمة `maint.stock-reconcile` الأسبوعية (القسم رقم 11) تبقى قائمة بوصفها **شبكة أمان** تكشف الانحراف الناتج عن تدخل يدوي مباشر في قاعدة البيانات أو عن استعادة نسخة احتياطية، لا بوصفها آلية الكشف الأساسية.
 
 **مهل الحجز** (قيمة واحدة معتمدة في الوثيقة كلها):
 
 | نوع الحجز | `kind` | المهلة | ما ينهيها |
 |---|---|---|---|
 | حجز السلة المرن | `SOFT_HOLD` | **15 دقيقة** من آخر تعديل على السلة | `inventory.release-reservations` كل 5 دقائق |
-| حجز الطلب المؤكَّد | `ORDER_HOLD` | **48 ساعة** مرتبطة بنافذة التأكيد الهاتفي | تأكيد الطلب (يتحوّل إلى `SALE`)، أو `orders.expire-pending` بعد 48 ساعة أو بعد 3 محاولات اتصال فاشلة |
+| حجز الطلب الأوّلي | `ORDER_HOLD` | **ساعتان** من إنشاء الطلب | التأكيد (يتحوّل إلى `SALE`)، أو انقضاء الساعتين بلا تفاعل من العميل |
+| حجز الطلب المُمدَّد | `ORDER_HOLD_EXT` | حتى **48 ساعة** من إنشاء الطلب، ويُمنح بعد أول تفاعل ناجح مع العميل | التأكيد، أو `orders.expire-pending` بعد 48 ساعة أو 3 محاولات فاشلة |
 
-عند إنشاء الطلب يُرقّى `SOFT_HOLD` إلى `ORDER_HOLD` بنفس الصف مع `expires_at = now() + interval '48 hours'`، وهي نفس اللحظة التي يُثبَّت فيها `orders.price_locked_until`.
+**لماذا حجزان لا حجز واحد:** الهواتف تُتتبع بالوحدة، وحجز 48 ساعة لكل طلب غير مؤكَّد يُجمّد جهازاً قد يكون آخر قطعة، فيكفي طلب واحد غير جاد لتعطيل بيعه يومين. لذلك يُفصل **عمر الطلب** (48 ساعة، وهي نافذة التأكيد) عن **عمر الحجز** (ساعتان قابلة للتمديد). الطلب الذي انتهى حجزه يبقى قائماً في `PENDING_CONFIRMATION` لكن بلا مخزون محجوز، ويُعاد التحقق من التوفر إلزامياً لحظة التأكيد: إن نفد المخزون يُعرض على العميل بديل أو إلغاء بلا رسوم.
+
+**قاعدة الندرة:** إذا كان `on_hand ≤ 2` للمتغيّر، فالحد الأقصى للتمديد **12 ساعة** لا 48، ويُخفَّض سقف الطلبات المفتوحة لكل رقم على هذا المتغيّر إلى واحد. الأجهزة النادرة هي بالضبط ما لا يحتمل التجميد.
+
+عند إنشاء الطلب يُرقّى `SOFT_HOLD` إلى `ORDER_HOLD` بنفس الصف مع `expires_at = now() + interval '2 hours'`، ويُمدَّد إلى `ORDER_HOLD_EXT` عند أول تفاعل ناجح. أما `orders.price_locked_until` فيُثبَّت 48 ساعة عند الإنشاء ولا يرتبط بعمر الحجز.
 
 **السلة والطلبات والتحصيل النقدي**
 
@@ -133,7 +152,7 @@ CREATE TYPE governorate AS ENUM (
 |---|---|---|
 | `carts` | `id`, `user_id FK NULL`, `anon_token UUID NULL`, `display_currency CHAR(3) DEFAULT 'SYP'`, `coupon_id FK NULL`, `expires_at`, `merged_into_id` | `CHECK (user_id IS NOT NULL OR anon_token IS NOT NULL)` |
 | `cart_items` | `id`, `cart_id FK`, `variant_id FK`, `qty SMALLINT`, `unit_price_usd_cents BIGINT`, `added_at` | `UNIQUE(cart_id, variant_id)`، `CHECK (qty BETWEEN 1 AND 10)` |
-| `orders` | `id`, `order_no VARCHAR(14)`, `user_id FK`, `status order_status`, `shipping_address_id FK`, `subtotal_usd_cents BIGINT`, `discount_total_usd_cents BIGINT`, `shipping_total_usd_cents BIGINT`, `tax_rate_bp INT DEFAULT 0`, `tax_amount_usd_cents BIGINT`, `total_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `fx_rate_id FK`, `total_syp BIGINT`, `price_locked_until TIMESTAMPTZ`, `currency CHAR(3) DEFAULT 'SYP'`, `payment_method payment_method NOT NULL DEFAULT 'COD'`, `payment_status payment_status NOT NULL DEFAULT 'PENDING'`, `collected_amount_syp BIGINT NULL`, `collected_at TIMESTAMPTZ NULL`, `collected_by UUID NULL`, `settlement_id FK NULL`, `confirmation_attempts SMALLINT DEFAULT 0`, `confirmed_by UUID NULL`, `confirmed_at TIMESTAMPTZ NULL`, `confirmation_notes TEXT NULL`, `coupon_id`, `placed_at`, `notes` | `UNIQUE(order_no)`، `CHECK (order_no ~ '^TS-[0-9]{4}-[0-9]{6}$')`، `CHECK (total_usd_cents >= 0)`، `CHECK (total_syp % 1000 = 0)`، `CHECK (tax_rate_bp BETWEEN 0 AND 10000)`، `CHECK (confirmation_attempts <= 3)`، `CHECK (payment_status <> 'COLLECTED' OR collected_at IS NOT NULL)` |
+| `orders` | `id`, `order_no VARCHAR(14)`, `user_id FK`, `status order_status`, `shipping_address_id FK`, `subtotal_usd_cents BIGINT`, `discount_total_usd_cents BIGINT`, `shipping_total_usd_cents BIGINT`, `tax_rate_bp INT DEFAULT 0`, `tax_amount_usd_cents BIGINT`, `total_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `fx_rate_id FK`, `total_syp BIGINT`, `rounding_diff_syp INT NOT NULL DEFAULT 0`, `fx_stale BOOLEAN NOT NULL DEFAULT false`, `price_locked_until TIMESTAMPTZ`, `currency CHAR(3) DEFAULT 'SYP'`, `payment_method payment_method NOT NULL DEFAULT 'COD'`, `payment_status payment_status NOT NULL DEFAULT 'PENDING'`, `collected_amount_syp BIGINT NULL`, `collected_at TIMESTAMPTZ NULL`, `collected_by UUID NULL`, `settlement_id FK NULL`, `confirmation_attempts SMALLINT DEFAULT 0`, `confirmed_by UUID NULL`, `confirmed_at TIMESTAMPTZ NULL`, `confirmation_notes TEXT NULL`, `coupon_id`, `placed_at`, `notes` | `UNIQUE(order_no)`، `CHECK (order_no ~ '^TS-[0-9]{4}-[0-9]{6}$')`، `CHECK (total_usd_cents >= 0)`، `CHECK (total_syp % 1000 = 0)`، `CHECK (tax_rate_bp BETWEEN 0 AND 10000)`، `CHECK (confirmation_attempts <= 3)`، `CHECK (payment_status <> 'COLLECTED' OR collected_at IS NOT NULL)` |
 | `order_items` | `id`, `order_id FK`, `variant_id FK`, `device_unit_id FK NULL`, `sku_snapshot`, `name_snapshot JSONB`, `part_code_snapshot`, `qty`, `unit_price_usd_cents BIGINT`, `line_total_usd_cents BIGINT` | فهرس `(order_id)`، لا حذف ناعم |
 | `cash_settlements` | `id`, `settlement_no VARCHAR(16)`, `collector_type collector_type`, `collector_id UUID`, `settlement_date DATE`, `orders_count INT`, `expected_amount_syp BIGINT`, `collected_amount_syp BIGINT`, `variance_syp BIGINT`, `delivery_commission_syp BIGINT`, `state settlement_state`, `reconciled_at`, `reconciled_by`, `notes` | `UNIQUE(collector_type, collector_id, settlement_date)`، `CHECK (variance_syp = collected_amount_syp - expected_amount_syp)` |
 | `refunds` | `id`, `order_id FK`, `return_id FK NULL`, `method refund_method NOT NULL DEFAULT 'CASH'`, `amount_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `amount_syp BIGINT`, `imei_verified BOOLEAN DEFAULT false`, `device_matched BOOLEAN DEFAULT false`, `state refund_state`, `approved_by`, `disbursed_at`, `receipt_media_id FK NULL` | `CHECK (amount_syp % 1000 = 0)`، `CHECK (state <> 'DISBURSED' OR (imei_verified AND device_matched))` — لا استرداد نقدي إلا بعد فحص IMEI ومطابقة الجهاز المُعاد بالجهاز المُسلَّم |
@@ -168,12 +187,22 @@ total_syp = round_to_1000( total_usd_cents * fx_rate / 100 )
 | `questions` | `id`, `product_id`, `user_id`, `body`, `answer_body`, `answered_by`, `answered_at`, `status` | فهرس جزئي على `status='published'` |
 | `coupons` | `id`, `code VARCHAR(24)`, `type coupon_type`, `value BIGINT` (سنتات دولارية عند الخصم الثابت، ونسبة مئوية صحيحة عند النسبي)، `min_subtotal_usd_cents BIGINT`, `max_discount_usd_cents BIGINT`, `usage_limit`, `used_count`, `per_user_limit`, `starts_at`, `ends_at` | `UNIQUE(upper(code))` |
 | `price_rules` | `id`, `scope`, `target_id`, `kind price_rule_kind`, `amount BIGINT` (سنتات دولارية أو نسبة صحيحة حسب `kind`)، `priority`, `starts_at`, `ends_at`, `stackable BOOLEAN` | تفاصيل الأولوية في القسم رقم 7 |
-| `fx_rates` | `id`, `base CHAR(3) DEFAULT 'USD'`, `quote CHAR(3) DEFAULT 'SYP'`, `rate NUMERIC(14,4)`, `effective_from TIMESTAMPTZ`, `set_by FK users`, `note`, `created_at` | `UNIQUE(quote, effective_from)`، `CHECK (rate > 0)`؛ سجل تاريخي غير قابل للتعديل، والسعر الساري هو أحدث صف بـ `effective_from <= now()` |
+| `fx_rates` | `id`, `base CHAR(3) DEFAULT 'USD'`, `quote CHAR(3) DEFAULT 'SYP'`, `rate NUMERIC(14,4)`, `effective_from TIMESTAMPTZ`, `valid_until TIMESTAMPTZ NOT NULL`, `safety_margin_bp INT DEFAULT 0`, `set_by FK users`, `note`, `created_at` | `UNIQUE(quote, effective_from)`، `CHECK (rate > 0)`، `CHECK (valid_until > effective_from)`؛ سجل تاريخي غير قابل للتعديل، والسعر الساري هو أحدث صف بـ `effective_from <= now() < valid_until` |
 | `wishlists` | `id`, `user_id`, `variant_id`, `notify_on_drop BOOLEAN`, `created_at` | `UNIQUE(user_id, variant_id)` — المفضلة على مستوى **المتغيّر** لا المنتج |
 | `notifications` | `id`, `user_id`, `channel notification_channel`, `template_key`, `payload JSONB`, `sent_at`, `read_at`, `dedupe_key` | `UNIQUE(dedupe_key)`؛ ترتيب القنوات التشغيلي في القسم رقم 12 |
 | `audit_logs` | `id`, `actor_id`, `actor_role`, `action`, `entity_type`, `entity_id`, `diff JSONB`, `ip INET`, `user_agent`, `created_at` | مقسّم شهرياً (partitioned) |
 
 جدول `fx_rates` يحدّثه المدير **يدوياً** من لوحة التحكم؛ لا سحب آلي من أي مصدر خارجي، ولا تعديل على صف قديم — كل تغيير صف جديد بـ `effective_from` جديد، ما يجعل إعادة بناء أي فاتورة تاريخية ممكنة بدقة.
+
+**التقادم ليس حالة مسموحة.** التحديث اليدوي يعني أن نسياناً بشرياً واحداً في سوق متقلب يجعل المتجر يبيع بسعر ميت ويخسر صامتاً، لذلك لكل سعر `valid_until` إلزامي (افتراضه 24 ساعة من `effective_from`)، وسلوك النظام عند انقضائه محدَّد سلفاً ولا يُترك للاجتهاد:
+
+| المرحلة | الشرط | سلوك النظام |
+| --- | --- | --- |
+| تنبيه مبكر | تبقّى أقل من 4 ساعات على `valid_until` | إشعار واتساب للمدير + لافتة في لوحة التحكم |
+| هامش أمان | انقضى `valid_until` بأقل من 12 ساعة | يستمر البيع بالسعر الأخير مضافاً إليه `safety_margin_bp` (افتراضه 300 نقطة أساس = 3%)، مع وسم داخلي `fx_stale = true` على كل طلب ينشأ في هذه الفترة |
+| إيقاف البيع | انقضى `valid_until` بأكثر من 12 ساعة | يتوقف استقبال الطلبات تلقائياً وتُعرض رسالة «تحديث الأسعار جارٍ»، ويبقى التصفح والبحث عاملَين |
+
+الطلبات الموسومة `fx_stale` تظهر في تقرير منفصل لأنها الأرجح انحرافاً في الهامش. وإيقاف البيع قرار مؤلم لكنه أرخص من بيع مئة جهاز بسعر أمس.
 
 **الشحن داخل سوريا**: لا وجود لأي تكامل webhook إلزامي مع شركة شحن. تحديث حالة الشحنة يدوي من لوحة التحكم أو من واجهة المندوب (`updated_source ENUM('ADMIN','COURIER_APP','OFFICE_SYNC','PARTNER_WEBHOOK')`)، وقيمة `PARTNER_WEBHOOK` محجوزة لدعم اختياري إن توفّر شريك لاحقاً. لشحنات مكاتب النقل البري بين المحافظات يُسجَّل `office_name` (أمثلة قابلة للاستبدال: القدموس، الفؤاد، الأهلية) و`waybill_no` وصورة الإيصال في `receipt_media_id`. مهل `shipping_rates` الواقعية: داخل دمشق 1–2 يوم (24–48 ساعة)، وبين المحافظات 2–5 أيام.
 
@@ -189,7 +218,7 @@ CREATE TYPE device_origin      AS ENUM ('GULF','EURO','US','ASIA','OTHER');
 CREATE TYPE warranty_type      AS ENUM ('STORE','AGENT','IMPORTER','NONE');
 CREATE TYPE device_unit_state  AS ENUM ('IN_STOCK','ALLOCATED','SOLD','RETURNED','RMA');
 CREATE TYPE imei_check_status  AS ENUM ('NOT_CHECKED','CLEAN','BLACKLISTED','LOCKED','MISMATCH');
-CREATE TYPE reservation_kind   AS ENUM ('SOFT_HOLD','ORDER_HOLD');
+CREATE TYPE reservation_kind   AS ENUM ('SOFT_HOLD','ORDER_HOLD','ORDER_HOLD_EXT');
 CREATE TYPE movement_reason    AS ENUM (
   'RECEIPT','RESERVE','RELEASE','SALE','RETURN',
   'TRANSFER_IN','TRANSFER_OUT','ADJUSTMENT','RMA'
@@ -456,5 +485,26 @@ CREATE INDEX CONCURRENTLY idx_audit_created_brin
 | `orders` | 40 طلباً تجريبياً | موزّعة على كل حالات `order_status` و`payment_status`، ومربوطة بصفّي `cash_settlements` يومَين |
 
 الحذف الناعم مفروض على مستوى الوصول لا على مستوى النية: امتداد Prisma عام يحقن `deletedAt: null` في كل `findMany/findFirst` ويحوّل `delete` إلى `update`. الجداول المحاسبية (`order_items`, `shipments`, `inventory_movements`, `cash_settlements`, `refunds`, `fx_rates`, `audit_logs`) لا تقبل الحذف مطلقاً. سجل التدقيق يُكتب عبر مُعترِض (interceptor) في NestJS يلتقط الفرق (`diff`) بين الحالتين لكل عملية كتابة إدارية، ويستبعد الحقول الحساسة (`phone_e164` مقنّع جزئياً، ولا تُسجَّل أي رموز OTP)، ويلتقط إلزامياً كل تعديل على `fx_rates` و`tax_rate_bp` وكل تسجيل مبلغ محصَّل في `orders.collected_amount_syp`.
+
+### 3.9 سجل الجداول الموحّد
+
+هذا القسم هو **نواة** نموذج البيانات لا كامله: الفصول 14–18 تضيف جداول متخصصة تُعرَّف في مواضعها لأن تعريفها هنا يفصلها عن سياقها. لكن **الفهرس واحد**، وأي جدول جديد يجب أن يُسجَّل هنا وإلا عُدّ غير موجود. القاعدة: مكان التعريف يتبع الوظيفة، ومكان الفهرسة واحد دائماً.
+
+| المجال | الجداول | مكان التعريف |
+| --- | --- | --- |
+| الهوية والعناوين | `users`, `sessions`, `addresses` | 3.3 |
+| الكتالوج | `brands`, `categories`, `products`, `product_variants`, `variant_attributes`, `product_compatibility`, `media` | 3.3 |
+| المخزون | `warehouses`, `inventory_levels`, `inventory_reservations`, `inventory_movements`, `device_units` | 3.3 |
+| الطلبات | `carts`, `cart_items`, `orders`, `order_items`, `order_status_history`, `shipments`, `shipping_rates` | 3.3 |
+| المال | `fx_rates`, `cash_settlements`, `refunds`, `coupons`, `price_rules` | 3.3 |
+| ما بعد البيع | `returns`, `warranties` | 3.3 |
+| المحتوى والتدقيق | `reviews`, `questions`, `notifications`, `audit_logs`, `feature_flags`, `consent_logs` | 3.3 |
+| الحساب والدعم | `support_tickets`, `ticket_messages`, `ticket_macros`, `product_questions`, `review_reports`, `price_alerts`, `stock_alerts`, `notification_preferences`, `account_deletion_requests`, `help_articles`, `help_article_feedback`, `moderation_terms` | الفصل 14 |
+| الكفالة والصيانة | `warranty_claims`, `repair_jobs`, `claim_media`, `spare_parts`, `repair_part_usages`, `loaner_devices`, `warranty_policies`, `supplier_claims` | الفصل 15 |
+| المشتريات والمالية | `suppliers`, `supplier_scorecards`, `supplier_price_history`, `purchase_orders`, `purchase_order_items`, `goods_receipts`, `goods_receipt_items`, `supplier_invoices`, `landed_costs`, `expenses`, `inventory_valuations` | الفصل 16 |
+| التوصيل | `couriers`, `delivery_zones`, `courier_assignments`, `delivery_routes`, `delivery_attempts`, `cash_handovers`, `courier_commissions`, `transport_offices`, `transport_office_settlements` | الفصل 17 |
+| الإعدادات والمحتوى | `store_settings`, `banners`, `collections`, `pages`, `posts`, `ui_strings`, `branches` | الفصل 18 |
+
+**قواعد ملزِمة لأي جدول أينما عُرِّف**: مفتاح `id UUID` بنمط UUIDv7؛ و`public_id` إن كان الكيان يظهر في رابط عام؛ وطوابع `created_at`/`updated_at` بـ `TIMESTAMPTZ`؛ وتسمية snake_case بصيغة الجمع؛ والمبالغ `*_usd_cents BIGINT` والمبالغ المثبَّتة بالليرة `*_syp BIGINT` بلا كسور؛ والنصوص ثنائية اللغة `JSONB {ar,en}`؛ والوسائط في `media` وحده؛ والحذف الناعم عبر `deleted_at` إلا في الجداول المحاسبية.
 
 </div>
