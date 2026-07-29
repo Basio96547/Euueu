@@ -1,0 +1,190 @@
+/* ===========================================================
+   تالي شام — الأساس والمكوّنات المشتركة
+   =========================================================== */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ar);
+  font-size: var(--step-0);
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--ground);
+  -webkit-font-smoothing: antialiased;
+  /* مساحة للشريط السفلي الثابت */
+  padding-block-end: 84px;
+}
+
+h1, h2, h3, p, ul, ol, figure { margin: 0; }
+ul { padding: 0; list-style: none; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; height: auto; display: block; }
+
+:where(a, button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* الأرقام التي تُقارن تُصفّ */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ————— الأزرار (§5.14) ————— */
+.btn {
+  --btn-bg: var(--brass);
+  --btn-fg: #0b1416;
+  min-height: var(--tap-min);
+  padding: 0 18px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    transform var(--dur-tap) var(--ease-state),
+    background var(--dur-tap) var(--ease-state),
+    opacity var(--dur-tap) var(--ease-state);
+}
+/* الإقرار باللمس يبدأ فوراً مهما كان الإجراء بطيئاً */
+.btn:active { transform: scale(0.96); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; transform: none; }
+/* العرض يُثبَّت في حالة الانتظار حتى لا تُنتج قفزة تخطيط */
+.btn[data-busy] { pointer-events: none; min-width: var(--btn-locked-width, auto); }
+.btn--ghost { --btn-bg: color-mix(in srgb, var(--jade) 16%, transparent); --btn-fg: var(--jade); }
+.btn--danger { --btn-bg: color-mix(in srgb, var(--clay) 14%, transparent); --btn-fg: var(--clay); }
+
+/* زر داخل سطح زجاجي يبقى صلباً كاملاً: شفاف فوق شفاف يفقد التباين */
+.glass .btn { backdrop-filter: none; }
+
+/* ————— الوسوم ————— */
+.tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.tag--jade { color: var(--jade); border-color: color-mix(in srgb, var(--jade) 42%, transparent); }
+.tag--clay { color: var(--clay); border-color: color-mix(in srgb, var(--clay) 42%, transparent); }
+.tag--brass { color: var(--brass); border-color: color-mix(in srgb, var(--brass) 45%, transparent); }
+
+/* ————— السعر ————— */
+.price { display: grid; gap: 1px; }
+.price__main { font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.price__alt { font-size: 0.7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.price__old {
+  font-size: 0.7rem; color: var(--ink-3);
+  text-decoration: line-through; font-variant-numeric: tabular-nums;
+}
+/* غسلة تحديث سعر الصرف — لا وميض (§5.13 هـ) */
+@keyframes fx-wash {
+  from { background-color: color-mix(in srgb, var(--brass) 18%, transparent); }
+  to   { background-color: transparent; }
+}
+.price[data-fx-updated] .price__main {
+  animation: fx-wash 600ms var(--ease-out) both;
+  border-radius: 4px;
+}
+
+/* ————— شريط النظام (الفصل 20 §20.9) ————— */
+.sysbar {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  font-size: var(--step--1); font-weight: 700;
+  background: color-mix(in srgb, var(--brass) 16%, var(--surface));
+  border-block-end: 1px solid var(--line);
+}
+.sysbar--offline { background: color-mix(in srgb, var(--ink) 12%, var(--surface)); }
+.sysbar--halt { background: color-mix(in srgb, var(--clay) 16%, var(--surface)); }
+.sysbar--demo { background: color-mix(in srgb, var(--jade) 14%, var(--surface)); }
+
+/* ————— الرسالة العابرة (§20.2) ————— */
+.toast {
+  position: fixed; z-index: 60;
+  inset-inline: 14px; bottom: 96px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: var(--r-m);
+  font-size: var(--step--1); font-weight: 700;
+  transform: translateY(var(--shift)); opacity: 0; pointer-events: none;
+  transition:
+    transform var(--dur-out) var(--ease-out),
+    opacity var(--dur-out) var(--ease-out);
+}
+.toast[data-show] {
+  transform: translateY(0); opacity: 1; pointer-events: auto;
+  transition-duration: var(--dur-in);
+  transition-timing-function: var(--ease-in);
+}
+
+/* ————— الورقة السفلية (§5.3 + §5.13 أ) ————— */
+.sheet-scrim {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(4, 10, 11, 0.42);
+  opacity: 1; transition: opacity var(--dur-layer) var(--ease-in);
+}
+.sheet {
+  position: fixed; z-index: 51; inset-inline: 0; bottom: 0;
+  max-height: 76dvh; overflow-y: auto;
+  padding: 8px 14px 20px;
+  border-radius: var(--r-l) var(--r-l) 0 0;
+  display: grid; gap: 12px;
+  transform: translateY(0);
+  transition: transform var(--dur-layer) var(--ease-in);
+}
+.sheet__handle {
+  inline-size: 64px; block-size: 4px; border-radius: 99px;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  justify-self: center; touch-action: none; cursor: grab;
+}
+[data-sheet="closed"] .sheet-scrim {
+  opacity: 0; pointer-events: none;
+  transition-duration: var(--dur-layer-out); transition-timing-function: var(--ease-out);
+}
+[data-sheet="closed"] .sheet {
+  transform: translateY(102%);
+  transition-duration: var(--dur-layer-out); transition-timing-function: var(--ease-out);
+}
+.sheet.is-dragging { transition: none !important; }
+
+/* ————— الشريط السفلي ————— */
+.bottomnav {
+  position: fixed; z-index: 40; bottom: 8px; inset-inline: 8px;
+  border-radius: var(--r-l);
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding: 8px 6px;
+}
+.bottomnav a {
+  display: grid; justify-items: center; gap: 3px;
+  font-size: 0.66rem; font-weight: 700; color: var(--ink-3);
+  padding: 4px 0; border-radius: 12px; position: relative;
+  min-height: var(--tap-min);
+}
+.bottomnav a[aria-current="page"] { color: var(--brass); }
+.bottomnav .badge {
+  position: absolute; top: 0; inset-inline-end: 22%;
+  min-inline-size: 16px; block-size: 16px; padding: 0 4px;
+  border-radius: 99px; background: var(--brass); color: #0b1416;
+  font-size: 0.6rem; font-weight: 800; display: grid; place-items: center;
+  transform: scale(0); transition: transform var(--dur-in) var(--ease-in);
+}
+.bottomnav .badge[data-show] { transform: scale(1); }
+
+.icon {
+  inline-size: 20px; block-size: 20px; flex: none;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+}

@@ -1,0 +1,169 @@
+/* ===========================================================
+   تالي شام — رموز التصميم
+   المرجع: الفصل 5 (§5.4 المادة، §5.12–5.14 الحركة والأزرار)
+   القاعدة الحاكمة: التصميم الصلب هو الأساس، والزجاج تحسين تدريجي.
+   =========================================================== */
+
+:root {
+  /* ————— اللون: نهاري ————— */
+  --ground: #edf0ef;
+  --surface: #ffffff;
+  --surface-2: #f5f7f6;
+  --ink: #0b1416;
+  --ink-2: #41514f;
+  --ink-3: #7b8a88;
+  --line: #d5dcda;
+
+  --brass: #9a7412;          /* لون الهوية */
+  --jade: #2e7d62;           /* دلالي: تحقق، توفر، نجاح */
+  --clay: #b4552f;           /* دلالي: ندرة، تحذير، إجراء هدّام */
+
+  /* ————— المادة الزجاجية ————— */
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-brd: rgba(255, 255, 255, 0.85);
+  --glass-spec: rgba(255, 255, 255, 0.95);
+  --glass-sh: 0 8px 28px rgba(11, 20, 22, 0.14);
+  --glass-blur: 18px;
+  --glass-sat: 1.7;
+
+  /* ————— الأنصاف والمسافات ————— */
+  --r-s: 10px;
+  --r-m: 16px;
+  --r-l: 22px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* ————— مقياس الخط ————— */
+  --step--1: 0.78rem;
+  --step-0: 0.94rem;
+  --step-1: 1.12rem;
+  --step-2: 1.45rem;
+  --step-3: 2rem;
+  --step-4: 2.7rem;
+
+  /* الخط: مكدّس نظامي. تضمين خط عربي كامل يكلّف ~80KB
+     وهو قرار مؤجَّل في سوق باقاته محدودة (الفصل 5 §5.7). */
+  --font-ar: "Noto Sans Arabic", "Noto Naskh Arabic", "Segoe UI", "Tahoma", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+
+  /* ————— الحركة (§5.12) ————— */
+  --dur-tap: 110ms;
+  --dur-in: 200ms;
+  --dur-out: 140ms;          /* الخروج أسرع من الدخول دائماً */
+  --dur-layer: 260ms;
+  --dur-layer-out: 180ms;
+  --ease-in: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.4, 0, 1, 1);
+  --ease-state: cubic-bezier(0.2, 0, 0, 1);
+  --shift: 10px;
+
+  /* ————— اللمس ————— */
+  --tap-min: 44px;
+}
+
+/* ————— اللون: ليلي ————— */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0b1416;
+    --surface: #132022;
+    --surface-2: #182a2c;
+    --ink: #e9efed;
+    --ink-2: #a3b3b1;
+    --ink-3: #6e807e;
+    --line: #22383a;
+    --brass: #d9a72c;
+    --jade: #4fb894;
+    --clay: #db7a4f;
+    --glass-bg: rgba(24, 42, 44, 0.55);
+    --glass-brd: rgba(233, 239, 237, 0.16);
+    --glass-spec: rgba(233, 239, 237, 0.5);
+    --glass-sh: 0 10px 34px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* تفضيل صريح من المستخدم يتجاوز تفضيل النظام في الاتجاهين */
+:root[data-theme="dark"] {
+  --ground: #0b1416; --surface: #132022; --surface-2: #182a2c;
+  --ink: #e9efed; --ink-2: #a3b3b1; --ink-3: #6e807e; --line: #22383a;
+  --brass: #d9a72c; --jade: #4fb894; --clay: #db7a4f;
+  --glass-bg: rgba(24, 42, 44, 0.55); --glass-brd: rgba(233, 239, 237, 0.16);
+  --glass-spec: rgba(233, 239, 237, 0.5); --glass-sh: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+:root[data-theme="light"] {
+  --ground: #edf0ef; --surface: #ffffff; --surface-2: #f5f7f6;
+  --ink: #0b1416; --ink-2: #41514f; --ink-3: #7b8a88; --line: #d5dcda;
+  --brass: #9a7412; --jade: #2e7d62; --clay: #b4552f;
+  --glass-bg: rgba(255, 255, 255, 0.62); --glass-brd: rgba(255, 255, 255, 0.85);
+  --glass-spec: rgba(255, 255, 255, 0.95); --glass-sh: 0 8px 28px rgba(11, 20, 22, 0.14);
+}
+
+/* ===========================================================
+   المادة الزجاجية — تحسين تدريجي فوق سطح صلب مكتمل
+   =========================================================== */
+
+.glass {
+  /* الأساس الصلب: هذا ما يراه من لا يملك القدرة أو من عطّلها */
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 10px rgba(11, 20, 22, 0.1);
+  border-radius: var(--r-m);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  :root:not([data-glass="off"]) .glass {
+    background: linear-gradient(
+      160deg,
+      var(--glass-bg),
+      color-mix(in srgb, var(--glass-bg) 78%, transparent)
+    );
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border: 1px solid var(--glass-brd);
+    box-shadow: var(--glass-sh), inset 0 1px 0 var(--glass-spec);
+  }
+}
+
+/* التعطيل التكيّفي: تفضيل المستخدم يسبق كل شيء */
+@media (prefers-reduced-transparency: reduce) {
+  :root .glass {
+    background: var(--surface) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--line) !important;
+  }
+}
+
+/* ===========================================================
+   الحركة — المحتوى الأول لا يتحرّك (§5.12)
+   =========================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-tap: 0ms;
+    --dur-in: 100ms;
+    --dur-out: 100ms;
+    --dur-layer: 100ms;
+    --dur-layer-out: 100ms;
+    --shift: 0px;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:root[data-motion="reduced"] {
+  --dur-tap: 0ms;
+  --dur-in: 100ms;
+  --dur-out: 100ms;
+  --dur-layer: 100ms;
+  --dur-layer-out: 100ms;
+  --shift: 0px;
+}

@@ -1,0 +1,82 @@
+---
+import Base from '../layouts/Base.astro';
+import Header from '../components/Header.astro';
+import ProductCard from '../components/ProductCard.astro';
+import { products, productsInCategory } from '../lib/catalog';
+
+const newest = products.filter((p) => p.category !== 'power' && p.category !== 'power-banks').slice(0, 4);
+const power = productsInCategory('power');
+const used = productsInCategory('used-refurbished');
+const chips = [
+  { slug: 'smartphones', label: 'هواتف ذكية' },
+  { slug: 'used-refurbished', label: 'مستعمل' },
+  { slug: 'power-banks', label: 'بطاريات' },
+  { slug: 'chargers', label: 'شواحن' },
+  { slug: 'audio', label: 'سماعات' },
+  { slug: 'wearables', label: 'ساعات' },
+];
+---
+
+<Base title="جوالات وملحقات" active="home">
+  <Header />
+
+  <nav class="chips" aria-label="الفئات">
+    {chips.map((c) => <a class="chip" href={`/c/${c.slug}`}>{c.label}</a>)}
+  </nav>
+
+  <section class="sec">
+    <div class="sec-h"><h2>وصل حديثاً</h2><a href="/c/smartphones">الكل</a></div>
+    <div class="grid2">{newest.map((p) => <ProductCard product={p} />)}</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h">
+      <h2>لانقطاع الكهرباء</h2><a href="/c/power">الكل</a>
+    </div>
+    <p class="sec-note">بطاريات محمولة وشواحن شمسية — من أعلى الفئات دوراناً بعد الجوالات.</p>
+    <div class="grid2">{power.slice(0, 4).map((p) => <ProductCard product={p} />)}</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><h2>مستعمل ومجدَّد بكفالة</h2><a href="/c/used-refurbished">الكل</a></div>
+    <p class="sec-note">كل جهاز مفحوص، مع صور حقيقية له ونسبة صحة بطاريته ونتيجة فحص IMEI.</p>
+    <div class="grid2">{used.slice(0, 4).map((p) => <ProductCard product={p} />)}</div>
+  </section>
+
+  <section class="sec trust">
+    <div class="trust-item glass">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /></svg>
+      <div><b>الدفع عند الاستلام</b><span>تفحص الجهاز قبل أن تدفع</span></div>
+    </div>
+    <div class="trust-item glass">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.4-3 8.1-7.5 9.5-4.5-1.4-7.5-5.1-7.5-9.5V6z" /><path d="m9 12 2.2 2.2L15.5 10" /></svg>
+      <div><b>فحص IMEI موثَّق</b><span>يُطبع على إيصالك مع الجهاز</span></div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .chips { display: flex; gap: 7px; padding: 12px 12px 4px; overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; padding: 9px 14px; border-radius: 999px;
+    font-size: var(--step--1); font-weight: 700;
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+    white-space: nowrap; min-height: var(--tap-min); display: grid; place-items: center;
+  }
+  .sec { padding: 16px 12px 0; display: grid; gap: 10px; }
+  .sec-h { display: flex; align-items: baseline; justify-content: space-between; }
+  .sec-h h2 { font-size: var(--step-1); font-weight: 800; letter-spacing: -0.01em; }
+  .sec-h a { font-size: var(--step--1); color: var(--brass); font-weight: 700; }
+  .sec-note { font-size: var(--step--1); color: var(--ink-2); margin-block-start: -4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .trust { grid-template-columns: 1fr; gap: 8px; }
+  .trust-item { display: flex; gap: 10px; align-items: center; padding: 12px; }
+  .trust-item .icon { color: var(--brass); flex: none; }
+  .trust-item b { display: block; font-size: var(--step--1); }
+  .trust-item span { font-size: 0.72rem; color: var(--ink-2); }
+  @media (min-width: 640px) {
+    .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+    .trust { grid-template-columns: 1fr 1fr; }
+  }
+</style>

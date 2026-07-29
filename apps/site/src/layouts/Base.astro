@@ -1,0 +1,92 @@
+---
+import '@talisham/ui/tokens.css';
+import '@talisham/ui/base.css';
+import { currentFx, isDemoMode } from '../lib/catalog';
+import BottomNav from '../components/BottomNav.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  active?: 'home' | 'search' | 'cart' | 'account';
+}
+
+const { title, description = 'متجر الهواتف الجوالة في سوريا — دفع عند الاستلام', active = 'home' } = Astro.props;
+const fx = currentFx();
+const demo = isDemoMode();
+const full = `${title} | تالي شام`;
+---
+
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{full}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0b1416" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:title" content={full} />
+    <meta property="og:description" content={description} />
+    <meta property="og:locale" content="ar_SY" />
+    <meta property="og:type" content="website" />
+
+    <!--
+      سعر الصرف يُحقن هنا وقت الطلب من الحافة (الفصل 7 §7.11).
+      الصفحة الساكنة تحمل الدولار، والليرة تُحسب في العميل —
+      فلا يُعاد بناء آلاف الصفحات لتغيّر رقم واحد.
+    -->
+    <script is:inline set:html={`window.__FX__=${JSON.stringify(fx)};`} />
+  </head>
+
+  <body>
+    {demo && (
+      <div class="sysbar sysbar--demo" role="status">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5" /><path d="M12 16h.01" /><circle cx="12" cy="12" r="9" /></svg>
+        بيانات تجريبية — هذه ليست منتجات حقيقية للبيع
+      </div>
+    )}
+
+    <slot />
+
+    <BottomNav active={active} />
+
+    <!--
+      نص واحد صغير: تبديل العملة وحساب الليرة من سعر الصرف.
+      المعادلة المرجعية مكرّرة هنا بالحد الأدنى لتجنّب تحميل حزمة كاملة
+      في صفحة أصلها صفر JavaScript — وهي مطابقة لـ @talisham/ui/money.
+    -->
+    <script is:inline>
+      (function () {
+        var fx = window.__FX__ || { rate: 0 };
+        var pref = localStorage.getItem('currency_pref') || 'SYP';
+
+        function roundCash(s) { return Math.round(s / 1000) * 1000; }
+        function fmtSyp(c) { return roundCash((c * fx.rate) / 100).toLocaleString('en-US') + ' ل.س'; }
+        function fmtUsd(c) {
+          return (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $';
+        }
+
+        function render() {
+          document.querySelectorAll('[data-usd]').forEach(function (el) {
+            var c = parseInt(el.getAttribute('data-usd'), 10);
+            var alt = el.hasAttribute('data-alt');
+            var showSyp = alt ? pref === 'USD' : pref === 'SYP';
+            el.textContent = showSyp ? fmtSyp(c) : fmtUsd(c);
+          });
+          document.querySelectorAll('[data-cur-btn]').forEach(function (b) {
+            b.setAttribute('aria-pressed', String(b.getAttribute('data-cur-btn') === pref));
+          });
+        }
+
+        document.addEventListener('click', function (e) {
+          var b = e.target.closest('[data-cur-btn]');
+          if (!b) return;
+          pref = b.getAttribute('data-cur-btn');
+          localStorage.setItem('currency_pref', pref);
+          render();
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

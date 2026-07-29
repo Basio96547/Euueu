@@ -1,0 +1,29 @@
+---
+import CurrencyToggle from './CurrencyToggle.astro';
+interface Props { title?: string; back?: string }
+const { title, back } = Astro.props;
+---
+<header class="topbar glass">
+  {back && (
+    <a href={back} class="back" aria-label="رجوع">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+    </a>
+  )}
+  {title
+    ? <h1 class="ttl">{title}</h1>
+    : <a href="/" class="brand">تالي<span>شام</span></a>}
+  <CurrencyToggle />
+</header>
+
+<style>
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    margin: 8px; padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .brand { font-weight: 800; font-size: var(--step-1); letter-spacing: -0.02em; }
+  .brand span { color: var(--brass); }
+  .ttl { font-size: var(--step-0); font-weight: 800; flex: 1; }
+  .back { display: grid; place-items: center; min-width: 32px; min-height: 32px; }
+  .topbar :global(.curtoggle) { margin-inline-start: auto; }
+</style>

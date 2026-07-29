@@ -1,0 +1,42 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import { categories, productsInCategory } from '../../lib/catalog';
+
+export function getStaticPaths() {
+  return categories.map((c) => ({ params: { slug: c.slug }, props: { category: c } }));
+}
+
+const { category } = Astro.props;
+const items = productsInCategory(category.slug);
+---
+
+<Base title={category.name.ar} description={`${category.name.ar} في سوريا — أسعار محدَّثة ودفع عند الاستلام`} active="search">
+  <Header title={category.name.ar} back="/" />
+
+  <div class="bar">
+    <span class="count tnum">{items.length} نتيجة</span>
+    <button class="filterbtn" type="button" disabled>تصفية</button>
+  </div>
+
+  {items.length === 0 ? (
+    <p class="empty">لا توجد منتجات في هذه الفئة بعد.</p>
+  ) : (
+    <div class="grid2">{items.map((p) => <ProductCard product={p} />)}</div>
+  )}
+</Base>
+
+<style>
+  .bar { display: flex; align-items: center; gap: 10px; padding: 4px 12px 10px; }
+  .count { font-size: var(--step--1); color: var(--ink-3); font-weight: 700; }
+  .filterbtn {
+    margin-inline-start: auto; font: inherit; font-size: var(--step--1); font-weight: 700;
+    background: var(--brass); color: #0b1416; border: 0; border-radius: 999px;
+    padding: 8px 16px; min-height: 36px; cursor: pointer;
+  }
+  .filterbtn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 12px; }
+  .empty { padding: 40px 12px; text-align: center; color: var(--ink-3); }
+  @media (min-width: 640px) { .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+</style>

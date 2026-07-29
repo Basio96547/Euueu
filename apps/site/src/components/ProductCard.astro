@@ -1,0 +1,47 @@
+---
+import Price from './Price.astro';
+import { CONDITION_AR, ORIGIN_AR, type Product } from '../lib/catalog';
+interface Props { product: Product }
+const { product } = Astro.props;
+const v = product.variants[0]!;
+const rare = v.stock > 0 && v.stock <= 2;
+---
+<a class="card glass" href={`/p/${product.slug}`}>
+  <div class="thumb">
+    <span class="ph-badge">{v.condition === 'NEW' ? ORIGIN_AR[v.deviceOrigin] : CONDITION_AR[v.condition]}</span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <rect x="6" y="2" width="12" height="20" rx="2.6" /><path d="M10 5h4" />
+    </svg>
+  </div>
+  <span class="ttl">{product.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</span>
+  <Price usdCents={v.priceUsdCents} compareAt={v.compareAtPriceUsdCents} />
+  <span class="tags">
+    {v.partCode && <span class="tag tag--brass">{v.partCode}</span>}
+    {v.batteryHealthPct && <span class="tag tag--jade">بطارية {v.batteryHealthPct}%</span>}
+    {v.warrantyMonths > 0 && <span class="tag">كفالة {v.warrantyMonths}ش</span>}
+    {rare && <span class="tag tag--clay">{v.stock === 1 ? 'آخر قطعة' : 'قطعتان فقط'}</span>}
+    {v.stock === 0 && <span class="tag tag--clay">نفد</span>}
+  </span>
+</a>
+
+<style>
+  .card { display: grid; gap: 7px; padding: 9px; }
+  .thumb {
+    aspect-ratio: 1; border-radius: var(--r-s); position: relative; overflow: hidden;
+    background: linear-gradient(145deg,
+      color-mix(in srgb, var(--ink) 10%, transparent),
+      color-mix(in srgb, var(--ink) 4%, transparent));
+    display: grid; place-items: center; color: var(--ink-3);
+  }
+  .thumb svg { width: 46%; height: 46%; opacity: 0.55; }
+  .ph-badge {
+    position: absolute; inset-inline-start: 6px; top: 6px;
+    font-size: 0.66rem; font-weight: 800; padding: 3px 7px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+  }
+  .ttl {
+    font-size: var(--step--1); font-weight: 700; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tags { display: flex; gap: 4px; flex-wrap: wrap; }
+</style>

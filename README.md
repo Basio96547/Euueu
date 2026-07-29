@@ -116,3 +116,36 @@ export type PaymentStatus = 'PENDING' | 'COLLECTED' | 'PARTIAL' | 'REFUNDED'
 الخطة وثيقة حيّة: كل قرار فيها قابل للمراجعة، لكن أي تعديل يجب أن ينعكس في جدول «القرارات المرجعية الموحّدة» أعلاه وفي كل فصل يعتمد عليه.
 
 </div>
+
+---
+
+## تشغيل المشروع
+
+المتطلبات: Node 22، pnpm 10، Docker (اختياري — الموقع يعمل بدونه).
+
+```bash
+pnpm install
+
+# الواجهة وحدها: تعمل من بذرة الكتالوج مباشرة، بلا قاعدة بيانات
+pnpm --filter @talisham/site dev        # http://localhost:4321
+
+# المكدس الكامل
+cp .env.example .env
+pnpm dev:up                              # postgres · redis · meilisearch · minio · mailpit
+pnpm db:migrate && pnpm db:seed
+psql "$DATABASE_URL" -f apps/api/prisma/sql/constraints.sql   # القيود والمحفِّزات
+```
+
+### حالة التنفيذ
+
+| المكوّن | الحالة |
+| --- | --- |
+| مساحة العمل (pnpm + Turborepo) وDocker Compose | جاهز |
+| `packages/ui` — رموز التصميم والحركة ومعادلة العملة | جاهز |
+| `packages/types` — الأنواع المشتركة | جاهز |
+| `apps/api` — مخطط Prisma والقيود والمحفِّز وبذرة الكتالوج | المخطط والبذرة جاهزان · خدمات NestJS لم تُكتب بعد |
+| `apps/site` — Astro: الرئيسية والفئة وصفحة المنتج | جاهز ويبني 35 صفحة |
+| `apps/app` — تطبيق السلة والحساب | لم يبدأ |
+| `apps/admin` — لوحة التحكم وواجهة المندوب | لم يبدأ |
+
+الموقع المبني يخرج بـ **صفر ملفات JavaScript** و25 كيلوبايت لأول زيارة على صفحة المنتج — ضمن ميزانية الفصل 5 بفارق واسع.

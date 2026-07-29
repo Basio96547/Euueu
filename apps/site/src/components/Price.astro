@@ -1,0 +1,14 @@
+---
+interface Props { usdCents: number; compareAt?: number | null; size?: 'sm' | 'lg' }
+const { usdCents, compareAt = null, size = 'sm' } = Astro.props;
+---
+<span class="price">
+  <span class={`price__main ${size === 'lg' ? 'price__main--lg' : ''}`} data-usd={usdCents}></span>
+  <span class="price__alt" data-usd={usdCents} data-alt></span>
+  {compareAt && <span class="price__old" data-usd={compareAt}></span>}
+</span>
+
+<style>
+  .price__main { font-size: var(--step-0); }
+  .price__main--lg { font-size: var(--step-3); letter-spacing: -0.03em; line-height: 1.1; }
+</style>

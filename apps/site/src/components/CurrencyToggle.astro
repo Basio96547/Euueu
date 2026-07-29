@@ -1,0 +1,23 @@
+---
+// تبديل العملة: تحسين تدريجي — الأسعار مُصيَّرة من الخادم بالليرة أصلاً
+---
+<div class="curtoggle" role="group" aria-label="عملة العرض">
+  <button type="button" data-cur-btn="SYP" aria-pressed="true">ل.س</button>
+  <button type="button" data-cur-btn="USD" aria-pressed="false">$</button>
+</div>
+
+<style>
+  .curtoggle {
+    display: flex; gap: 2px; padding: 2px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    border-radius: 999px;
+  }
+  .curtoggle button {
+    font: inherit; font-size: 0.72rem; font-weight: 800;
+    border: 0; background: none; color: var(--ink-3);
+    padding: 5px 10px; border-radius: 999px; cursor: pointer;
+    min-height: 32px; min-width: 36px;
+    transition: background var(--dur-tap) var(--ease-state), color var(--dur-tap) var(--ease-state);
+  }
+  .curtoggle button[aria-pressed='true'] { background: var(--brass); color: #0b1416; }
+</style>

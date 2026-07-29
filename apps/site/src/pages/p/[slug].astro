@@ -1,0 +1,249 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import Price from '../../components/Price.astro';
+import {
+  products, compatibleAccessories, currentFx,
+  CONDITION_AR, ORIGIN_AR, WARRANTY_AR,
+} from '../../lib/catalog';
+
+export function getStaticPaths() {
+  return products.map((p) => ({ params: { slug: p.slug }, props: { product: p } }));
+}
+
+const { product } = Astro.props;
+const v = product.variants[0]!;
+const fx = currentFx();
+const accessories = compatibleAccessories(product.slug);
+const specRows: Array<[string, string]> = [
+  ['الحالة', CONDITION_AR[v.condition]],
+  ['المصدر', ORIGIN_AR[v.deviceOrigin]],
+  ...(v.partCode ? [['رمز النسخة', v.partCode] as [string, string]] : []),
+  ['الكفالة', `${WARRANTY_AR[v.warrantyType]} · ${v.warrantyMonths} شهراً`],
+  ...(v.batteryHealthPct ? [['صحة البطارية', `${v.batteryHealthPct}%`] as [string, string]] : []),
+  ...(v.storageGb ? [['الذاكرة', `${v.storageGb} جيجابايت`] as [string, string]] : []),
+  ...(product.spec.screen_size_in ? [['الشاشة', `${product.spec.screen_size_in} بوصة`] as [string, string]] : []),
+  ...(product.spec.chipset ? [['المعالج', String(product.spec.chipset)] as [string, string]] : []),
+  ...(product.spec.battery_mah ? [['البطارية', `${product.spec.battery_mah} مللي أمبير`] as [string, string]] : []),
+  ['الشحن', 'دمشق خلال 24–48 ساعة'],
+];
+
+/* البيانات المنظمة بالدولار — وهي العملة المرجعية.
+   صلاحية قصيرة لأن سعر الصرف يتحرك (الفصل 12 §12.1). */
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: product.name.ar,
+  description: product.shortDesc?.ar ?? undefined,
+  brand: { '@type': 'Brand', name: product.brandName.ar },
+  offers: {
+    '@type': 'Offer',
+    priceCurrency: 'USD',
+    price: (v.priceUsdCents / 100).toFixed(2),
+    priceValidUntil: fx.validUntil.slice(0, 10),
+    availability: v.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+    itemCondition:
+      v.condition === 'NEW' ? 'https://schema.org/NewCondition'
+      : v.condition === 'REFURBISHED' ? 'https://schema.org/RefurbishedCondition'
+      : 'https://schema.org/UsedCondition',
+  },
+};
+---
+
+<Base
+  title={`${product.name.ar}${v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}`}
+  description={product.shortDesc?.ar ?? product.name.ar}
+  active="home"
+>
+  <Header title={product.name.ar} back={`/c/${product.category}`} />
+
+  <div class="hero">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+      <rect x="6" y="2" width="12" height="20" rx="2.6" /><path d="M10 5h4" />
+    </svg>
+    <span class="ph-note">صورة المنتج قيد الإعداد</span>
+  </div>
+
+  <div class="pdp">
+    <h1>{product.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</h1>
+
+    <Price usdCents={v.priceUsdCents} compareAt={v.compareAtPriceUsdCents} size="lg" />
+
+    <div class="badges">
+      {v.partCode && <span class="tag tag--brass">{v.partCode} · {ORIGIN_AR[v.deviceOrigin]}</span>}
+      {v.dualSim && <span class="tag">شريحتان فعليتان</span>}
+      {v.esimOnly && <span class="tag tag--clay">eSIM فقط — بلا منفذ شريحة</span>}
+      {v.warrantyMonths > 0 && <span class="tag tag--jade">{WARRANTY_AR[v.warrantyType]} {v.warrantyMonths} شهراً</span>}
+      {product.spec.network_gen && <span class="tag">{product.spec.network_gen}</span>}
+    </div>
+
+    {v.condition !== 'NEW' && (
+      <div class="verify">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3l7.5 3v5.5c0 4.4-3 8.1-7.5 9.5-4.5-1.4-7.5-5.1-7.5-9.5V6z" /><path d="m9 12 2.2 2.2L15.5 10" />
+        </svg>
+        <div>
+          <b>فحص IMEI: مطابق ونظيف</b>
+          <span>الرقم غير مبلَّغ عنه، ويُسلَّم لك مطبوعاً على الإيصال مع الجهاز.</span>
+        </div>
+      </div>
+    )}
+
+    {product.variants.length > 1 && (
+      <div class="picker">
+        <span class="picker-h">النسخة والمصدر</span>
+        <div class="opts">
+          {product.variants.map((x, i) => (
+            <button class="opt" type="button" aria-pressed={i === 0} data-usd-opt={x.priceUsdCents}>
+              {x.partCode ?? ORIGIN_AR[x.deviceOrigin]}
+              <small>
+                {x.esimOnly ? 'eSIM فقط' : x.dualSim ? 'شريحتان' : '—'} ·
+                {x.stock > 0 ? ` متوفر ${x.stock}` : ' نفد'}
+              </small>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <dl class="facts">
+      {specRows.map(([k, val]) => (
+        <div class="fact"><dt>{k}</dt><dd class="tnum">{val}</dd></div>
+      ))}
+    </dl>
+
+    <div class="cod">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /></svg>
+      الدفع نقداً عند الاستلام — تفحص الجهاز قبل أن تدفع
+    </div>
+
+    {accessories.length > 0 && (
+      <section class="also">
+        <h2>ملحقات متوافقة</h2>
+        <div class="grid2">{accessories.map((a) => <ProductCard product={a} />)}</div>
+      </section>
+    )}
+  </div>
+
+  <div class="buybar glass">
+    <span class="pr">
+      <b data-usd={v.priceUsdCents}></b>
+      <small data-usd={v.priceUsdCents} data-alt></small>
+    </span>
+    <a class="btn btn--ghost" href="https://wa.me/963900000000" aria-label="تواصل عبر واتساب">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3.2-6.4" /><path d="M4 20l1.4-3.6" /></svg>
+    </a>
+    <button class="btn btn--buy" type="button" disabled={v.stock === 0}>
+      {v.stock === 0 ? 'نفد المخزون' : 'أضف للسلة'}
+    </button>
+  </div>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
+
+  <script is:inline>
+    // جزيرة صغيرة: تبديل المتغيّر يغيّر السعر والوسوم (الفصل 5 §5.2)
+    (function () {
+      var opts = document.querySelectorAll('[data-usd-opt]');
+      if (!opts.length) return;
+      opts.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          opts.forEach(function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+          var usd = btn.getAttribute('data-usd-opt');
+          document.querySelectorAll('.price__main, .price__alt, .buybar [data-usd]').forEach(function (el) {
+            el.classList.add('is-fading');
+          });
+          setTimeout(function () {
+            document.querySelectorAll('.price__main, .price__alt, .buybar [data-usd]').forEach(function (el) {
+              el.setAttribute('data-usd', usd);
+              el.classList.remove('is-fading');
+            });
+            document.dispatchEvent(new Event('click')); // يعيد التصيير عبر مستمع العملة
+          }, 140);
+        });
+      });
+    })();
+  </script>
+</Base>
+
+<style>
+  .hero {
+    aspect-ratio: 4 / 3; margin: 8px; border-radius: var(--r-l);
+    display: grid; place-items: center; gap: 8px; color: var(--ink-3);
+    background: linear-gradient(150deg,
+      color-mix(in srgb, var(--ink) 9%, transparent),
+      color-mix(in srgb, var(--ink) 3%, transparent));
+  }
+  .hero svg { width: 34%; opacity: 0.5; }
+  .ph-note { font-size: 0.72rem; }
+
+  .pdp { padding: 4px 14px 0; display: grid; gap: 13px; }
+  :global(body) { padding-block-end: 152px; }
+  .pdp h1 { font-size: var(--step-2); font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .verify {
+    display: flex; gap: 10px; align-items: flex-start; padding: 11px; border-radius: var(--r-m);
+    border: 1px solid color-mix(in srgb, var(--jade) 40%, transparent);
+    background: color-mix(in srgb, var(--jade) 10%, transparent);
+  }
+  .verify .icon { color: var(--jade); margin-block-start: 2px; }
+  .verify b { display: block; font-size: var(--step--1); }
+  .verify span { font-size: 0.72rem; color: var(--ink-2); line-height: 1.5; }
+
+  .picker { display: grid; gap: 7px; }
+  .picker-h { font-size: var(--step--1); font-weight: 800; color: var(--ink-2); }
+  .opts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .opt {
+    min-height: var(--tap-min); padding: 7px 13px; border-radius: 12px;
+    border: 1.5px solid var(--line); background: var(--surface);
+    font: inherit; font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    cursor: pointer; display: grid; gap: 1px; text-align: start; line-height: 1.25;
+    transition: border-color var(--dur-tap) var(--ease-state), background var(--dur-tap) var(--ease-state);
+  }
+  .opt small { font-size: 0.64rem; color: var(--ink-3); font-weight: 600; }
+  .opt[aria-pressed='true'] {
+    border-color: var(--brass); color: var(--ink);
+    background: color-mix(in srgb, var(--brass) 12%, transparent);
+  }
+
+  .facts { display: grid; border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; margin: 0; }
+  .fact {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 9px 12px; font-size: var(--step--1); border-block-end: 1px solid var(--line);
+  }
+  .fact:last-child { border-block-end: 0; }
+  .fact dt { color: var(--ink-3); margin: 0; }
+  .fact dd { font-weight: 700; margin: 0; }
+
+  .cod {
+    display: flex; gap: 9px; align-items: center; padding: 11px 12px; border-radius: var(--r-m);
+    background: color-mix(in srgb, var(--brass) 13%, transparent);
+    font-size: var(--step--1); font-weight: 700;
+  }
+  .cod .icon { color: var(--brass); flex: none; }
+
+  .also { display: grid; gap: 10px; padding-block-start: 6px; }
+  .also h2 { font-size: var(--step-1); font-weight: 800; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .buybar {
+    position: fixed; z-index: 41; bottom: 76px; inset-inline: 8px;
+    border-radius: var(--r-l); padding: 10px;
+    display: flex; gap: 9px; align-items: center;
+  }
+  .buybar .pr { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .buybar .pr b {
+    font-size: var(--step-1); font-weight: 800; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .buybar .pr small { font-size: 0.68rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .btn--buy { flex: none; white-space: nowrap; }
+  .is-fading { opacity: 0; transition: opacity var(--dur-out) var(--ease-state); }
+
+  @media (min-width: 640px) {
+    .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+    .buybar { inset-inline: auto 8px; max-width: 420px; }
+  }
+</style>

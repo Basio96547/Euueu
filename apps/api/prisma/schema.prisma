@@ -1,0 +1,585 @@
+// تالي شام — مخطط قاعدة البيانات
+// المرجع: الفصل 3. القيود التي لا يدعمها Prisma (CHECK، المحفِّزات)
+// تُكتب يدوياً في الترحيلات — انظر prisma/sql/constraints.sql
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ——————————————————— الأنواع ———————————————————
+
+enum UserRole {
+  CUSTOMER
+  SUPPORT
+  CATALOG_ADMIN
+  OPS_MANAGER
+  WAREHOUSE
+  COURIER
+  ADMIN
+}
+
+enum Governorate {
+  DAMASCUS
+  RIF_DIMASHQ
+  ALEPPO
+  HOMS
+  HAMA
+  LATAKIA
+  TARTUS
+  IDLIB
+  DEIR_EZZOR
+  HASAKAH
+  RAQQA
+  DARAA
+  SUWAYDA
+  QUNEITRA
+}
+
+enum DeviceOrigin {
+  GULF
+  EURO
+  US
+  ASIA
+  OTHER
+}
+
+enum ProductCondition {
+  NEW
+  OPEN_BOX
+  REFURBISHED
+  USED_A
+  USED_B
+}
+
+enum WarrantyType {
+  STORE
+  AGENT
+  IMPORTER
+  NONE
+}
+
+enum NetworkGen {
+  G2
+  G3
+  G4
+  G5
+}
+
+enum ProductStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum DeviceUnitState {
+  IN_STOCK
+  ALLOCATED
+  SOLD
+  RETURNED
+  RMA
+  LOANER
+}
+
+/// الحجز الأوّلي ساعتان، ويُمدَّد بعد أول تفاعل ناجح (الفصل 3)
+enum ReservationKind {
+  SOFT_HOLD
+  ORDER_HOLD
+  ORDER_HOLD_EXT
+}
+
+enum MovementReason {
+  RECEIPT
+  RESERVE
+  RELEASE
+  SALE
+  RETURN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT
+  RMA
+}
+
+enum OrderStatus {
+  PENDING_CONFIRMATION
+  PROCESSING
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  DELIVERY_FAILED
+  RETURNED_TO_ORIGIN
+  RETURN_REQUESTED
+  RETURNED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  COD
+}
+
+enum PaymentStatus {
+  PENDING
+  COLLECTED
+  PARTIAL
+  REFUNDED
+}
+
+enum ShippingMethod {
+  COURIER_INTRACITY
+  INTERCITY_OFFICE
+  POST
+}
+
+// ——————————————————— الهوية والعناوين ———————————————————
+
+model User {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId       String    @unique @map("public_id") @db.Char(12)
+  phoneE164      String    @unique @map("phone_e164") @db.VarChar(16)
+  phoneVerifiedAt DateTime? @map("phone_verified_at") @db.Timestamptz
+  fullName       String?   @map("full_name")
+  role           UserRole  @default(CUSTOMER)
+  locale         String    @default("ar") @db.Char(2)
+  displayCurrency String   @default("SYP") @map("display_currency") @db.Char(3)
+  tokenVersion   Int       @default(0) @map("token_version")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+
+  addresses Address[]
+  orders    Order[]
+  carts     Cart[]
+
+  @@map("users")
+}
+
+model Address {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  label          String?
+  recipientName  String      @map("recipient_name")
+  governorate    Governorate
+  city           String      @db.VarChar(64)
+  neighborhood   String      @db.VarChar(64)
+  street         String?     @db.VarChar(96)
+  /// إلزامي: العناوين الرسمية غير موثوقة عملياً، والمندوب يصل بالمعلم
+  landmark       String      @db.VarChar(120)
+  details        String?
+  phone          String      @db.VarChar(16)
+  altPhone       String?     @map("alt_phone") @db.VarChar(16)
+  geoLat         Decimal?    @map("geo_lat") @db.Decimal(9, 6)
+  geoLng         Decimal?    @map("geo_lng") @db.Decimal(9, 6)
+  isDefault      Boolean     @default(false) @map("is_default")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz
+
+  user   User    @relation(fields: [userId], references: [id])
+  orders Order[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ——————————————————— الكتالوج ———————————————————
+
+model Brand {
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug            String  @unique
+  name            Json
+  countryOfOrigin String? @map("country_of_origin") @db.Char(2)
+  isFeatured      Boolean @default(false) @map("is_featured")
+  sortOrder       Int     @default(0) @map("sort_order")
+
+  products Product[]
+
+  @@map("brands")
+}
+
+model Category {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentId  String? @map("parent_id") @db.Uuid
+  slug      String  @unique
+  name      Json
+  path      String
+  depth     Int     @default(0)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([path])
+  @@map("categories")
+}
+
+model Product {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId    String        @unique @map("public_id") @db.Char(12)
+  slug        String        @unique
+  brandId     String        @map("brand_id") @db.Uuid
+  categoryId  String        @map("category_id") @db.Uuid
+  name        Json
+  shortDesc   Json?         @map("short_desc")
+  description Json?
+  spec        Json?
+  status      ProductStatus @default(DRAFT)
+  /// منتج بذرة تجريبي: مستبعَد من الفهرس، ولا يقبل طلباً، ويمنع الإقلاع في الإنتاج
+  isDemo      Boolean       @default(false) @map("is_demo")
+  ratingAvg   Decimal?      @map("rating_avg") @db.Decimal(2, 1)
+  ratingCount Int           @default(0) @map("rating_count")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz
+
+  brand    Brand            @relation(fields: [brandId], references: [id])
+  category Category         @relation(fields: [categoryId], references: [id])
+  variants ProductVariant[]
+  media    Media[]
+
+  accessoryFor  ProductCompatibility[] @relation("AccessorySide")
+  compatibleWith ProductCompatibility[] @relation("PhoneSide")
+
+  @@index([status, isDemo])
+  @@map("products")
+}
+
+model ProductVariant {
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId               String           @unique @map("public_id") @db.Char(12)
+  productId              String           @map("product_id") @db.Uuid
+  sku                    String           @unique @db.VarChar(40)
+  colorCode              String?          @map("color_code")
+  colorName              Json?            @map("color_name")
+  storageGb              Int?             @map("storage_gb")
+  ramGb                  Int?             @map("ram_gb")
+  networkGen             NetworkGen?      @map("network_gen")
+  dualSim                Boolean          @default(false) @map("dual_sim")
+  esimOnly               Boolean          @default(false) @map("esim_only")
+  /// رمز النسخة المطبوع على العلبة: ZA/A · LL/A · AA/A
+  partCode               String?          @map("part_code") @db.VarChar(8)
+  condition              ProductCondition @default(NEW)
+  batteryHealthPct       Int?             @map("battery_health_pct")
+  deviceOrigin           DeviceOrigin
+  warrantyType           WarrantyType
+  warrantyMonths         Int              @map("warranty_months")
+  /// التخزين المرجعي بسنتات الدولار — الليرة طبقة عرض (الفصل 3)
+  priceUsdCents          BigInt           @map("price_usd_cents")
+  compareAtPriceUsdCents BigInt?          @map("compare_at_price_usd_cents")
+  costPriceUsdCents      BigInt?          @map("cost_price_usd_cents")
+  isDefault              Boolean          @default(false) @map("is_default")
+  deletedAt              DateTime?        @map("deleted_at") @db.Timestamptz
+
+  product      Product                 @relation(fields: [productId], references: [id])
+  levels       InventoryLevel[]
+  units        DeviceUnit[]
+  reservations InventoryReservation[]
+  orderItems   OrderItem[]
+  cartItems    CartItem[]
+
+  @@unique([productId, storageGb, ramGb, colorCode, deviceOrigin, partCode])
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model ProductCompatibility {
+  id                 String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accessoryProductId String @map("accessory_product_id") @db.Uuid
+  phoneProductId     String @map("phone_product_id") @db.Uuid
+  note               Json?
+
+  accessory Product @relation("AccessorySide", fields: [accessoryProductId], references: [id])
+  phone     Product @relation("PhoneSide", fields: [phoneProductId], references: [id])
+
+  @@unique([accessoryProductId, phoneProductId])
+  @@index([phoneProductId])
+  @@map("product_compatibility")
+}
+
+/// جدول الوسائط الوحيد — لا جدول وسائط خاص بالمنتجات
+model Media {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerType      String   @map("owner_type")
+  ownerId        String   @map("owner_id") @db.Uuid
+  url            String
+  alt            Json?
+  colorCode      String?  @map("color_code")
+  blurhash       String?
+  isRealUnitPhoto Boolean @default(false) @map("is_real_unit_photo")
+  sortOrder      Int      @default(0) @map("sort_order")
+
+  product Product? @relation(fields: [ownerId], references: [id], map: "media_product_fk")
+
+  @@index([ownerType, ownerId])
+  @@map("media")
+}
+
+// ——————————————————— المخزون ———————————————————
+
+model Warehouse {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String      @unique
+  name        Json
+  governorate Governorate
+
+  levels InventoryLevel[]
+  units  DeviceUnit[]
+
+  @@map("warehouses")
+}
+
+/// مصدر الكمية الوحيد. المتاح = onHand - reserved، بقفل متفائل على version.
+model InventoryLevel {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId   String @map("variant_id") @db.Uuid
+  warehouseId String @map("warehouse_id") @db.Uuid
+  onHand      Int    @default(0) @map("on_hand")
+  reserved    Int    @default(0)
+  incoming    Int    @default(0)
+  reorderPoint Int   @default(0) @map("reorder_point")
+  version     Int    @default(0)
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
+
+  @@unique([variantId, warehouseId])
+  @@map("inventory_levels")
+}
+
+model InventoryReservation {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId   String          @map("variant_id") @db.Uuid
+  warehouseId String          @map("warehouse_id") @db.Uuid
+  kind        ReservationKind
+  qty         Int
+  cartId      String?         @map("cart_id") @db.Uuid
+  orderId     String?         @map("order_id") @db.Uuid
+  expiresAt   DateTime        @map("expires_at") @db.Timestamptz
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([expiresAt])
+  @@index([orderId])
+  @@map("inventory_reservations")
+}
+
+/// دفتر الحركات — الاسم الوحيد
+model InventoryMovement {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId   String         @map("variant_id") @db.Uuid
+  warehouseId String         @map("warehouse_id") @db.Uuid
+  reason      MovementReason
+  qtyDelta    Int            @map("qty_delta")
+  refType     String?        @map("ref_type")
+  refId       String?        @map("ref_id") @db.Uuid
+  actorId     String?        @map("actor_id") @db.Uuid
+  note        String?
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([variantId, createdAt])
+  @@map("inventory_movements")
+}
+
+/// وحدات الأجهزة: عددها بحالة IN_STOCK يجب أن يساوي onHand — مفروض بمحفِّز مؤجَّل
+model DeviceUnit {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId        String          @map("variant_id") @db.Uuid
+  warehouseId      String          @map("warehouse_id") @db.Uuid
+  imei             String?         @unique
+  imei2            String?
+  serial           String?
+  state            DeviceUnitState @default(IN_STOCK)
+  grade            String?
+  batteryHealthPct Int?            @map("battery_health_pct")
+  imeiCheckStatus  String?         @map("imei_check_status")
+  orderItemId      String?         @unique @map("order_item_id") @db.Uuid
+  warrantyType     WarrantyType?   @map("warranty_type")
+  warrantyStartAt  DateTime?       @map("warranty_start_at") @db.Timestamptz
+  warrantyEndAt    DateTime?       @map("warranty_end_at") @db.Timestamptz
+  acquisitionCostUsdCents BigInt?  @map("acquisition_cost_usd_cents")
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
+  orderItem OrderItem?     @relation(fields: [orderItemId], references: [id])
+
+  @@index([variantId, state])
+  @@map("device_units")
+}
+
+// ——————————————————— سعر الصرف ———————————————————
+
+/// سجل تاريخي غير قابل للتعديل. التقادم ليس حالة مسموحة: validUntil إلزامي.
+model FxRate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  base           String   @default("USD") @db.Char(3)
+  quote          String   @default("SYP") @db.Char(3)
+  rate           Decimal  @db.Decimal(14, 4)
+  effectiveFrom  DateTime @map("effective_from") @db.Timestamptz
+  validUntil     DateTime @map("valid_until") @db.Timestamptz
+  safetyMarginBp Int      @default(300) @map("safety_margin_bp")
+  setBy          String?  @map("set_by") @db.Uuid
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  orders Order[]
+
+  @@unique([quote, effectiveFrom])
+  @@index([effectiveFrom])
+  @@map("fx_rates")
+}
+
+// ——————————————————— السلة والطلب ———————————————————
+
+model Cart {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token     String     @unique
+  userId    String?    @map("user_id") @db.Uuid
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  user  User?      @relation(fields: [userId], references: [id])
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id                  String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cartId              String @map("cart_id") @db.Uuid
+  variantId           String @map("variant_id") @db.Uuid
+  qty                 Int    @default(1)
+  unitPriceSnapshotUsdCents BigInt @map("unit_price_snapshot_usd_cents")
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, variantId])
+  @@map("cart_items")
+}
+
+model Order {
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId             String         @unique @map("public_id") @db.Char(12)
+  /// TS-YYMM-NNNNNN — القيد في constraints.sql
+  orderNo              String         @unique @map("order_no") @db.VarChar(14)
+  userId               String?        @map("user_id") @db.Uuid
+  status               OrderStatus    @default(PENDING_CONFIRMATION)
+  shippingAddressId    String         @map("shipping_address_id") @db.Uuid
+
+  subtotalUsdCents     BigInt         @map("subtotal_usd_cents")
+  discountTotalUsdCents BigInt        @default(0) @map("discount_total_usd_cents")
+  shippingTotalUsdCents BigInt        @default(0) @map("shipping_total_usd_cents")
+  taxRateBp            Int            @default(0) @map("tax_rate_bp")
+  taxAmountUsdCents    BigInt         @default(0) @map("tax_amount_usd_cents")
+  totalUsdCents        BigInt         @map("total_usd_cents")
+
+  fxRateId             String?        @map("fx_rate_id") @db.Uuid
+  fxRate               Decimal        @map("fx_rate") @db.Decimal(14, 4)
+  totalSyp             BigInt         @map("total_syp")
+  /// فرق التقريب يُخزَّن وإلا لم تتطابق التسويات أبداً (الفصل 16)
+  roundingDiffSyp      Int            @default(0) @map("rounding_diff_syp")
+  fxStale              Boolean        @default(false) @map("fx_stale")
+  priceLockedUntil     DateTime       @map("price_locked_until") @db.Timestamptz
+
+  paymentMethod        PaymentMethod  @default(COD) @map("payment_method")
+  paymentStatus        PaymentStatus  @default(PENDING) @map("payment_status")
+  collectedAmountSyp   BigInt?        @map("collected_amount_syp")
+  collectedAt          DateTime?      @map("collected_at") @db.Timestamptz
+  collectedBy          String?        @map("collected_by") @db.Uuid
+
+  confirmationAttempts Int            @default(0) @map("confirmation_attempts")
+  confirmedBy          String?        @map("confirmed_by") @db.Uuid
+  confirmedAt          DateTime?      @map("confirmed_at") @db.Timestamptz
+  confirmationNotes    String?        @map("confirmation_notes")
+
+  placedAt             DateTime       @default(now()) @map("placed_at") @db.Timestamptz
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  user            User?               @relation(fields: [userId], references: [id])
+  shippingAddress Address             @relation(fields: [shippingAddressId], references: [id])
+  fx              FxRate?             @relation(fields: [fxRateId], references: [id])
+  items           OrderItem[]
+  history         OrderStatusHistory[]
+
+  @@index([status, placedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId         String @map("order_id") @db.Uuid
+  variantId       String @map("variant_id") @db.Uuid
+  qty             Int    @default(1)
+  unitPriceUsdCents BigInt @map("unit_price_usd_cents")
+  lineTotalUsdCents BigInt @map("line_total_usd_cents")
+  cogsUsdCents    BigInt? @map("cogs_usd_cents")
+  nameSnapshot    Json   @map("name_snapshot")
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  unit    DeviceUnit?
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId    String      @map("order_id") @db.Uuid
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus @map("to_status")
+  actorType  String      @map("actor_type")
+  actorId    String?     @map("actor_id") @db.Uuid
+  reasonCode String?     @map("reason_code")
+  source     String      @default("SYSTEM")
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+model ShippingRate {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  governorate       Governorate
+  method            ShippingMethod
+  baseFeeUsdCents   BigInt         @map("base_fee_usd_cents")
+  perKgFeeUsdCents  BigInt         @default(0) @map("per_kg_fee_usd_cents")
+  freeAboveUsdCents BigInt?        @map("free_above_usd_cents")
+  etaMinDays        Int            @map("eta_min_days")
+  etaMaxDays        Int            @map("eta_max_days")
+
+  @@unique([governorate, method])
+  @@map("shipping_rates")
+}
+
+// ——————————————————— الإعدادات وسجل التدقيق ———————————————————
+
+model StoreSetting {
+  key       String   @id
+  value     Json
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("store_settings")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  diff       Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
