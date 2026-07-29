@@ -10,8 +10,11 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "astro": "^5.1.1",
     "@talisham/types": "workspace:*",
-    "@talisham/ui": "workspace:*"
+    "@talisham/ui": "workspace:*",
+    "astro": "^5.1.1"
+  },
+  "devDependencies": {
+    "wrangler": "3.90.0"
   }
 }
