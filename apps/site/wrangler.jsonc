@@ -11,7 +11,6 @@
   "observability": { "enabled": true },
   "vars": {
     "PUBLIC_SITE_URL": "https://talisham.com"
-  }
-  // بعد ربط النطاق في لوحة Cloudflare أضف:
-  // "routes": [{ "pattern": "talisham.com", "custom_domain": true }]
+  },
+  "routes": [{ "pattern": "talisham.com", "custom_domain": true }]
 }

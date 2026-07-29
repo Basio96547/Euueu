@@ -7,6 +7,6 @@
     "directory": "./dist",
     "not_found_handling": "single-page-application"
   },
-  "observability": { "enabled": true }
-  // "routes": [{ "pattern": "admin.talisham.com", "custom_domain": true }]
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "admin.talisham.com", "custom_domain": true }]
 }
