@@ -1,6 +1,7 @@
-import { Inject, Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Inject, Body, Controller, Get, Headers, Param, Post, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
+import { SettlementsService } from './settlements.module.js';
 import { Errors } from '../common/errors.js';
 import { roundCash } from '../common/money.js';
 import { Protect } from '../common/guards.js';
@@ -14,6 +15,7 @@ export class CourierController {
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
     @Inject(NotificationsService) private notify: NotificationsService,
+    @Inject(SettlementsService) private settlements: SettlementsService,
   ) {}
 
   @Get('tasks')
@@ -73,7 +75,8 @@ export class CourierController {
   @Post('orders/:orderNo/collect')
   async collect(
     @Param('orderNo') no: string,
-    @Body() b: { amountSyp: number; occurredAt?: string; deviceId?: string },
+    @Body() b: { amountSyp: number; occurredAt?: string; deviceId?: string; reasonCode?: string },
+    @Req() req: { user?: { sub: string } },
     @Headers('idempotency-key') key?: string,
   ) {
     if (key && this.idem.has(key)) return { data: this.idem.get(key) };
@@ -92,6 +95,22 @@ export class CourierController {
       throw Errors.badRequest('DEVICE_CLOCK_SKEW', 'ساعة الجهاز منحرفة — زامن الوقت', 'Device clock skew');
     }
 
+    // تحصيل أكثر من المستحق ممنوع: فائضٌ في يد المندوب لا سطر له في أي دفتر
+    if (b.amountSyp > due) {
+      throw Errors.badRequest('OVERCOLLECTION',
+        `المستحق ${due.toLocaleString('en-US')} ل.س ولا يجوز تحصيل أكثر منه`,
+        'Cannot collect more than due');
+    }
+    // التحصيل الجزئي قرار لا سهو: يلزمه سبب مسجَّل
+    if (b.amountSyp < due && !b.reasonCode) {
+      throw Errors.badRequest('PARTIAL_REASON_REQUIRED',
+        'التحصيل الجزئي يتطلب سبباً: CUSTOMER_SHORT_CASH أو AGREED_DISCOUNT',
+        'Partial collection requires a reason code');
+    }
+
+    const collector = await this.prisma.user.findUnique({ where: { publicId: req.user!.sub } });
+    if (!collector) throw Errors.notFound('المحصِّل');
+
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
         where: { id: o.id },
@@ -100,7 +119,22 @@ export class CourierController {
           paymentStatus: b.amountSyp >= due ? 'COLLECTED' : 'PARTIAL',
           collectedAmountSyp: BigInt(b.amountSyp),
           collectedAt: occurredAt,
+          collectedBy: collector.id,
+          deliveredAt: occurredAt,
+          confirmationNotes: b.reasonCode ? `تحصيل جزئي: ${b.reasonCode}` : undefined,
         },
+      });
+
+      /* الربط بالتسوية داخل المعاملة نفسها: طلبٌ حُصِّل ولم يدخل صف يومه
+         مالٌ بلا دفتر — ولن يُكتشف إلا حين لا يتطابق الصندوق آخر الشهر. */
+      await this.settlements.attach(tx, {
+        orderId: o.id,
+        collectorId: collector.id,
+        collectorType: 'COURIER',
+        expectedSyp: o.totalSyp,
+        collectedSyp: BigInt(b.amountSyp),
+        roundingDiffSyp: o.roundingDiffSyp,
+        at: occurredAt,
       });
       await tx.orderStatusHistory.create({
         data: {

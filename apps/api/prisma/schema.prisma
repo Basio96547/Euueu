@@ -138,45 +138,52 @@ enum ShippingMethod {
 // ——————————————————— الهوية والعناوين ———————————————————
 
 model User {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId       String    @unique @map("public_id") @db.Char(12)
-  phoneE164      String    @unique @map("phone_e164") @db.VarChar(16)
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId        String    @unique @map("public_id") @db.Char(12)
+  phoneE164       String    @unique @map("phone_e164") @db.VarChar(16)
   phoneVerifiedAt DateTime? @map("phone_verified_at") @db.Timestamptz
-  fullName       String?   @map("full_name")
-  role           UserRole  @default(CUSTOMER)
-  locale         String    @default("ar") @db.Char(2)
-  displayCurrency String   @default("SYP") @map("display_currency") @db.Char(3)
-  tokenVersion   Int       @default(0) @map("token_version")
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  fullName        String?   @map("full_name")
+  role            UserRole  @default(CUSTOMER)
+  locale          String    @default("ar") @db.Char(2)
+  displayCurrency String    @default("SYP") @map("display_currency") @db.Char(3)
+  tokenVersion    Int       @default(0) @map("token_version")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
 
-  addresses Address[]
-  orders    Order[]
-  carts     Cart[]
+  addresses       Address[]
+  orders          Order[]
+  carts           Cart[]
+  reviews         Review[]
+  questions       ProductQuestion[]
+  priceAlerts     PriceAlert[]
+  stockAlerts     StockAlert[]
+  ticketsOwned    SupportTicket[]   @relation("TicketOwner")
+  ticketsAssigned SupportTicket[]   @relation("TicketAssignee")
+  settlements     CashSettlement[]  @relation("SettlementCollector")
 
   @@map("users")
 }
 
 model Address {
-  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId         String      @map("user_id") @db.Uuid
-  label          String?
-  recipientName  String      @map("recipient_name")
-  governorate    Governorate
-  city           String      @db.VarChar(64)
-  neighborhood   String      @db.VarChar(64)
-  street         String?     @db.VarChar(96)
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String      @map("user_id") @db.Uuid
+  label         String?
+  recipientName String      @map("recipient_name")
+  governorate   Governorate
+  city          String      @db.VarChar(64)
+  neighborhood  String      @db.VarChar(64)
+  street        String?     @db.VarChar(96)
   /// إلزامي: العناوين الرسمية غير موثوقة عملياً، والمندوب يصل بالمعلم
-  landmark       String      @db.VarChar(120)
-  details        String?
-  phone          String      @db.VarChar(16)
-  altPhone       String?     @map("alt_phone") @db.VarChar(16)
-  geoLat         Decimal?    @map("geo_lat") @db.Decimal(9, 6)
-  geoLng         Decimal?    @map("geo_lng") @db.Decimal(9, 6)
-  isDefault      Boolean     @default(false) @map("is_default")
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz
+  landmark      String      @db.VarChar(120)
+  details       String?
+  phone         String      @db.VarChar(16)
+  altPhone      String?     @map("alt_phone") @db.VarChar(16)
+  geoLat        Decimal?    @map("geo_lat") @db.Decimal(9, 6)
+  geoLng        Decimal?    @map("geo_lng") @db.Decimal(9, 6)
+  isDefault     Boolean     @default(false) @map("is_default")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt     DateTime?   @map("deleted_at") @db.Timestamptz
 
   user   User    @relation(fields: [userId], references: [id])
   orders Order[]
@@ -241,8 +248,10 @@ model Product {
   variants ProductVariant[]
   media    Media[]
 
-  accessoryFor  ProductCompatibility[] @relation("AccessorySide")
+  accessoryFor   ProductCompatibility[] @relation("AccessorySide")
   compatibleWith ProductCompatibility[] @relation("PhoneSide")
+  reviews        Review[]
+  questions      ProductQuestion[]
 
   @@index([status, isDemo])
   @@map("products")
@@ -274,12 +283,14 @@ model ProductVariant {
   isDefault              Boolean          @default(false) @map("is_default")
   deletedAt              DateTime?        @map("deleted_at") @db.Timestamptz
 
-  product      Product                 @relation(fields: [productId], references: [id])
+  product      Product                @relation(fields: [productId], references: [id])
   levels       InventoryLevel[]
   units        DeviceUnit[]
   reservations InventoryReservation[]
   orderItems   OrderItem[]
   cartItems    CartItem[]
+  priceAlerts  PriceAlert[]
+  stockAlerts  StockAlert[]
 
   @@unique([productId, storageGb, ramGb, colorCode, deviceOrigin, partCode])
   @@index([productId])
@@ -302,15 +313,15 @@ model ProductCompatibility {
 
 /// جدول الوسائط الوحيد — لا جدول وسائط خاص بالمنتجات
 model Media {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ownerType      String   @map("owner_type")
-  ownerId        String   @map("owner_id") @db.Uuid
-  url            String
-  alt            Json?
-  colorCode      String?  @map("color_code")
-  blurhash       String?
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerType       String  @map("owner_type")
+  ownerId         String  @map("owner_id") @db.Uuid
+  url             String
+  alt             Json?
+  colorCode       String? @map("color_code")
+  blurhash        String?
   isRealUnitPhoto Boolean @default(false) @map("is_real_unit_photo")
-  sortOrder      Int      @default(0) @map("sort_order")
+  sortOrder       Int     @default(0) @map("sort_order")
 
   product Product? @relation(fields: [ownerId], references: [id], map: "media_product_fk")
 
@@ -334,14 +345,14 @@ model Warehouse {
 
 /// مصدر الكمية الوحيد. المتاح = onHand - reserved، بقفل متفائل على version.
 model InventoryLevel {
-  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variantId   String @map("variant_id") @db.Uuid
-  warehouseId String @map("warehouse_id") @db.Uuid
-  onHand      Int    @default(0) @map("on_hand")
-  reserved    Int    @default(0)
-  incoming    Int    @default(0)
-  reorderPoint Int   @default(0) @map("reorder_point")
-  version     Int    @default(0)
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId    String @map("variant_id") @db.Uuid
+  warehouseId  String @map("warehouse_id") @db.Uuid
+  onHand       Int    @default(0) @map("on_hand")
+  reserved     Int    @default(0)
+  incoming     Int    @default(0)
+  reorderPoint Int    @default(0) @map("reorder_point")
+  version      Int    @default(0)
 
   variant   ProductVariant @relation(fields: [variantId], references: [id])
   warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
@@ -387,25 +398,26 @@ model InventoryMovement {
 
 /// وحدات الأجهزة: عددها بحالة IN_STOCK يجب أن يساوي onHand — مفروض بمحفِّز مؤجَّل
 model DeviceUnit {
-  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variantId        String          @map("variant_id") @db.Uuid
-  warehouseId      String          @map("warehouse_id") @db.Uuid
-  imei             String?         @unique
-  imei2            String?
-  serial           String?
-  state            DeviceUnitState @default(IN_STOCK)
-  grade            String?
-  batteryHealthPct Int?            @map("battery_health_pct")
-  imeiCheckStatus  String?         @map("imei_check_status")
-  orderItemId      String?         @unique @map("order_item_id") @db.Uuid
-  warrantyType     WarrantyType?   @map("warranty_type")
-  warrantyStartAt  DateTime?       @map("warranty_start_at") @db.Timestamptz
-  warrantyEndAt    DateTime?       @map("warranty_end_at") @db.Timestamptz
-  acquisitionCostUsdCents BigInt?  @map("acquisition_cost_usd_cents")
+  id                      String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId               String          @map("variant_id") @db.Uuid
+  warehouseId             String          @map("warehouse_id") @db.Uuid
+  imei                    String?         @unique
+  imei2                   String?
+  serial                  String?
+  state                   DeviceUnitState @default(IN_STOCK)
+  grade                   String?
+  batteryHealthPct        Int?            @map("battery_health_pct")
+  imeiCheckStatus         String?         @map("imei_check_status")
+  orderItemId             String?         @unique @map("order_item_id") @db.Uuid
+  warrantyType            WarrantyType?   @map("warranty_type")
+  warrantyStartAt         DateTime?       @map("warranty_start_at") @db.Timestamptz
+  warrantyEndAt           DateTime?       @map("warranty_end_at") @db.Timestamptz
+  acquisitionCostUsdCents BigInt?         @map("acquisition_cost_usd_cents")
 
-  variant   ProductVariant @relation(fields: [variantId], references: [id])
-  warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
-  orderItem OrderItem?     @relation(fields: [orderItemId], references: [id])
+  variant   ProductVariant  @relation(fields: [variantId], references: [id])
+  warehouse Warehouse       @relation(fields: [warehouseId], references: [id])
+  orderItem OrderItem?      @relation(fields: [orderItemId], references: [id])
+  claims    WarrantyClaim[]
 
   @@index([variantId, state])
   @@map("device_units")
@@ -436,11 +448,11 @@ model FxRate {
 // ——————————————————— السلة والطلب ———————————————————
 
 model Cart {
-  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  token     String     @unique
-  userId    String?    @map("user_id") @db.Uuid
-  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token     String   @unique
+  userId    String?  @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   user  User?      @relation(fields: [userId], references: [id])
   items CartItem[]
@@ -449,10 +461,10 @@ model Cart {
 }
 
 model CartItem {
-  id                  String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  cartId              String @map("cart_id") @db.Uuid
-  variantId           String @map("variant_id") @db.Uuid
-  qty                 Int    @default(1)
+  id                        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cartId                    String @map("cart_id") @db.Uuid
+  variantId                 String @map("variant_id") @db.Uuid
+  qty                       Int    @default(1)
   unitPriceSnapshotUsdCents BigInt @map("unit_price_snapshot_usd_cents")
 
   cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
@@ -463,62 +475,74 @@ model CartItem {
 }
 
 model Order {
-  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId             String         @unique @map("public_id") @db.Char(12)
+  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId          String      @unique @map("public_id") @db.Char(12)
   /// TS-YYMM-NNNNNN — القيد في constraints.sql
-  orderNo              String         @unique @map("order_no") @db.VarChar(14)
-  userId               String?        @map("user_id") @db.Uuid
-  status               OrderStatus    @default(PENDING_CONFIRMATION)
-  shippingAddressId    String         @map("shipping_address_id") @db.Uuid
+  orderNo           String      @unique @map("order_no") @db.VarChar(14)
+  userId            String?     @map("user_id") @db.Uuid
+  status            OrderStatus @default(PENDING_CONFIRMATION)
+  shippingAddressId String      @map("shipping_address_id") @db.Uuid
 
-  subtotalUsdCents     BigInt         @map("subtotal_usd_cents")
-  discountTotalUsdCents BigInt        @default(0) @map("discount_total_usd_cents")
-  shippingTotalUsdCents BigInt        @default(0) @map("shipping_total_usd_cents")
-  taxRateBp            Int            @default(0) @map("tax_rate_bp")
-  taxAmountUsdCents    BigInt         @default(0) @map("tax_amount_usd_cents")
-  totalUsdCents        BigInt         @map("total_usd_cents")
+  subtotalUsdCents      BigInt @map("subtotal_usd_cents")
+  discountTotalUsdCents BigInt @default(0) @map("discount_total_usd_cents")
+  shippingTotalUsdCents BigInt @default(0) @map("shipping_total_usd_cents")
+  taxRateBp             Int    @default(0) @map("tax_rate_bp")
+  taxAmountUsdCents     BigInt @default(0) @map("tax_amount_usd_cents")
+  totalUsdCents         BigInt @map("total_usd_cents")
 
-  fxRateId             String?        @map("fx_rate_id") @db.Uuid
-  fxRate               Decimal        @map("fx_rate") @db.Decimal(14, 4)
-  totalSyp             BigInt         @map("total_syp")
+  fxRateId         String?  @map("fx_rate_id") @db.Uuid
+  fxRate           Decimal  @map("fx_rate") @db.Decimal(14, 4)
+  totalSyp         BigInt   @map("total_syp")
   /// فرق التقريب يُخزَّن وإلا لم تتطابق التسويات أبداً (الفصل 16)
-  roundingDiffSyp      Int            @default(0) @map("rounding_diff_syp")
-  fxStale              Boolean        @default(false) @map("fx_stale")
-  priceLockedUntil     DateTime       @map("price_locked_until") @db.Timestamptz
+  roundingDiffSyp  Int      @default(0) @map("rounding_diff_syp")
+  fxStale          Boolean  @default(false) @map("fx_stale")
+  priceLockedUntil DateTime @map("price_locked_until") @db.Timestamptz
 
-  paymentMethod        PaymentMethod  @default(COD) @map("payment_method")
-  paymentStatus        PaymentStatus  @default(PENDING) @map("payment_status")
-  collectedAmountSyp   BigInt?        @map("collected_amount_syp")
-  collectedAt          DateTime?      @map("collected_at") @db.Timestamptz
-  collectedBy          String?        @map("collected_by") @db.Uuid
+  paymentMethod      PaymentMethod @default(COD) @map("payment_method")
+  paymentStatus      PaymentStatus @default(PENDING) @map("payment_status")
+  collectedAmountSyp BigInt?       @map("collected_amount_syp")
+  collectedAt        DateTime?     @map("collected_at") @db.Timestamptz
+  collectedBy        String?       @map("collected_by") @db.Uuid
 
-  confirmationAttempts Int            @default(0) @map("confirmation_attempts")
-  confirmedBy          String?        @map("confirmed_by") @db.Uuid
-  confirmedAt          DateTime?      @map("confirmed_at") @db.Timestamptz
-  confirmationNotes    String?        @map("confirmation_notes")
+  confirmationAttempts Int       @default(0) @map("confirmation_attempts")
+  confirmedBy          String?   @map("confirmed_by") @db.Uuid
+  confirmedAt          DateTime? @map("confirmed_at") @db.Timestamptz
+  confirmationNotes    String?   @map("confirmation_notes")
 
-  placedAt             DateTime       @default(now()) @map("placed_at") @db.Timestamptz
-  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  /// من حصّل ونوعه وأي تسوية يومية يقع فيها — الفصل 8 §8.7
+  collectorType CollectorType? @map("collector_type")
+  settlementId  String?        @map("settlement_id") @db.Uuid
+  deliveredAt   DateTime?      @map("delivered_at") @db.Timestamptz
+  /// الطلب البديل يشير إلى أصله فلا ينقطع خيط الاستبدال
+  replacementOf String?        @map("replacement_of") @db.Uuid
+  couponCode    String?        @map("coupon_code") @db.VarChar(32)
 
-  user            User?               @relation(fields: [userId], references: [id])
-  shippingAddress Address             @relation(fields: [shippingAddressId], references: [id])
-  fx              FxRate?             @relation(fields: [fxRateId], references: [id])
+  placedAt  DateTime @default(now()) @map("placed_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user            User?                @relation(fields: [userId], references: [id])
+  shippingAddress Address              @relation(fields: [shippingAddressId], references: [id])
+  fx              FxRate?              @relation(fields: [fxRateId], references: [id])
   items           OrderItem[]
   history         OrderStatusHistory[]
+  returns         Return[]
+  tickets         SupportTicket[]
+  redemption      CouponRedemption?
+  settlement      CashSettlement?      @relation(fields: [settlementId], references: [id])
 
   @@index([status, placedAt])
   @@map("orders")
 }
 
 model OrderItem {
-  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId         String @map("order_id") @db.Uuid
-  variantId       String @map("variant_id") @db.Uuid
-  qty             Int    @default(1)
-  unitPriceUsdCents BigInt @map("unit_price_usd_cents")
-  lineTotalUsdCents BigInt @map("line_total_usd_cents")
-  cogsUsdCents    BigInt? @map("cogs_usd_cents")
-  nameSnapshot    Json   @map("name_snapshot")
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId           String  @map("order_id") @db.Uuid
+  variantId         String  @map("variant_id") @db.Uuid
+  qty               Int     @default(1)
+  unitPriceUsdCents BigInt  @map("unit_price_usd_cents")
+  lineTotalUsdCents BigInt  @map("line_total_usd_cents")
+  cogsUsdCents      BigInt? @map("cogs_usd_cents")
+  nameSnapshot      Json    @map("name_snapshot")
 
   order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variant ProductVariant @relation(fields: [variantId], references: [id])
@@ -529,15 +553,15 @@ model OrderItem {
 }
 
 model OrderStatusHistory {
-  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId    String      @map("order_id") @db.Uuid
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId    String       @map("order_id") @db.Uuid
   fromStatus OrderStatus? @map("from_status")
-  toStatus   OrderStatus @map("to_status")
-  actorType  String      @map("actor_type")
-  actorId    String?     @map("actor_id") @db.Uuid
-  reasonCode String?     @map("reason_code")
-  source     String      @default("SYSTEM")
-  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  toStatus   OrderStatus  @map("to_status")
+  actorType  String       @map("actor_type")
+  actorId    String?      @map("actor_id") @db.Uuid
+  reasonCode String?      @map("reason_code")
+  source     String       @default("SYSTEM")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -582,4 +606,456 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  التسوية النقدية — الفصل 8 §8.7
+// ═══════════════════════════════════════════════════════════════
+
+enum CollectorType {
+  COURIER
+  TRANSPORT_OFFICE
+}
+
+enum SettlementState {
+  OPEN
+  RECONCILED
+  DISPUTED
+  SETTLED
+}
+
+/// صف واحد لكل (محصِّل، يوم). بدونه لا يُعرف أين المال:
+/// المتجر يعمل نقداً، فالمطابقة اليومية هي دفتر الصندوق كلّه.
+model CashSettlement {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  collectorType  CollectorType @map("collector_type")
+  collectorId    String        @map("collector_id") @db.Uuid
+  settlementDate DateTime      @map("settlement_date") @db.Date
+
+  ordersCount           Int    @default(0) @map("orders_count")
+  expectedAmountSyp     BigInt @default(0) @map("expected_amount_syp")
+  collectedAmountSyp    BigInt @default(0) @map("collected_amount_syp")
+  /// محسوب: collected − expected. يُخزَّن ليُقرأ في التقارير بلا إعادة حساب
+  varianceSyp           BigInt @default(0) @map("variance_syp")
+  roundingDiffSyp       Int    @default(0) @map("rounding_diff_syp")
+  deliveryCommissionSyp BigInt @default(0) @map("delivery_commission_syp")
+
+  state        SettlementState @default(OPEN)
+  note         String?
+  /// من أقفل التسوية — ولا يجوز أن يكون المحصِّل نفسه (الفصل 9 §فصل الواجبات)
+  reconciledBy String?         @map("reconciled_by") @db.Uuid
+  reconciledAt DateTime?       @map("reconciled_at") @db.Timestamptz
+  settledAt    DateTime?       @map("settled_at") @db.Timestamptz
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  collector User    @relation("SettlementCollector", fields: [collectorId], references: [id])
+  orders    Order[]
+
+  @@unique([collectorType, collectorId, settlementDate])
+  @@index([state, settlementDate])
+  @@map("cash_settlements")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  الإرجاع والاسترداد — الفصل 8 §8.10
+// ═══════════════════════════════════════════════════════════════
+
+enum ReturnState {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PICKUP_SCHEDULED
+  RECEIVED
+  INSPECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum ReturnReason {
+  NOT_AS_DESCRIBED
+  DEFECTIVE
+  WRONG_ITEM
+  CHANGED_MIND
+  DAMAGED_IN_TRANSIT
+}
+
+enum RefundState {
+  PENDING
+  APPROVED
+  DISBURSED
+  CANCELLED
+}
+
+model Return {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  returnNo     String       @unique @map("return_no") @db.VarChar(16)
+  orderId      String       @map("order_id") @db.Uuid
+  orderItemId  String?      @map("order_item_id") @db.Uuid
+  state        ReturnState  @default(REQUESTED)
+  reason       ReturnReason
+  customerNote String?      @map("customer_note")
+
+  /// فحص IMEI إلزامي: جهاز غير الجهاز المُباع لا يُقبل مهما بدا مطابقاً
+  imeiSubmitted String?  @map("imei_submitted")
+  imeiChecked   Boolean  @default(false) @map("imei_checked")
+  imeiMatched   Boolean? @map("imei_matched")
+
+  inspectionNote String? @map("inspection_note")
+  rejectReason   String? @map("reject_reason")
+  restock        Boolean @default(false)
+
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz
+  receivedAt  DateTime? @map("received_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  decidedBy   String?   @map("decided_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  order  Order   @relation(fields: [orderId], references: [id])
+  refund Refund?
+
+  @@index([state, requestedAt])
+  @@index([orderId])
+  @@map("returns")
+}
+
+/// الاسترداد نقداً: المبلغ بالدولار مرجعاً وبالليرة مقرَّباً لأقرب ألف،
+/// ولا يُصرف قبل تطابق IMEI — النقد لا يُسترجَع بعد خروجه.
+model Refund {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  returnId        String      @unique @map("return_id") @db.Uuid
+  amountUsdCents  BigInt      @map("amount_usd_cents")
+  fxRate          Decimal     @map("fx_rate") @db.Decimal(14, 4)
+  amountSyp       BigInt      @map("amount_syp")
+  roundingDiffSyp Int         @default(0) @map("rounding_diff_syp")
+  state           RefundState @default(PENDING)
+  disbursedBy     String?     @map("disbursed_by") @db.Uuid
+  disbursedAt     DateTime?   @map("disbursed_at") @db.Timestamptz
+  note            String?
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  return Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([state])
+  @@map("refunds")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  الكفالة: مطالبة بجدول حقيقي لا سطراً في سجل التدقيق — الفصل 15
+// ═══════════════════════════════════════════════════════════════
+
+enum ClaimState {
+  OPENED
+  RECEIVED
+  DIAGNOSING
+  DECISION
+  IN_REPAIR
+  TESTING
+  READY
+  CLOSED
+  REJECTED
+}
+
+model WarrantyClaim {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  claimNo      String     @unique @map("claim_no") @db.VarChar(16)
+  deviceUnitId String?    @map("device_unit_id") @db.Uuid
+  imei         String?
+  phone        String     @db.VarChar(16)
+  description  String
+  state        ClaimState @default(OPENED)
+  diagnosis    String?
+  resolution   String?
+  rejectReason String?    @map("reject_reason")
+  loanerUnitId String?    @map("loaner_unit_id") @db.Uuid
+  openedAt     DateTime   @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt     DateTime?  @map("closed_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  unit    DeviceUnit?     @relation(fields: [deviceUnitId], references: [id])
+  tickets SupportTicket[]
+
+  @@index([state, openedAt])
+  @@index([phone])
+  @@map("warranty_claims")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  الدعم: التذاكر — الفصل 14 §14.7
+// ═══════════════════════════════════════════════════════════════
+
+enum TicketStatus {
+  NEW
+  OPEN
+  PENDING_CUSTOMER
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketChannel {
+  WHATSAPP
+  PHONE
+  WEB
+  EMAIL
+  ADMIN
+}
+
+model SupportTicket {
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketNo        String  @unique @map("ticket_no") @db.VarChar(16)
+  userId          String? @map("user_id") @db.Uuid
+  phone           String  @db.VarChar(16)
+  orderId         String? @map("order_id") @db.Uuid
+  deviceUnitId    String? @map("device_unit_id") @db.Uuid
+  warrantyClaimId String? @map("warranty_claim_id") @db.Uuid
+
+  channel          TicketChannel  @default(WEB)
+  externalThreadId String?        @map("external_thread_id")
+  subject          String?
+  contactReason    String         @map("contact_reason")
+  status           TicketStatus   @default(NEW)
+  priority         TicketPriority @default(NORMAL)
+  assigneeId       String?        @map("assignee_id") @db.Uuid
+
+  firstResponseAt       DateTime? @map("first_response_at") @db.Timestamptz
+  resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
+  closedAt              DateTime? @map("closed_at") @db.Timestamptz
+  /// المهل تُحسب ضمن ساعات العمل لا على مدار الساعة: الكهرباء تنقطع
+  slaFirstResponseDueAt DateTime? @map("sla_first_response_due_at") @db.Timestamptz
+  slaResolutionDueAt    DateTime? @map("sla_resolution_due_at") @db.Timestamptz
+  slaBreached           Boolean   @default(false) @map("sla_breached")
+
+  csatScore   Int?     @map("csat_score")
+  csatComment String?  @map("csat_comment")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user     User?           @relation("TicketOwner", fields: [userId], references: [id])
+  assignee User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  order    Order?          @relation(fields: [orderId], references: [id])
+  claim    WarrantyClaim?  @relation(fields: [warrantyClaimId], references: [id])
+  messages TicketMessage[]
+
+  @@index([status, priority, createdAt])
+  @@index([phone])
+  @@index([orderId])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId        String         @map("ticket_id") @db.Uuid
+  authorType      String         @map("author_type")
+  authorId        String?        @map("author_id") @db.Uuid
+  body            String
+  isInternalNote  Boolean        @default(false) @map("is_internal_note")
+  macroId         String?        @map("macro_id") @db.Uuid
+  deliveryChannel TicketChannel? @map("delivery_channel")
+  deliveryStatus  String?        @map("delivery_status")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  macro  TicketMacro?  @relation(fields: [macroId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+model TicketMacro {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code       String   @unique
+  title      Json
+  body       Json
+  variables  String[] @default([])
+  isActive   Boolean  @default(true) @map("is_active")
+  usageCount Int      @default(0) @map("usage_count")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  messages TicketMessage[]
+
+  @@map("ticket_macros")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  التقييمات والأسئلة — الفصل 14 §14.5
+// ═══════════════════════════════════════════════════════════════
+
+enum ModerationStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+  HIDDEN
+}
+
+/// لا مراجعة بلا شراء مسلَّم: order_item_id إلزامي وفريد،
+/// فلا يكتب أحد رأياً في جهاز لم يمسكه بيده.
+model Review {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId       String           @map("product_id") @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  orderItemId     String           @unique @map("order_item_id") @db.Uuid
+  rating          Int
+  title           String?
+  body            String?
+  status          ModerationStatus @default(PENDING)
+  rejectReason    String?          @map("reject_reason")
+  flagged         Boolean          @default(false)
+  helpfulCount    Int              @default(0) @map("helpful_count")
+  merchantReply   String?          @map("merchant_reply")
+  merchantReplyAt DateTime?        @map("merchant_reply_at") @db.Timestamptz
+  moderatedBy     String?          @map("moderated_by") @db.Uuid
+  moderatedAt     DateTime?        @map("moderated_at") @db.Timestamptz
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  product Product        @relation(fields: [productId], references: [id])
+  user    User           @relation(fields: [userId], references: [id])
+  reports ReviewReport[]
+
+  @@index([productId, status])
+  @@map("reviews")
+}
+
+model ReviewReport {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reviewId   String    @map("review_id") @db.Uuid
+  reporterId String?   @map("reporter_id") @db.Uuid
+  reason     String
+  note       String?
+  status     String    @default("OPEN")
+  resolvedBy String?   @map("resolved_by") @db.Uuid
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, reporterId])
+  @@map("review_reports")
+}
+
+model ProductQuestion {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId    String           @map("product_id") @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  body         String
+  answerBody   String?          @map("answer_body")
+  answerSource String?          @map("answer_source")
+  answeredBy   String?          @map("answered_by") @db.Uuid
+  answeredAt   DateTime?        @map("answered_at") @db.Timestamptz
+  status       ModerationStatus @default(PENDING)
+  rejectReason String?          @map("reject_reason")
+  helpfulCount Int              @default(0) @map("helpful_count")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([productId, status])
+  @@map("product_questions")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  الكوبونات — الفصل 7 §7.7
+// ═══════════════════════════════════════════════════════════════
+
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+/// كل المبالغ بسنتات الدولار: خصمٌ بالليرة يفقد معناه بعد أول قفزة صرف.
+model Coupon {
+  id                    String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String     @unique @db.VarChar(32)
+  type                  CouponType
+  /// نسبة مئوية (1–100) أو مبلغ بسنتات الدولار حسب النوع
+  value                 Int
+  maxDiscountUsdCents   Int?       @map("max_discount_usd_cents")
+  minSubtotalUsdCents   Int        @default(0) @map("min_subtotal_usd_cents")
+  categorySlugs         String[]   @default([]) @map("category_slugs")
+  startsAt              DateTime   @map("starts_at") @db.Timestamptz
+  endsAt                DateTime   @map("ends_at") @db.Timestamptz
+  usageLimitTotal       Int?       @map("usage_limit_total")
+  usageLimitPerCustomer Int        @default(1) @map("usage_limit_per_customer")
+  firstOrderOnly        Boolean    @default(false) @map("first_order_only")
+  stackable             Boolean    @default(false)
+  usedCount             Int        @default(0) @map("used_count")
+  isActive              Boolean    @default(true) @map("is_active")
+  note                  String?
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  redemptions CouponRedemption[]
+
+  @@index([isActive, endsAt])
+  @@map("coupons")
+}
+
+/// الحد لكل عميل مرتبط بالجوال الموثّق لا بالجلسة: الجلسة تُمحى بضغطة.
+model CouponRedemption {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  couponId         String   @map("coupon_id") @db.Uuid
+  orderId          String   @unique @map("order_id") @db.Uuid
+  phone            String   @db.VarChar(16)
+  discountUsdCents Int      @map("discount_usd_cents")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  coupon Coupon @relation(fields: [couponId], references: [id])
+  order  Order  @relation(fields: [orderId], references: [id])
+
+  @@index([couponId, phone])
+  @@map("coupon_redemptions")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  التنبيهات — الفصل 14 §14.6
+// ═══════════════════════════════════════════════════════════════
+
+/// المقارنة بالدولار حصراً: لو قِيست بالليرة لأطلقت كل قفزة صرف
+/// موجةَ تنبيهات كاذبة عن «انخفاض سعر» لم يحدث.
+model PriceAlert {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  variantId         String    @map("variant_id") @db.Uuid
+  basePriceUsdCents BigInt    @map("base_price_usd_cents")
+  thresholdBp       Int       @default(500) @map("threshold_bp")
+  isActive          Boolean   @default(true) @map("is_active")
+  lastNotifiedAt    DateTime? @map("last_notified_at") @db.Timestamptz
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user    User           @relation(fields: [userId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([userId, variantId])
+  @@map("price_alerts")
+}
+
+model StockAlert {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  phone      String    @db.VarChar(16)
+  variantId  String    @map("variant_id") @db.Uuid
+  isActive   Boolean   @default(true) @map("is_active")
+  notifiedAt DateTime? @map("notified_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user    User?          @relation(fields: [userId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([phone, variantId])
+  @@map("stock_alerts")
 }

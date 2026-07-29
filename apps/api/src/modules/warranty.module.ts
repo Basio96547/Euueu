@@ -92,6 +92,13 @@ export class WarrantyService {
     };
   }
 
+  /**
+   * فتح مطالبة كفالة.
+   * الحالة كانت تُستنتج من آخر سطر في سجل التدقيق — وهذا خطأ بنيوي:
+   * سجل التدقيق يقول «ماذا جرى» لا «أين نحن»، وقراءة الحاضر منه تعني
+   * مسح آلاف السطور لمعرفة حالة مطالبة واحدة، وفقدانها لو نُظّف السجل.
+   * الحالة الآن صفٌّ له جدوله، والسجل يبقى للتدقيق وحده.
+   */
   async openClaim(imei: string, description: string, phone: string) {
     const unit = await this.prisma.deviceUnit.findUnique({ where: { imei } });
     if (!unit) throw Errors.notFound('الجهاز');
@@ -99,15 +106,20 @@ export class WarrantyService {
       throw Errors.badRequest('WARRANTY_EXPIRED', 'انتهت كفالة هذا الجهاز', 'Warranty expired');
     }
 
-    const seq = (await this.prisma.auditLog.count({ where: { entityType: 'warranty_claims' } })) + 1;
+    const open = await this.prisma.warrantyClaim.findFirst({
+      where: { deviceUnitId: unit.id, state: { notIn: ['CLOSED', 'REJECTED'] } },
+    });
+    if (open) {
+      throw Errors.badRequest('CLAIM_ALREADY_OPEN',
+        `على هذا الجهاز مطالبة قائمة (${open.claimNo})`, 'Claim already open');
+    }
+
     const now = new Date();
+    const seq = (await this.prisma.warrantyClaim.count()) + 1;
     const claimNo = `WC-${String(now.getUTCFullYear()).slice(2)}${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(seq).padStart(6, '0')}`;
 
-    await this.prisma.auditLog.create({
-      data: {
-        action: 'claim.open', entityType: 'warranty_claims', entityId: unit.id,
-        diff: { claimNo, imei, description, phone, state: 'OPENED' as ClaimState },
-      },
+    const claim = await this.prisma.warrantyClaim.create({
+      data: { claimNo, deviceUnitId: unit.id, imei, phone, description },
     });
 
     await this.notify.send({
@@ -115,45 +127,75 @@ export class WarrantyService {
       title: 'استلمنا مطالبة الكفالة',
       body: `${claimNo} — سنتواصل معك لاستلام الجهاز خلال 48 ساعة.`,
     });
-    return { claimNo, state: 'OPENED' as ClaimState, stateAr: STATE_AR.OPENED };
+    return { claimNo, state: claim.state as ClaimState, stateAr: STATE_AR[claim.state as ClaimState] };
   }
 
-  async transition(claimNo: string, to: ClaimState) {
-    const rows = await this.prisma.auditLog.findMany({
-      where: { entityType: 'warranty_claims' }, orderBy: { createdAt: 'desc' },
-    });
-    const last = rows.find((r) => (r.diff as any)?.claimNo === claimNo);
-    if (!last) throw Errors.notFound('المطالبة');
-    const from = (last.diff as any).state as ClaimState;
+  async transition(claimNo: string, to: ClaimState, b?: { diagnosis?: string; resolution?: string; rejectReason?: string }) {
+    const claim = await this.prisma.warrantyClaim.findUnique({ where: { claimNo } });
+    if (!claim) throw Errors.notFound('المطالبة');
+    const from = claim.state as ClaimState;
     if (!NEXT[from].includes(to)) throw Errors.invalidTransition(from, to);
+    if (to === 'REJECTED' && !b?.rejectReason) {
+      throw Errors.badRequest('REJECT_REASON_REQUIRED',
+        'الرفض يحتاج سبباً يُقال للعميل', 'Reject reason required');
+    }
 
-    await this.prisma.auditLog.create({
+    const updated = await this.prisma.warrantyClaim.update({
+      where: { id: claim.id },
       data: {
-        action: 'claim.transition', entityType: 'warranty_claims', entityId: last.entityId,
-        diff: { ...(last.diff as any), state: to, from },
+        state: to,
+        diagnosis: b?.diagnosis ?? claim.diagnosis,
+        resolution: b?.resolution ?? claim.resolution,
+        rejectReason: b?.rejectReason ?? claim.rejectReason,
+        ...(to === 'CLOSED' || to === 'REJECTED' ? { closedAt: new Date() } : {}),
       },
     });
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'claim.transition', entityType: 'warranty_claims', entityId: claim.id,
+        diff: { claimNo, from, to },
+      },
+    });
+
     if (to === 'READY') {
       await this.notify.send({
-        type: 'claim.ready', level: 'P1', to: (last.diff as any).phone, entityId: claimNo,
+        type: 'claim.ready', level: 'P1', to: claim.phone, entityId: claimNo,
         title: 'جهازك جاهز', body: `${claimNo} — يمكنك استلامه أو نرسله لك.`,
       });
     }
-    return { claimNo, state: to, stateAr: STATE_AR[to], from };
+    if (to === 'REJECTED') {
+      await this.notify.send({
+        type: 'claim.rejected', level: 'P1', to: claim.phone, entityId: claimNo,
+        title: 'نتيجة فحص المطالبة',
+        body: `${claimNo} — ${b!.rejectReason}. تواصل مع الدعم لأي استفسار.`,
+      });
+    }
+    return { claimNo, state: updated.state as ClaimState, stateAr: STATE_AR[to], from };
   }
 
-  async listClaims() {
-    const rows = await this.prisma.auditLog.findMany({
-      where: { entityType: 'warranty_claims' }, orderBy: { createdAt: 'desc' }, take: 100,
+  async listClaims(state?: string) {
+    const rows = await this.prisma.warrantyClaim.findMany({
+      where: state ? { state: state as any } : {},
+      orderBy: { openedAt: 'desc' }, take: 100,
     });
-    const latest = new Map<string, any>();
-    for (const r of rows) {
-      const d = r.diff as any;
-      if (d?.claimNo && !latest.has(d.claimNo)) {
-        latest.set(d.claimNo, { claimNo: d.claimNo, imei: d.imei, state: d.state, stateAr: STATE_AR[d.state as ClaimState], at: r.createdAt.toISOString() });
-      }
-    }
-    return [...latest.values()];
+    return rows.map((c) => ({
+      claimNo: c.claimNo, imei: c.imei, phone: c.phone,
+      description: c.description, diagnosis: c.diagnosis,
+      state: c.state, stateAr: STATE_AR[c.state as ClaimState],
+      openedAt: c.openedAt, closedAt: c.closedAt,
+      at: c.openedAt.toISOString(),
+    }));
+  }
+
+  /** مطالباتي — بالرقم الذي فُتحت به */
+  async myClaims(phone: string) {
+    const rows = await this.prisma.warrantyClaim.findMany({
+      where: { phone }, orderBy: { openedAt: 'desc' }, take: 30,
+    });
+    return rows.map((c) => ({
+      claimNo: c.claimNo, state: c.state, stateAr: STATE_AR[c.state as ClaimState],
+      description: c.description, openedAt: c.openedAt,
+    }));
   }
 }
 
@@ -175,13 +217,19 @@ export class WarrantyController {
     return { data: await this.w.openClaim(b.imei, b.description, b.phone) };
   }
 
+  @Get('me/warranty-claims')
+  async mine(@Query('phone') phone: string) { return { data: await this.w.myClaims(phone) }; }
+
   @Get('admin/warranty-claims')
   @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async list() { return { data: await this.w.listClaims() }; }
+  async list(@Query('state') state?: string) { return { data: await this.w.listClaims(state) }; }
 
   @Post('admin/warranty-claims/:claimNo/transition')
   @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async transition(@Param('claimNo') no: string, @Body() b: { to: ClaimState }) {
-    return { data: await this.w.transition(no, b.to) };
+  async transition(
+    @Param('claimNo') no: string,
+    @Body() b: { to: ClaimState; diagnosis?: string; resolution?: string; rejectReason?: string },
+  ) {
+    return { data: await this.w.transition(no, b.to, b) };
   }
 }

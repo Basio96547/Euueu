@@ -23,6 +23,17 @@ const RULES: Array<[RegExp, string, Rule]> = [
 /** الحد الافتراضي العام: غير مقصود لأي عملية حساسة */
 const DEFAULT: Rule = { limit: 60, windowSec: 60, by: 'ip' };
 
+/**
+ * مضاعِف للبيئات غير الإنتاجية.
+ * فحص من طرف إلى طرف يُنشئ عشرات الطلبات في دقائق، وهو سلوك يجب أن
+ * يوقفه الحدُّ في الإنتاج. فبدل إضعاف القاعدة نفسها — وهو ما يُنسى
+ * ويُشحن — يُرفع السقف بمتغيّر بيئة يبقى واحداً حيث يهمّ.
+ * ويُتجاهل في الإنتاج مهما ضُبط: القاعدة هناك ليست محلّ تفاوض.
+ */
+const FACTOR = process.env.NODE_ENV === 'production'
+  ? 1
+  : Math.max(1, Number(process.env.RATE_LIMIT_FACTOR ?? 1));
+
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
 @Injectable()
@@ -31,7 +42,8 @@ export class RateLimitMiddleware implements NestMiddleware {
     const path: string = req.originalUrl?.split('?')[0] ?? req.url;
     const method: string = req.method;
     const matched = RULES.filter(([re, m]) => m === method && re.test(path)).map(([, , r]) => r);
-    const rules = matched.length ? matched : [DEFAULT];
+    const rules = (matched.length ? matched : [DEFAULT])
+      .map((r) => (FACTOR === 1 ? r : { ...r, limit: r.limit * FACTOR }));
 
     const now = Date.now();
     let strictest: { rule: Rule; bucket: { count: number; resetAt: number } } | null = null;

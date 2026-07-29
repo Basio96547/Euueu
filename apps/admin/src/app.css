@@ -19,7 +19,9 @@ input, select, textarea {
   border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
   min-height: var(--tap-min); width: 100%;
 }
-input:focus-visible, select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+/* ردّ الدعم يحتاج مساحة لا سطراً — والتمديد بيد الوكيل لا مفروض عليه */
+textarea { line-height: 1.6; resize: vertical; min-height: 62px; }
 .hint { font-size: 0.72rem; color: var(--ink-3); }
 .err {
   padding: 10px 12px; border-radius: var(--r-m); font-size: var(--step--1); font-weight: 700;

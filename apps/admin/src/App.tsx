@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, idemKey, fmtSyp, tokens } from './lib/api.js';
+import { clockOk, clockSkewMs, drop, enqueue, flush, purgeStale, queued, type QueuedAction } from './lib/offline.js';
 import { useRoute } from './lib/router.js';
 
 interface AdminOrder {
@@ -238,42 +239,118 @@ function Courier() {
   const [tasks, setTasks] = useState<CourierTask[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const online = navigator.onLine;
+  const [online, setOnline] = useState(navigator.onLine);
+  const [pending, setPending] = useState<QueuedAction[]>(() => queued());
 
   const load = useCallback(async () => {
+    if (!navigator.onLine) return;             // بلا شبكة تبقى القائمة كما هي
     try { setTasks(await api.get<CourierTask[]>('/courier/tasks')); }
     catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'); }
   }, []);
-  useEffect(() => { load(); }, [load]);
 
-  const step = async (no: string, to: string) => {
+  /* التفريغ يمرّ بالطبقة نفسها التي تحمل الرمز، ويحمل مفتاح التفرّد
+     المولَّد وقت الإدراج لا وقت الإرسال — وإلا صار كل إعادة إرسال عمليةً جديدة. */
+  const sync = useCallback(async () => {
+    const r = await flush((a) =>
+      fetch((import.meta.env.VITE_API_URL ?? '/api/v1') + a.path, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': a.idempotencyKey,
+          ...(tokens.access ? { authorization: `Bearer ${tokens.access}` } : {}),
+        },
+        body: JSON.stringify(a.body),
+      }));
+    setPending(queued());
+    if (r.sent) { setMsg(`أُرسل ${r.sent} إجراءً من الطابور`); await load(); }
+    if (r.failed) setErr(`${r.failed} إجراءً رُفض — راجع الطابور أدناه`);
+  }, [load]);
+
+  useEffect(() => {
+    purgeStale();                              // لا يبقى على الجهاز شيء بعد يوم
+    void load();
+    void sync();
+    const up = () => { setOnline(true); void sync(); };
+    const down = () => setOnline(false);
+    const q = (e: Event) => setPending(queued());
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    window.addEventListener('courier:queue', q);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+      window.removeEventListener('courier:queue', q);
+    };
+  }, [load, sync]);
+
+  /* كل إجراء يُسجَّل في الطابور أولاً ثم يُحاوَل إرساله.
+     العكس — الإرسال أولاً والتسجيل عند الفشل — يخسر الإجراء
+     إن مات التطبيق بين المحاولتين، وهو ما يحدث حين تنفد بطارية الجهاز. */
+  const act = (orderNo: string, path: string, body: Record<string, unknown>, label: string) => {
+    if (!clockOk()) {
+      setErr(`ساعة الجهاز منحرفة ${Math.round(clockSkewMs() / 60000)} دقيقة — زامن الوقت قبل التسجيل`);
+      return;
+    }
     setErr(null);
-    try { await api.post(`/courier/orders/${no}/status`, { to }); await load(); }
-    catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحديث'); }
+    enqueue({ orderNo, path, body, label });
+    setPending(queued());
+    setMsg(navigator.onLine ? null : `${label} — محفوظ وسيُرسَل عند عودة الشبكة`);
+    void sync();
   };
 
-  const collect = async (t: CourierTask) => {
-    setErr(null); setMsg(null);
-    try {
-      await api.post(
-        `/courier/orders/${t.orderNo}/collect`,
-        { amountSyp: t.cashDueSyp, occurredAt: new Date().toISOString(), deviceId: 'demo-device' },
-        { 'idempotency-key': idemKey() },   // إعادة الإرسال لا تحصّل مرتين
-      );
-      setMsg(`سُجِّل تحصيل ${fmtSyp(t.cashDueSyp)} للطلب ${t.orderNo}`);
-      await load();
-    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر تسجيل التحصيل'); }
-  };
+  const step = (no: string, to: string) =>
+    act(no, `/courier/orders/${no}/status`, { to }, `${no}: ${STATUS_AR[to] ?? to}`);
+
+  const collect = (t: CourierTask) =>
+    act(t.orderNo, `/courier/orders/${t.orderNo}/collect`,
+      { amountSyp: t.cashDueSyp }, `تحصيل ${fmtSyp(t.cashDueSyp)} — ${t.orderNo}`);
 
   return (
     <>
       {/* مؤشر المزامنة حالة مستمرة لا إشعار عابر (الفصل 20 §20.8) */}
       <div className={`sysbar ${online ? '' : 'sysbar--offline'}`} role="status">
-        {online ? 'مُزامَن — كل العمليات مرسَلة' : 'بلا اتصال — العمليات محفوظة وستُرسَل عند عودة الشبكة'}
+        {online
+          ? pending.length
+            ? `${pending.length} إجراءً في الطابور — جارٍ الإرسال`
+            : 'مُزامَن — كل العمليات مرسَلة'
+          : `بلا اتصال — ${pending.length} إجراءً محفوظ وسيُرسَل عند عودة الشبكة`}
       </div>
+
+      {!clockOk() && (
+        <div className="err">
+          ساعة الجهاز منحرفة عن الخادم {Math.round(clockSkewMs() / 60000)} دقيقة.
+          زامن الوقت من إعدادات الجهاز — الطابع الزمني الخاطئ يفسد التسوية بصمت.
+        </div>
+      )}
 
       {err && <div className="err">{err}</div>}
       {msg && <div className="ok">{msg}</div>}
+
+      {pending.length > 0 && (
+        <div className="card glass">
+          <b style={{ fontSize: 'var(--step--1)' }}>طابور المزامنة</b>
+          {pending.map((a) => (
+            <div className="line" key={a.id}>
+              <span className="mid">
+                <b>{a.label}</b>
+                <small className="muted">
+                  {new Date(a.occurredAt).toLocaleTimeString('ar-SY-u-nu-latn', { hour: '2-digit', minute: '2-digit' })}
+                  {a.attempts > 0 ? ` · ${a.attempts} محاولة` : ''}
+                  {a.lastError ? ` · ${a.lastError}` : ''}
+                </small>
+              </span>
+              {a.attempts >= 3 && (
+                <button className="btn btn--danger" style={{ minHeight: 32, padding: '0 10px' }}
+                  onClick={() => { drop(a.id); setPending(queued()); }}>
+                  أسقِطه
+                </button>
+              )}
+            </div>
+          ))}
+          {online && <Btn label="أرسل الآن" onClick={sync} />}
+        </div>
+      )}
+
       {!tasks.length && <p className="empty">لا مهام اليوم.</p>}
 
       {tasks.map((t) => (
@@ -293,12 +370,12 @@ function Courier() {
           </div>
           <div className="acts">
             <a className="btn btn--ghost" href={`tel:${t.phone}`}>اتصال</a>
-            {t.status === 'PROCESSING' && <Btn label="استلمت الشحنة" onClick={() => step(t.orderNo, 'SHIPPED')} />}
-            {t.status === 'SHIPPED' && <Btn label="خرجت للتوصيل" onClick={() => step(t.orderNo, 'OUT_FOR_DELIVERY')} />}
+            {t.status === 'PROCESSING' && <Btn label="استلمت الشحنة" onClick={async () => step(t.orderNo, 'SHIPPED')} />}
+            {t.status === 'SHIPPED' && <Btn label="خرجت للتوصيل" onClick={async () => step(t.orderNo, 'OUT_FOR_DELIVERY')} />}
             {t.status === 'OUT_FOR_DELIVERY' && (
               <>
-                <Btn label={`حصّلت ${fmtSyp(t.cashDueSyp)}`} onClick={() => collect(t)} />
-                <Btn label="تعذّر التسليم" kind="btn--danger" onClick={() => step(t.orderNo, 'DELIVERY_FAILED')} />
+                <Btn label={`حصّلت ${fmtSyp(t.cashDueSyp)}`} onClick={async () => collect(t)} />
+                <Btn label="تعذّر التسليم" kind="btn--danger" onClick={async () => step(t.orderNo, 'DELIVERY_FAILED')} />
               </>
             )}
           </div>
@@ -308,7 +385,437 @@ function Courier() {
   );
 }
 
-/* ————— بوابة الدخول: اللوحة بلا مصادقة تعني تسليم المتجر لأي عابر ————— */
+
+/* ————— التسويات النقدية ————— */
+interface Settlement {
+  id: string; date: string; collectorType: string;
+  collector: { name: string | null; phone: string } | null;
+  ordersCount: number; expectedSyp: number; collectedSyp: number;
+  varianceSyp: number; commissionSyp: number; netDueSyp: number;
+  state: string; note: string | null;
+}
+const SET_AR: Record<string, string> = {
+  OPEN: 'مفتوحة', RECONCILED: 'مطابَقة', DISPUTED: 'فرق قائم', SETTLED: 'مُقفَلة',
+};
+
+function Settlements() {
+  const [rows, setRows] = useState<Settlement[] | null>(null);
+  const [rep, setRep] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.get<Settlement[]>('/admin/settlements').then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+    api.get('/admin/settlements/report').then(setRep).catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+
+  const act = async (id: string, what: 'reconcile' | 'settle') => {
+    setErr(null);
+    try { await api.post(`/admin/settlements/${id}/${what}`); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإجراء'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {rep && (
+        <div className="grid2">
+          <div className="kpi glass"><small>المحصَّل (7 أيام)</small><b>{fmtSyp(rep.collectedSyp)}</b></div>
+          <div className="kpi glass"><small>صافي المتجر</small><b>{fmtSyp(rep.netDueSyp)}</b></div>
+          <div className="kpi glass"><small>عمولة المندوبين</small><b>{fmtSyp(rep.commissionSyp)}</b></div>
+          <div className="kpi glass"><small>فروق مفتوحة</small><b>{rep.settlements.disputed}</b></div>
+          <div className="kpi glass"><small>مسلَّم / فاشل</small><b>{rep.delivered} / {rep.failed}</b></div>
+          <div className="kpi glass"><small>مسلَّم بلا تحصيل +48س</small><b>{rep.stalePendingPayments}</b></div>
+        </div>
+      )}
+
+      <p className="warnbox">
+        فرق التقريب ليس عجزاً في ذمّة المندوب: هو الفجوة بين الإيراد بالدولار
+        والنقد المقرَّب لأقرب ألف. المطابقة تقيس ما قبضه مقابل ما كان يجب أن يقبضه.
+      </p>
+
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : !rows.length ? <div className="empty"><p>لا تسويات بعد.</p></div>
+        : rows.map((r) => (
+          <div className="qrow glass" key={r.id}>
+            <div className="top">
+              <div>
+                <div className="no tnum">{r.date}</div>
+                <div className="muted">{r.collector?.name ?? '—'} · <span dir="ltr">{r.collector?.phone}</span></div>
+                <div className="muted">{r.ordersCount} طلباً</div>
+              </div>
+              <div style={{ textAlign: 'end' }}>
+                <div className="tnum" style={{ fontWeight: 800 }}>{fmtSyp(r.collectedSyp)}</div>
+                <div className="muted tnum">صافي {fmtSyp(r.netDueSyp)}</div>
+                <span className={`tag ${r.state === 'DISPUTED' ? 'tag--clay' : r.state === 'SETTLED' ? 'tag--jade' : ''}`}>
+                  {SET_AR[r.state] ?? r.state}
+                </span>
+              </div>
+            </div>
+            {r.varianceSyp !== 0 && (
+              <div className="err" style={{ marginBlock: 8 }}>
+                {r.note ?? `فرق ${r.varianceSyp.toLocaleString('en-US')} ل.س`}
+              </div>
+            )}
+            <div className="acts">
+              {r.state === 'OPEN' && <Btn label="طابِق" onClick={() => act(r.id, 'reconcile')} />}
+              {r.state === 'DISPUTED' && <Btn label="أعد المطابقة" kind="btn--ghost" onClick={() => act(r.id, 'reconcile')} />}
+              {r.state === 'RECONCILED' && <Btn label="أقفِل — وصل النقد" onClick={() => act(r.id, 'settle')} />}
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
+/* ————— المرتجعات ————— */
+interface ReturnRow {
+  returnNo: string; orderNo: string; state: string; stateAr: string;
+  reasonAr: string; customer: string; customerNote: string | null;
+  dueSyp: number; imeiMatched: boolean | null; refundState: string | null;
+  requestedAt: string;
+}
+const RET_NEXT: Record<string, Array<[string, string]>> = {
+  REQUESTED: [['APPROVED', 'وافِق'], ['REJECTED', 'ارفض']],
+  APPROVED: [['PICKUP_SCHEDULED', 'جدوِل الاستلام']],
+  PICKUP_SCHEDULED: [['RECEIVED', 'وصل المتجر']],
+  RECEIVED: [['INSPECTED', 'افحص']],
+  INSPECTED: [['COMPLETED', 'أكمِل']],
+};
+
+function Returns() {
+  const [rows, setRows] = useState<ReturnRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [imei, setImei] = useState<Record<string, string>>({});
+
+  const load = useCallback(() => {
+    api.get<ReturnRow[]>('/admin/returns').then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, []);
+  useEffect(load, [load]);
+
+  const move = async (r: ReturnRow, to: string) => {
+    setErr(null); setMsg(null);
+    try {
+      const body: any = { to };
+      if (to === 'REJECTED') {
+        const reason = prompt('سبب الرفض — يُقال للعميل كما هو:');
+        if (!reason) return;
+        body.rejectReason = reason;
+      }
+      if (to === 'INSPECTED') body.imei = imei[r.returnNo] ?? '';
+      await api.post(`/admin/returns/${r.returnNo}/transition`, body);
+      setMsg(`${r.returnNo}: ${to}`); load();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإجراء'); }
+  };
+
+  const disburse = async (r: ReturnRow) => {
+    setErr(null);
+    try { await api.post(`/admin/returns/${r.returnNo}/disburse`, { note: 'نقداً من المعرض' }); setMsg('صُرف المبلغ'); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الصرف'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+      <p className="warnbox">
+        مطابقة IMEI شرط لا مجاملة: جهازٌ غير الذي بِيع قد يكون مسروقاً أو معطوباً
+        أصلاً، وقبولُه يعني أن المتجر اشترى مشكلة شخص آخر نقداً.
+      </p>
+
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : !rows.length ? <div className="empty"><p>لا مرتجعات.</p></div>
+        : rows.map((r) => (
+          <div className="qrow glass" key={r.returnNo}>
+            <div className="top">
+              <div>
+                <div className="no">{r.returnNo}</div>
+                <div className="muted">{r.orderNo} · {r.customer}</div>
+                <div className="muted">{r.reasonAr}{r.customerNote ? ` — ${r.customerNote}` : ''}</div>
+              </div>
+              <div style={{ textAlign: 'end' }}>
+                <div className="tnum" style={{ fontWeight: 800 }}>{fmtSyp(r.dueSyp)}</div>
+                <span className={`tag ${r.state === 'REJECTED' ? 'tag--clay' : r.state === 'COMPLETED' ? 'tag--jade' : ''}`}>
+                  {r.stateAr}
+                </span>
+                {r.imeiMatched === true && <div className="muted">IMEI مطابق ✓</div>}
+              </div>
+            </div>
+
+            {r.state === 'RECEIVED' && (
+              <div className="field" style={{ marginBlock: 8 }}>
+                <label htmlFor={`i-${r.returnNo}`}>IMEI الجهاز المُعاد</label>
+                <input id={`i-${r.returnNo}`} dir="ltr" inputMode="numeric"
+                  value={imei[r.returnNo] ?? ''}
+                  onChange={(e) => setImei((m) => ({ ...m, [r.returnNo]: e.target.value }))} />
+              </div>
+            )}
+
+            <div className="acts">
+              {(RET_NEXT[r.state] ?? []).map(([to, label]) => (
+                <Btn key={to} label={label} kind={to === 'REJECTED' ? 'btn--danger' : ''}
+                  onClick={() => move(r, to)} />
+              ))}
+              {r.state === 'COMPLETED' && r.refundState === 'APPROVED' && (
+                <Btn label="اصرف النقد" onClick={() => disburse(r)} />
+              )}
+              {r.refundState === 'DISBURSED' && <span className="tag tag--jade">صُرف</span>}
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
+/* ————— الدعم ————— */
+interface TicketRow {
+  ticketNo: string; status: string; statusAr: string; priority: string;
+  contactReason: string; subject: string | null; phone: string;
+  orderNo: string | null; lastMessage: string; overdue: boolean;
+}
+
+function Tickets() {
+  const [rows, setRows] = useState<TicketRow[] | null>(null);
+  const [m, setM] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [reply, setReply] = useState<Record<string, string>>({});
+
+  const load = useCallback(() => {
+    api.get<TicketRow[]>('/admin/tickets').then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+    api.get('/admin/tickets/metrics').then(setM).catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+
+  const send = async (t: TicketRow, internal: boolean) => {
+    const body = reply[t.ticketNo]?.trim();
+    if (!body) return;
+    setErr(null);
+    try {
+      await api.post(`/admin/tickets/${t.ticketNo}/reply`, { body, internal });
+      setReply((r) => ({ ...r, [t.ticketNo]: '' })); load();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإرسال'); }
+  };
+
+  const move = async (t: TicketRow, to: string) => {
+    try { await api.post(`/admin/tickets/${t.ticketNo}/transition`, { to }); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإجراء'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {m && (
+        <div className="grid2">
+          <div className="kpi glass"><small>مفتوحة</small><b>{m.open}</b></div>
+          <div className="kpi glass"><small>تجاوزت المهلة</small><b>{m.slaBreached}</b></div>
+          <div className="kpi glass"><small>وسيط أول رد</small><b>{m.frtMedianMinutes} د</b></div>
+          <div className="kpi glass"><small>رضا العملاء</small><b>{m.csatAverage ?? '—'}</b></div>
+        </div>
+      )}
+      {m?.topReasons?.length > 0 && (
+        <p className="warnbox">
+          أكثر أسباب التواصل: {m.topReasons.map((r: any) => `${r.reason} (${r.count})`).join(' · ')} —
+          تكرار سبب واحد مشكلةُ منتج لا مشكلةُ وكيل.
+        </p>
+      )}
+
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : !rows.length ? <div className="empty"><p>لا تذاكر مفتوحة.</p></div>
+        : rows.map((t) => (
+          <div className="qrow glass" key={t.ticketNo}>
+            <div className="top">
+              <div>
+                <div className="no">{t.ticketNo}</div>
+                <div className="muted">{t.subject ?? t.contactReason} · <span dir="ltr">{t.phone}</span></div>
+                <div className="muted">{t.lastMessage}</div>
+              </div>
+              <div style={{ textAlign: 'end' }}>
+                <span className={`tag ${t.priority === 'URGENT' || t.overdue ? 'tag--clay' : ''}`}>{t.statusAr}</span>
+                {t.overdue && <div className="clock" data-urgent>تجاوزت مهلة أول رد</div>}
+              </div>
+            </div>
+            <div className="field" style={{ marginBlock: 8 }}>
+              <textarea rows={2} value={reply[t.ticketNo] ?? ''} placeholder="اكتب رداً أو ملاحظة داخلية"
+                onChange={(e) => setReply((r) => ({ ...r, [t.ticketNo]: e.target.value }))} />
+            </div>
+            <div className="acts">
+              <Btn label="رُدّ على العميل" onClick={() => send(t, false)} />
+              <Btn label="ملاحظة داخلية" kind="btn--ghost" onClick={() => send(t, true)} />
+              {t.status !== 'RESOLVED' && <Btn label="حُلَّت" kind="btn--ghost" onClick={() => move(t, 'RESOLVED')} />}
+              {t.status !== 'ESCALATED' && <Btn label="صعِّد" kind="btn--danger" onClick={() => move(t, 'ESCALATED')} />}
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
+/* ————— الكوبونات ————— */
+interface CouponRow {
+  code: string; type: string; value: number; maxDiscountUsdCents: number | null;
+  minSubtotalUsdCents: number; usedCount: number; usageLimitTotal: number | null;
+  startsAt: string; endsAt: string; isActive: boolean; live: boolean;
+}
+const CTYPE_AR: Record<string, string> = {
+  PERCENTAGE: 'نسبة مئوية', FIXED_AMOUNT: 'مبلغ ثابت', FREE_SHIPPING: 'شحن مجاني',
+};
+
+function Coupons() {
+  const [rows, setRows] = useState<CouponRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [f, setF] = useState({ code: '', type: 'PERCENTAGE', value: '10', maxDiscountUsdCents: '', minSubtotalUsdCents: '0', days: '30' });
+
+  const load = useCallback(() => {
+    api.get<CouponRow[]>('/admin/coupons').then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, []);
+  useEffect(load, [load]);
+
+  const create = async () => {
+    setErr(null);
+    try {
+      await api.post('/admin/coupons', {
+        code: f.code, type: f.type, value: Number(f.value),
+        maxDiscountUsdCents: f.maxDiscountUsdCents ? Number(f.maxDiscountUsdCents) : null,
+        minSubtotalUsdCents: Number(f.minSubtotalUsdCents),
+        startsAt: new Date().toISOString(),
+        endsAt: new Date(Date.now() + Number(f.days) * 86_400_000).toISOString(),
+      });
+      setF((x) => ({ ...x, code: '' })); load();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإنشاء'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      <p className="warnbox">
+        القيم كلها بالدولار (النسبة بالمئة، والمبالغ بالسنتات). خصمٌ محرَّر بالليرة
+        يفقد معناه بعد أول قفزة صرف — «خصم 50 ألف» كان ربع الجهاز فصار عُشره.
+      </p>
+
+      <div className="card glass">
+        <div className="grid2">
+          <div className="field">
+            <label htmlFor="cc">الرمز</label>
+            <input id="cc" dir="ltr" value={f.code} placeholder="SHAM10"
+              onChange={(e) => setF({ ...f, code: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="ct">النوع</label>
+            <select id="ct" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+              {Object.entries(CTYPE_AR).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="cv">{f.type === 'PERCENTAGE' ? 'النسبة (1–100)' : 'المبلغ بالسنتات'}</label>
+            <input id="cv" dir="ltr" inputMode="numeric" value={f.value}
+              onChange={(e) => setF({ ...f, value: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="cm">سقف الخصم (سنت)</label>
+            <input id="cm" dir="ltr" inputMode="numeric" value={f.maxDiscountUsdCents}
+              onChange={(e) => setF({ ...f, maxDiscountUsdCents: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="cn">حد أدنى للسلة (سنت)</label>
+            <input id="cn" dir="ltr" inputMode="numeric" value={f.minSubtotalUsdCents}
+              onChange={(e) => setF({ ...f, minSubtotalUsdCents: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="cd">مدة الصلاحية (يوم)</label>
+            <input id="cd" dir="ltr" inputMode="numeric" value={f.days}
+              onChange={(e) => setF({ ...f, days: e.target.value })} />
+          </div>
+        </div>
+        <Btn label="أنشئ الكوبون" disabled={!f.code} onClick={create} />
+      </div>
+
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : !rows.length ? <div className="empty"><p>لا كوبونات.</p></div>
+        : rows.map((c) => (
+          <div className="card glass" key={c.code}>
+            <div className="line" style={{ alignItems: 'start' }}>
+              <span className="mid">
+                <b className="tnum">{c.code}</b>
+                <small className="muted">
+                  {CTYPE_AR[c.type]} · {c.type === 'PERCENTAGE' ? `${c.value}%` : `${(c.value / 100).toFixed(2)}$`}
+                  {c.maxDiscountUsdCents ? ` · سقف ${(c.maxDiscountUsdCents / 100).toFixed(2)}$` : ''}
+                  {c.minSubtotalUsdCents ? ` · حد أدنى ${(c.minSubtotalUsdCents / 100).toFixed(2)}$` : ''}
+                </small>
+                <small className="muted">
+                  استُخدم {c.usedCount}{c.usageLimitTotal ? ` من ${c.usageLimitTotal}` : ''} ·
+                  ينتهي {new Date(c.endsAt).toLocaleDateString('ar-SY-u-nu-latn')}
+                </small>
+              </span>
+              <span className={`tag ${c.live ? 'tag--jade' : 'tag--clay'}`} style={{ flexShrink: 0 }}>
+                {c.live ? 'ساري' : c.isActive ? 'خارج المدة' : 'موقوف'}
+              </span>
+            </div>
+            <Btn label={c.isActive ? 'أوقِفه' : 'فعِّله'} kind="btn--ghost"
+              onClick={async () => { await api.post(`/admin/coupons/${c.code}/toggle`, { isActive: !c.isActive }); load(); }} />
+          </div>
+        ))}
+    </>
+  );
+}
+
+/* ————— طابور الإشراف ————— */
+function Moderation() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.get<any[]>('/admin/moderation/reviews').then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, []);
+  useEffect(load, [load]);
+
+  const act = async (id: string, to: string) => {
+    setErr(null);
+    try {
+      const body: any = { to };
+      if (to === 'REJECTED') {
+        const reason = prompt('سبب الرفض:');
+        if (!reason) return;
+        body.rejectReason = reason;
+      }
+      await api.post(`/admin/moderation/reviews/${id}`, body); load();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإجراء'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      <p className="warnbox">
+        الراية تُرفع آلياً ولا تَرفض: الرفض الآلي يقتل مراجعات صادقة غاضبة،
+        والقرار يبقى لإنسان يقرأ.
+      </p>
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : !rows.length ? <div className="empty"><p>لا شيء في طابور الإشراف.</p></div>
+        : rows.map((r) => (
+          <div className="qrow glass" key={r.id}>
+            <div className="top">
+              <div>
+                <div className="no">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</div>
+                <div className="muted">{r.product} · {r.author}</div>
+                <div style={{ marginBlockStart: 6 }}>{r.title ? <b>{r.title} — </b> : null}{r.body}</div>
+              </div>
+              {r.flagged && <span className="tag tag--clay" style={{ flexShrink: 0 }}>مُرفَّعة</span>}
+            </div>
+            <div className="acts">
+              <Btn label="انشرها" onClick={() => act(r.id, 'PUBLISHED')} />
+              <Btn label="ارفضها" kind="btn--danger" onClick={() => act(r.id, 'REJECTED')} />
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
 /* ————— الكتالوج: تحويل المنتجات التجريبية إلى حقيقية ————— */
 interface AdminProduct {
   slug: string; name: { ar: string; en?: string }; status: string; isDemo: boolean;
@@ -498,7 +1005,9 @@ export default function App() {
   useEffect(() => { loadFx(); }, [loadFx, tick]);
 
   const tabs: Array<[string, string]> = [
-    ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/catalog', 'الكتالوج'],
+    ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/settlements', 'التسويات'],
+    ['/returns', 'المرتجعات'], ['/tickets', 'الدعم'], ['/moderation', 'الإشراف'],
+    ['/catalog', 'الكتالوج'], ['/coupons', 'الكوبونات'],
     ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'],
   ];
 
@@ -526,6 +1035,11 @@ export default function App() {
         </div>
 
         {path === '/orders' ? <OrdersQueue onChanged={() => setTick((t) => t + 1)} />
+          : path === '/settlements' ? <Settlements />
+          : path === '/returns' ? <Returns />
+          : path === '/tickets' ? <Tickets />
+          : path === '/moderation' ? <Moderation />
+          : path === '/coupons' ? <Coupons />
           : path === '/catalog' ? <Catalog />
           : path === '/fx' ? <FxScreen fx={fx} reload={() => setTick((t) => t + 1)} />
           : path === '/courier' ? <Courier />

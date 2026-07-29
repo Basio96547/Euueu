@@ -40,6 +40,6 @@ export const Errors = {
     new ApiError(HttpStatus.CONFLICT, 'STOCK_INVARIANT_VIOLATION', {
       ar: 'انحراف في المخزون — رُفضت العملية كاملة', en: 'Stock invariant violated — operation rejected',
     }, { detail }),
-  badRequest: (code: string, ar: string, en: string) =>
-    new ApiError(HttpStatus.BAD_REQUEST, code, { ar, en }),
+  badRequest: (code: string, ar: string, en: string, details?: unknown) =>
+    new ApiError(HttpStatus.BAD_REQUEST, code, { ar, en }, details),
 };
