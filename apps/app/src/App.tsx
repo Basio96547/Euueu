@@ -442,6 +442,279 @@ function SignInCard({ onDone }: { onDone: (me: Me) => void }) {
   );
 }
 
+
+/* ————— أقسام الحساب: العناوين والرغبات والكفالات والتنبيهات والجلسات ————— */
+
+const GOVS: Array<[string, string]> = [
+  ['DAMASCUS', 'دمشق'], ['RIF_DIMASHQ', 'ريف دمشق'], ['ALEPPO', 'حلب'],
+  ['HOMS', 'حمص'], ['HAMA', 'حماة'], ['LATAKIA', 'اللاذقية'], ['TARTUS', 'طرطوس'],
+];
+
+function Addresses() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [f, setF] = useState({
+    label: '', recipientName: '', governorate: 'DAMASCUS', city: '',
+    neighborhood: '', street: '', landmark: '', phone: '+963',
+  });
+
+  const load = () => api.get<any[]>('/me/addresses').then(setRows).catch(() => setRows([]));
+  useEffect(() => { load(); }, []);
+
+  return (
+    <section>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>عناويني</h2>
+      {err && <div className="err">{err}</div>}
+
+      {(rows ?? []).map((a) => (
+        <div key={a.id} className="card glass">
+          <div className="row">
+            <b>{a.label || a.recipientName}</b>
+            {a.isDefault && <span className="tag">الافتراضي</span>}
+          </div>
+          <div className="muted" style={{ fontSize: 'var(--step--1)', lineHeight: 1.7 }}>
+            {GOVS.find(([v]) => v === a.governorate)?.[1] ?? a.governorate} · {a.city} · {a.neighborhood}
+            {a.street ? ` · ${a.street}` : ''}<br />
+            المعلم: {a.landmark}
+          </div>
+          <div className="row">
+            {!a.isDefault && (
+              <button className="btn btn--ghost" onClick={async () => {
+                await api.post(`/me/addresses/${a.id}/default`); load();
+              }}>اجعله الافتراضي</button>
+            )}
+            <button className="btn btn--ghost" onClick={async () => {
+              await api.del(`/me/addresses/${a.id}`); load();
+            }}>احذف</button>
+          </div>
+        </div>
+      ))}
+
+      {!adding
+        ? <button className="btn btn--ghost" onClick={() => setAdding(true)}>+ عنوان جديد</button>
+        : (
+          <div className="card glass">
+            <div className="field"><label htmlFor="al">التسمية (بيت، عمل…)</label>
+              <input id="al" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></div>
+            <div className="field"><label htmlFor="an">اسم المستلم</label>
+              <input id="an" value={f.recipientName} onChange={(e) => setF({ ...f, recipientName: e.target.value })} /></div>
+            <div className="field"><label htmlFor="ag">المحافظة</label>
+              <select id="ag" value={f.governorate} onChange={(e) => setF({ ...f, governorate: e.target.value })}>
+                {GOVS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select></div>
+            <div className="field"><label htmlFor="ac">المدينة</label>
+              <input id="ac" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></div>
+            <div className="field"><label htmlFor="ah">الحي</label>
+              <input id="ah" value={f.neighborhood} onChange={(e) => setF({ ...f, neighborhood: e.target.value })} /></div>
+            <div className="field"><label htmlFor="as">الشارع</label>
+              <input id="as" value={f.street} onChange={(e) => setF({ ...f, street: e.target.value })} /></div>
+            <div className="field"><label htmlFor="am">المعلم القريب</label>
+              <input id="am" value={f.landmark} onChange={(e) => setF({ ...f, landmark: e.target.value })} />
+              <span className="hint">إلزامي — المندوب يصل به لا برقم البناء</span></div>
+            <div className="field"><label htmlFor="ap">رقم الجوال</label>
+              <input id="ap" dir="ltr" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
+            <div className="row">
+              <button className="btn" onClick={async () => {
+                setErr(null);
+                try { await api.post('/me/addresses', f); setAdding(false); load(); }
+                catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الحفظ'); }
+              }}>احفظ</button>
+              <button className="btn btn--ghost" onClick={() => setAdding(false)}>إلغاء</button>
+            </div>
+          </div>
+        )}
+    </section>
+  );
+}
+
+function Wishlist() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const load = () => api.get<any[]>('/me/wishlist').then(setRows).catch(() => setRows([]));
+  useEffect(() => { load(); }, []);
+
+  if (rows === null) return null;
+  return (
+    <section>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>قائمة الرغبات</h2>
+      {rows.length === 0
+        ? <p className="muted">لا شيء محفوظ بعد.</p>
+        : (
+          <div className="card glass">
+            {rows.map((w) => (
+              <div key={w.sku} className="line">
+                <span className="mid">
+                  <b>{w.name}</b>
+                  <small className="muted">
+                    {w.available > 0 ? `متوفر (${w.available})` : 'نفد'} ·{' '}
+                    {w.priceSyp ? fmtSyp(w.priceSyp) : `${(w.priceUsdCents / 100).toFixed(2)} $`}
+                  </small>
+                </span>
+                <button className="btn btn--ghost" onClick={async () => {
+                  await api.del(`/me/wishlist/${w.sku}`); load();
+                }}>احذف</button>
+              </div>
+            ))}
+          </div>
+        )}
+    </section>
+  );
+}
+
+function Warranties({ phone }: { phone: string }) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [imei, setImei] = useState('');
+  const [desc, setDesc] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = () => api.get<any[]>(`/me/warranty-claims?phone=${encodeURIComponent(phone)}`)
+    .then(setRows).catch(() => setRows([]));
+  useEffect(() => { load(); }, [phone]);
+
+  return (
+    <section>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>الكفالة والصيانة</h2>
+      {msg && <div className="err">{msg}</div>}
+
+      {(rows ?? []).map((c) => (
+        <div key={c.claimNo} className="card glass">
+          <div className="row">
+            <b className="tnum">{c.claimNo}</b>
+            <span className="tag">{CLAIM_STATE_AR[c.state] ?? c.state}</span>
+          </div>
+          <div style={{ fontSize: 'var(--step--1)' }}>{c.description}</div>
+          {c.imei && <div className="muted tnum" dir="ltr" style={{ fontSize: '0.72rem' }}>{c.imei}</div>}
+        </div>
+      ))}
+
+      <div className="card glass">
+        <b>افتح مطالبة صيانة</b>
+        <div className="field"><label htmlFor="wi">رقم IMEI</label>
+          <input id="wi" dir="ltr" value={imei} onChange={(e) => setImei(e.target.value)} />
+          <span className="hint">اطلب ‎*#06#‎ على الجهاز ليظهر الرقم</span></div>
+        <div className="field"><label htmlFor="wd">وصف العطل</label>
+          <textarea id="wd" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)}
+            style={{ width: '100%' }} /></div>
+        <p className="muted" style={{ fontSize: '0.72rem' }}>
+          خذ نسخة احتياطية قبل تسليم الجهاز: الصيانة قد تستلزم مسح الذاكرة.
+        </p>
+        <button className="btn" onClick={async () => {
+          setMsg(null);
+          try {
+            await api.post('/me/warranty-claims', { imei: imei.trim(), description: desc, phone });
+            setImei(''); setDesc(''); load();
+          } catch (e) { setMsg(e instanceof ApiError ? e.messageAr : 'تعذّر فتح المطالبة'); }
+        }}>افتح المطالبة</button>
+      </div>
+    </section>
+  );
+}
+
+const CLAIM_STATE_AR: Record<string, string> = {
+  OPENED: 'مفتوحة', RECEIVED: 'استُلم الجهاز', DIAGNOSING: 'قيد الفحص',
+  DECISION: 'قرار', IN_REPAIR: 'قيد الإصلاح', TESTING: 'اختبار',
+  READY: 'جاهز للتسليم', CLOSED: 'مغلقة', REJECTED: 'مرفوضة',
+};
+
+const PREF_AR: Record<string, string> = {
+  orders: 'حالة الطلب', delivery: 'التوصيل والمندوب', promos: 'العروض والخصومات',
+  priceAlerts: 'انخفاض السعر', stockAlerts: 'عودة التوفّر',
+};
+
+function Preferences() {
+  const [prefs, setPrefs] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => { api.get<Record<string, boolean>>('/me/notification-prefs').then(setPrefs).catch(() => {}); }, []);
+  if (!prefs) return null;
+
+  return (
+    <section>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>تفضيلات الإشعار</h2>
+      <div className="card glass">
+        {Object.entries(prefs).map(([k, v]) => (
+          <label key={k} className="line" style={{ cursor: 'pointer' }}>
+            <span className="mid">{PREF_AR[k] ?? k}</span>
+            <input type="checkbox" checked={v} onChange={async (e) => {
+              const next = { ...prefs, [k]: e.target.checked };
+              setPrefs(next);
+              await api.post('/me/notification-prefs', { [k]: e.target.checked }).catch(() => setPrefs(prefs));
+            }} />
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Sessions() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const load = () => api.get<any[]>('/me/sessions').then(setRows).catch(() => setRows([]));
+  useEffect(() => { load(); }, []);
+  if (rows === null) return null;
+
+  return (
+    <section>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>أجهزتي</h2>
+      <p className="muted" style={{ fontSize: 'var(--step--1)', lineHeight: 1.7 }}>
+        كل دخول جهازٌ في هذه القائمة. من ضاع هاتفه يُسقط ذلك الجهاز وحده
+        بدل إخراج نفسه من كل أجهزته.
+      </p>
+      <div className="card glass">
+        {rows.map((s) => (
+          <div key={s.id} className="line">
+            <span className="mid">
+              <b style={{ fontSize: 'var(--step--1)' }}>{s.current ? 'هذا الجهاز' : 'جهاز آخر'}</b>
+              <small className="muted" dir="ltr">{(s.userAgent ?? '').slice(0, 46) || '—'}</small>
+            </span>
+            {!s.current && (
+              <button className="btn btn--ghost" onClick={async () => {
+                await api.del(`/me/sessions/${s.id}`); load();
+              }}>أسقطه</button>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DeleteAccount() {
+  const [state, setState] = useState<any>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => api.get<any>('/me/deletion').then(setState).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  return (
+    <section>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>حذف الحساب</h2>
+      {msg && <div className="err">{msg}</div>}
+      <div className="card glass">
+        {state?.state === 'PENDING' ? (
+          <>
+            <p>طلب الحذف مسجَّل، ويُنفَّذ في {fmtDate(state.dueAt)}.</p>
+            <button className="btn btn--ghost" onClick={async () => {
+              await api.del('/me/deletion'); load();
+            }}>ألغِ الطلب</button>
+          </>
+        ) : (
+          <>
+            <p className="muted" style={{ fontSize: 'var(--step--1)', lineHeight: 1.8 }}>
+              تُحذف عناوينك ورغباتك وتنبيهاتك وجلساتك خلال ثلاثين يوماً. وتبقى سجلات
+              الفواتير للمدة المحاسبية الإلزامية: فاتورةٌ صدرت لا تُمحى.
+              وأي مطالبة كفالة سارية تبقى قائمة حتى تُغلق — حفظاً لحقّك أنت.
+            </p>
+            <button className="btn btn--ghost" onClick={async () => {
+              if (!confirm('تأكيد طلب حذف الحساب؟')) return;
+              setMsg(null);
+              try { await api.post('/me/deletion', {}); load(); }
+              catch (e) { setMsg(e instanceof ApiError ? e.messageAr : 'تعذّر الطلب'); }
+            }}>اطلب حذف حسابي</button>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function AccountPage({ nav }: { nav: (to: string) => void }) {
   const [me, setMe] = useState<Me | null>(null);
   const [orders, setOrders] = useState<MyOrder[] | null>(null);
@@ -512,6 +785,13 @@ function AccountPage({ nav }: { nav: (to: string) => void }) {
             ))}
           </div>
         )}
+
+      <Addresses />
+      <Wishlist />
+      <Warranties phone={me.phone} />
+      <Preferences />
+      <Sessions />
+      <DeleteAccount />
     </div>
   );
 }

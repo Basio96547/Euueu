@@ -2,130 +2,147 @@
 
 # النشر على Cloudflare
 
-## منشور فعلياً على الحساب (عبر deploy.yml)
+## البنية: Worker واحد لكل شيء
 
-| الواجهة | الرابط | تعمل؟ |
+كانت أربعة تطبيقات في أربعة أماكن، ونتيجتها أن `/app/cart` و`/search` ترجعان
+404 على النطاق الحيّ لأن تطبيق السلة Worker منفصل بلا مسار على النطاق، وأن
+`api.talisham.com` لا خادم خلفه أصلاً. الآن Worker واحد يخدم الأربعة:
+
+| المسار | ما يُخدَم | المصدر |
 | --- | --- | --- |
-| المتجر (Astro) | https://talisham.basil0552106933.workers.dev | نعم كاملاً — صفحاته ساكنة لا تحتاج خادماً |
-| تطبيق الزبون | https://talisham-app.basil0552106933.workers.dev | الشكل فقط — السلة تحتاج الواجهة البرمجية |
-| لوحة الإدارة | https://talisham-admin.basil0552106933.workers.dev | الشكل فقط — الدخول يحتاج الواجهة البرمجية |
+| `/api/v1/*` | الواجهة البرمجية (Hono + Prisma) | `apps/api/src/worker.ts` |
+| `/app/*` | تطبيق السلة والحساب | `apps/app` |
+| `/admin/*` | لوحة التحكم | `apps/admin` |
+| ما عداه | الموقع الساكن (62 صفحة) | `apps/site` |
 
-نُشرت الثلاثة تلقائياً عبر `.github/workflows/deploy.yml` بعد ضبط `CLOUDFLARE_API_TOKEN` و`CLOUDFLARE_ACCOUNT_ID`. أي `push` جديد إلى `main`، أو تشغيل يدوي من تبويب Actions، يُحدّثها. التطبيقان (`app`, `admin`) يناديان `/api/v1` وليس خلفهما خادم بعد، فيظهران رسالة خطأ عند أول طلب — هذا متوقَّع إلى أن تُستضاف الواجهة البرمجية (راجع «استضافة الواجهة البرمجية مجاناً» أدناه).
-
-## معاينة فورية بلا تسجيل دخول
-
-للنظر إلى الواجهة من الجوال دون ربط حساب:
+وأصلٌ واحد يعني: بلا CORS، وبلا نطاق ثانٍ، وبلا رمز دخول يعبر أصلين.
 
 ```bash
-pnpm --filter @talisham/site run build
-cd apps/site && npx wrangler deploy --temporary
+pnpm run build:worker     # يبني الأربعة ويجمعها في dist-worker/
+npx wrangler deploy       # أو ادفع إلى main فيتولّى deploy.yml النشر
 ```
 
-يُنشر على **حساب معاينة مؤقت من Cloudflare لا على حسابك** — فلا يظهر في لوحتك،
-ولا يقبل نطاقاً خاصاً، ويزول بعد مدة. للمعاينة فقط، لا للإنتاج.
+## ما ينقص لتشتغل الواجهة البرمجية: قاعدة بيانات
 
-**والنطاق الفرعي يتغيّر مع كل حساب معاينة جديد** — لا تعتمد على رابط
-حفظته أمس، بل أعد النشر واقرأ الرابط من مخرجات الأمر.
+الـWorker يعمل الآن، والصفحات الساكنة والتطبيقان يُخدَمون منه. لكن أي شاشة
+تحتاج بيانات (السلة، الدخول، الطلبات، اللوحة) تحتاج **PostgreSQL يصل إليه
+الـWorker عبر TCP**. وبلا `DATABASE_URL` يردّ المسار بـ`503` ورسالةٍ صريحة
+تقول ما ينقص بالضبط — لا فشلاً غامضاً.
 
-### المعاينة المنشورة حالياً
+### لماذا PostgreSQL لا D1
 
-| الواجهة | الرابط | تعمل؟ |
+D1 قاعدة SQLite داخل Cloudflare، وهي مغرية لأن كل شيء يبقى في مكان واحد.
+والثمن الذي لا يُدفع مرة واحدة:
+
+- **لا معاملات تفاعلية.** محوّل D1 في Prisma لا يدعم `$transaction` بدالّة.
+  ومنطق المخزون كله مبني عليها: اقرأ المتاح ← اخصم ← اكتب في الدفتر، في
+  معاملة واحدة. فكّها يعيد بالضبط العيوب الأربعة التي كشفها الفحص وأُصلحت:
+  ثلاثة زبائن يظنّون آخر جهاز لهم، وخصمٌ مضاعف، وبيعُ ما سُلّم فعلاً.
+- **لا محفِّزات كالمكتوبة.** محفِّز تطابق المخزون هو الحارس الأخير الذي رفض
+  «انحراف مخزون: 1 وحدة بحالة IN_STOCK مقابل on_hand = 8». نقله إلى الشيفرة
+  يجعله رجاءً لا قيداً.
+- **لا أنواع معدودة.** ثلاثون `ENUM` في 43 نموذجاً تصير نصوصاً حرّة.
+
+فإن أُريد D1 رغم ذلك فهو قرارٌ يُتخذ بعِلم: يعني إعادة كتابة طبقة البيانات
+وفقدان الثوابت التي تمنع بيع ما لا يُملَك.
+
+### الخيار العملي: Postgres مُدار بطبقة مجانية
+
+أي مزوّد يعطي رابط اتصال TCP يعمل — Neon أو Supabase أو Prisma Postgres.
+الخطوات واحدة:
+
+```bash
+# 1) أنشئ القاعدة عند المزوّد وانسخ رابط الاتصال
+# 2) طبّق الهجرات عليها من جهازك
+cd apps/api
+DATABASE_URL="postgresql://…" npx prisma migrate deploy
+DATABASE_URL="postgresql://…" pnpm run seed        # اختياري: بذرة الكتالوج
+
+# 3) اضبط السرّ على الـWorker (لا يُكتب في أي ملف)
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put JWT_SECRET                  # نصّ عشوائي طويل
+```
+
+بعدها `https://talisham.com/api/v1/ready` يردّ `200`.
+
+**Hyperdrive لاحقاً:** الـWorker يفتح اتصالاً لكل طلب (كائنات الشبكة في
+workerd لا تعبر حدود الطلب، وتجميعها بينها يُعلِّق الطلب التالي). لتقليل زمن
+الاتصال أنشئ ربط Hyperdrive واجعل `DATABASE_URL` يشير إليه — بلا تغيير سطر
+واحد في الشيفرة.
+
+## الأسرار
+
+| السرّ | لماذا | بدونه |
 | --- | --- | --- |
-| المتجر (Astro) | https://talisham.young-quarter.workers.dev | نعم كاملاً — صفحاته ساكنة لا تحتاج خادماً |
-| تطبيق الزبون | https://talisham-app.young-quarter.workers.dev | الشكل فقط — السلة تحتاج الواجهة البرمجية |
-| لوحة الإدارة | https://talisham-admin.young-quarter.workers.dev | الشكل فقط — الدخول يحتاج الواجهة البرمجية |
-
-التطبيقان يناديان `/api/v1` وليس خلفهما خادم بعد، فيظهران رسالة خطأ عند أول طلب.
-هذا متوقَّع: راجع «ما لا يُنشر على Workers» أدناه.
-
-## النشر على حسابك
-
-## مرة واحدة
+| `DATABASE_URL` | القاعدة | كل مسار بيانات يردّ 503 |
+| `JWT_SECRET` | توقيع الجلسات | مفتاح تطوير معروف — لا يُترك في الإنتاج |
+| `WHATSAPP_PROVIDER_TOKEN` + `WHATSAPP_PHONE_ID` | رسائل واتساب الفعلية | الرسائل تُكتب في السجل بدل إرسالها |
+| `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` | إشعارات المتصفح | زر التفعيل يعمل ولا يصل شيء |
+| `S3_ENDPOINT` + مفاتيحه (أو ربط R2) | صور المنتجات | الرفع يفشل: لا قرص محلياً في Worker |
 
 ```bash
-npx wrangler login          # يفتح المتصفح ويربط حسابك
+npx wrangler secret put WHATSAPP_PROVIDER_TOKEN
 ```
 
-ثم من جذر المستودع:
+## المهام المجدوَلة
+
+لا مؤقّتات داخل Worker، فما كان `setInterval` صار Cron كل دقيقة
+(`triggers.crons` في `wrangler.jsonc`):
+
+| المهمة | الدورية | لماذا تهمّ |
+| --- | --- | --- |
+| كنس الحجوزات المنتهية | كل دقيقة | بلاها تحبس كل سلّة مهجورة بضاعتها فيقول المتجر «نفدت» ورفّه ممتلئ |
+| تنبيهات التوفّر والسعر | كل خمس دقائق | رسالة واحدة لكل اشتراك ثم يُغلق |
+| تنفيذ طلبات حذف الحساب المستحقّة | يومياً | مهلة الثلاثين يوماً المعلنة في سياسة الخصوصية |
+
+## النطاقات
+
+مضبوطة في `wrangler.jsonc` كنطاقات مخصّصة على الـWorker نفسه:
+`talisham.com` و`www.talisham.com` و`api.talisham.com`.
+
+`api.talisham.com` يبقى مقبولاً للتوافق مع أي عميل قديم، والعملاء المبنيّون
+الآن ينادون `/api/v1` على الأصل نفسه.
+
+## التطوير محلياً
 
 ```bash
-pnpm --filter @talisham/site run build
-cd apps/site && npx wrangler deploy
+# الموقع وحده — يعمل من بذرة الكتالوج بلا قاعدة بيانات
+pnpm --filter @talisham/site dev
+
+# الواجهة على Node (نفس شيفرة الـWorker)
+pnpm --filter @talisham/api dev
+
+# الـWorker كاملاً كما يعمل في الإنتاج
+pnpm run build:worker && pnpm run worker:dev
 ```
 
-يصدر رابط فوري بالشكل `https://talisham.<اسم-حسابك>.workers.dev`.
+للـWorker محلياً أنشئ `.dev.vars` (مُستبعَد من Git):
 
-## النطاق الخاص
+```
+DATABASE_URL=postgresql://postgres@127.0.0.1:5432/talisham
+JWT_SECRET=dev_only
+NODE_ENV=development
+RATE_LIMIT_FACTOR=100
+```
 
-بعد إضافة `talisham.com` إلى حسابك في Cloudflare، أزل التعليق عن سطر `routes` في `apps/site/wrangler.jsonc`، ثم أعد النشر. والأمر نفسه لـ `admin.talisham.com` في `apps/admin/wrangler.jsonc`.
+`RATE_LIMIT_FACTOR` يرفع سقف الحدود في التطوير وحده — ويُتجاهَل في الإنتاج
+مهما ضُبط، فالقاعدة هناك ليست محلّ تفاوض.
 
-## النشر الآلي
+## الفحص من طرف إلى طرف على الـWorker
 
-ملف `.github/workflows/deploy.yml` ينشر التطبيقات الثلاثة عند كل دفع إلى `main`. يحتاج سرَّين في إعدادات المستودع على GitHub:
+```bash
+API_BASE=http://127.0.0.1:8787/api/v1 pnpm run test:e2e
+```
 
-| السر | من أين |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | لوحة Cloudflare ← My Profile ← API Tokens ← Edit Cloudflare Workers |
-| `CLOUDFLARE_ACCOUNT_ID` | يظهر في عنوان لوحة التحكم أو بالأمر `npx wrangler whoami` |
-
-وفيه بوابة أداء تفشل البناء إن تجاوز JavaScript ستين كيلوبايت مضغوطاً — الميزانية تُفرض قبل النشر لا تُراجَع بعده.
+الفحص يهيّئ شرطه بنفسه: يحوّل المنتج التجريبي، ويمنح دور المندوب، ويستعمل
+زبوناً جديداً لكل تشغيل — فالنتيجة واحدة مهما تكرّر.
 
 ## ما لا يُنشر على Workers
 
-الواجهة البرمجية (`apps/api`) تعمل على NestJS وتحتاج PostgreSQL، فتُنشر في حاوية Docker على خادم أو خدمة حاويات، لا على Workers. راجع [الفصل 11](11-devops.md) لخيارات الاستضافة وخطة البديل.
-
-## استضافة الواجهة البرمجية مجاناً — خادم Oracle Cloud Always Free
-
-الخيار المجاني الوحيد الذي يشغّل `docker-compose.prod.yml` كما هو دون تعديل: خادم Oracle Cloud ضمن **Always Free** — وهو مجاني دائماً لا تجربة تنتهي، ويعطي حتى 4 أنوية Ampere A1 و24 جيجابايت ذاكرة، وهذا يكفي بسهولة لتشغيل Postgres وRedis وMeilisearch والواجهة البرمجية معاً على خادم واحد.
-
-### 1. إنشاء الحساب والخادم
-
-1. أنشئ حساباً على [cloud.oracle.com](https://cloud.oracle.com) (يطلب بطاقة للتحقق فقط، بلا فوترة على مستوى Always Free).
-2. من القائمة: **Compute ← Instances ← Create Instance**.
-3. الصورة: **Ubuntu 22.04**. الشكل (Shape): **VM.Standard.A1.Flex** ضمن Always Free، واضبط 4 OCPU و24GB RAM (الحد الأقصى المجاني).
-4. عند إنشاء المفتاح، احفظ مفتاح SSH الخاص محلياً — هو الوسيلة الوحيدة للدخول.
-5. بعد الإطلاق، من **Virtual Cloud Network ← Security Lists** (أو NSG) افتح المنافذ الواردة: `22` (SSH، مقصور على عنوانك إن أمكن)، `80` و`443` (الوصول العام للـAPI).
-
-### 2. تجهيز الخادم
-
-```bash
-ssh -i مفتاحك.key ubuntu@<العنوان-العام>
-sudo apt update && sudo apt install -y docker.io docker-compose-plugin git
-sudo usermod -aG docker $USER && newgrp docker
-```
-
-### 3. سحب المستودع وضبط الأسرار
-
-```bash
-git clone https://github.com/basio96547/euueu.git talisham
-cd talisham
-cp .env.example .env
-```
-
-عدّل `.env` بقيم إنتاج حقيقية — لا تُبقِ أي قيمة تجريبية:
-
-```bash
-openssl rand -hex 32   # JWT_SECRET
-openssl rand -hex 24   # POSTGRES_PASSWORD
-npx web-push generate-vapid-keys  # أو أي مولّد ES256 آخر لـVAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY
-```
-
-واضبط `NODE_ENV=production` و`DEMO_MODE=false` و`PUBLIC_API_URL=https://api.talisham.com/api/v1`.
-
-### 4. الإقلاع
-
-```bash
-docker compose -f infra/docker/docker-compose.prod.yml up -d --build
-curl http://localhost:4000/api/v1/health   # يجب أن يعيد OK
-```
-
-### 5. الربط بالنطاق عبر Cloudflare (بلا شهادة تُدار يدوياً)
-
-1. في لوحة Cloudflare DNS: أضف سجل `A` باسم `api` يشير إلى العنوان العام للخادم، **والسحابة البرتقالية مفعَّلة (Proxied)** — بهذا يمر كل الترافيك عبر Cloudflare ولا يظهر عنوان الخادم الحقيقي.
-2. من **SSL/TLS ← Overview** اختر وضع **Full (strict)**.
-3. من **SSL/TLS ← Origin Server** أنشئ **Origin Certificate** (صالحة 15 سنة)، وثبّتها على الخادم خلف Nginx أو Caddy بسيط يُعيد التوجيه إلى المنفذ 4000 محلياً — هذا يوفّر تجديد Let's Encrypt الدوري كاملاً.
-4. تحقق: `curl https://api.talisham.com/api/v1/health`.
-
-بهذا تكتمل الاستضافة المجانية: الواجهات الساكنة على Cloudflare Pages (القسم أعلاه)، والواجهة البرمجية على خادم Oracle المجاني خلف Cloudflare. الترقية لاحقاً (عند نمو الحمل فعلاً) هي مجرد الانتقال إلى VPS مدفوع أو خدمة حاويات مُدارة، دون تغيير في الكود لأن كل شيء يعمل داخل نفس صورة Docker.
+| المكوّن | البديل |
+| --- | --- |
+| Meilisearch | المسار الاحتياطي على PostgreSQL يعطي النتائج نفسها؛ ويُربط محرك مُستضاف لاحقاً بضبط `MEILI_HOST` |
+| الصور على القرص المحلي | R2 أو أي تخزين متوافق مع S3 |
+| Redis | Cloudflare KV هو السائق داخل Worker |
 
 </div>

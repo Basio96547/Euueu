@@ -1795,6 +1795,605 @@ function PasswordScreen() {
   );
 }
 
+
+/* ————— المشتريات والموردون (الفصل 16) ————— */
+interface SupplierRow {
+  code: string; name: string; contactName: string | null; contactPhone: string | null;
+  country: string | null; leadTimeDays: number; isActive: boolean; poCount: number;
+}
+interface PoRow {
+  poNo: string; supplier: { code: string; name: string }; state: string;
+  goodsUsdCents: number; extraUsdCents: number; totalUsdCents: number; landedFactor: number;
+  expectedAt: string | null; receivedAt: string | null;
+  lines: Array<{ sku: string; name: string; qty: number; qtyReceived: number;
+    unitCostUsdCents: number; landedUnitCostUsdCents: number }>;
+}
+
+const usd = (c: number) => `${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+
+function Procurement() {
+  const [tab, setTab] = useState<'pos' | 'suppliers' | 'alerts'>('pos');
+  const [pos, setPos] = useState<PoRow[] | null>(null);
+  const [sups, setSups] = useState<SupplierRow[] | null>(null);
+  const [alerts, setAlerts] = useState<any[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newS, setNewS] = useState({ code: '', name: '', contactPhone: '', leadTimeDays: 14 });
+  const [newPo, setNewPo] = useState({ supplierCode: '', sku: '', qty: 1, unitCostUsd: '', extraUsd: '' });
+
+  const load = useCallback(() => {
+    api.get<PoRow[]>('/admin/procurement/purchase-orders').then(setPos).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+    api.get<SupplierRow[]>('/admin/procurement/suppliers').then(setSups).catch(() => {});
+    api.get<any[]>('/admin/procurement/alerts').then(setAlerts).catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      <p className="warnbox">
+        التكلفة بالدولار لا بالليرة: الربح المحسوب بالليرة على بضاعة اشتُريت
+        بالدولار ليس ربحاً بل أثرَ صرف، ومن يوزّعه يعجز عن إعادة الشراء.
+      </p>
+
+      <div className="tabs">
+        {([['pos', 'أوامر الشراء'], ['suppliers', 'الموردون'], ['alerts', 'تنبيهات']] as const).map(([v, l]) => (
+          <button key={v} aria-pressed={tab === v} onClick={() => { setTab(v); setAdding(false); }}>{l}</button>
+        ))}
+      </div>
+
+      <button className="btn btn--ghost" type="button" onClick={() => setAdding(!adding)}>
+        {adding ? 'إلغاء' : tab === 'suppliers' ? '+ مورد' : '+ أمر شراء'}
+      </button>
+
+      {adding && tab === 'suppliers' && (
+        <div className="card glass">
+          <div className="field"><label htmlFor="sc">الرمز</label>
+            <input id="sc" dir="ltr" value={newS.code} onChange={(e) => setNewS({ ...newS, code: e.target.value })} /></div>
+          <div className="field"><label htmlFor="sn">الاسم</label>
+            <input id="sn" value={newS.name} onChange={(e) => setNewS({ ...newS, name: e.target.value })} /></div>
+          <div className="field"><label htmlFor="sp">هاتف التواصل</label>
+            <input id="sp" dir="ltr" value={newS.contactPhone} onChange={(e) => setNewS({ ...newS, contactPhone: e.target.value })} /></div>
+          <div className="field"><label htmlFor="sl">مهلة التوريد (أيام)</label>
+            <input id="sl" type="number" value={newS.leadTimeDays}
+              onChange={(e) => setNewS({ ...newS, leadTimeDays: Number(e.target.value) })} /></div>
+          <Btn label="أضف المورد" onClick={async () => {
+            setErr(null);
+            try { await api.post('/admin/procurement/suppliers', newS); setAdding(false); load(); }
+            catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّرت الإضافة'); }
+          }} />
+        </div>
+      )}
+
+      {adding && tab === 'pos' && (
+        <div className="card glass">
+          <div className="field"><label htmlFor="ps">المورد</label>
+            <select id="ps" value={newPo.supplierCode} onChange={(e) => setNewPo({ ...newPo, supplierCode: e.target.value })}>
+              <option value="">— اختر —</option>
+              {(sups ?? []).filter((s) => s.isActive).map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="pk">رمز التخزين (SKU)</label>
+            <input id="pk" dir="ltr" value={newPo.sku} onChange={(e) => setNewPo({ ...newPo, sku: e.target.value })} /></div>
+          <div className="field"><label htmlFor="pq">الكمية</label>
+            <input id="pq" type="number" value={newPo.qty} onChange={(e) => setNewPo({ ...newPo, qty: Number(e.target.value) })} /></div>
+          <div className="field"><label htmlFor="pc">تكلفة الوحدة ($)</label>
+            <input id="pc" type="number" dir="ltr" value={newPo.unitCostUsd}
+              onChange={(e) => setNewPo({ ...newPo, unitCostUsd: e.target.value })} /></div>
+          <div className="field"><label htmlFor="pe">شحن وجمارك ($)</label>
+            <input id="pe" type="number" dir="ltr" value={newPo.extraUsd}
+              onChange={(e) => setNewPo({ ...newPo, extraUsd: e.target.value })} />
+            <span className="hint">تُوزَّع على الوحدات بالقيمة لا بالعدد</span></div>
+          <Btn label="أصدِر الأمر" disabled={!newPo.supplierCode || !newPo.sku} onClick={async () => {
+            setErr(null);
+            try {
+              await api.post('/admin/procurement/purchase-orders', {
+                supplierCode: newPo.supplierCode,
+                lines: [{ sku: newPo.sku, qty: newPo.qty, unitCostUsdCents: Math.round(Number(newPo.unitCostUsd) * 100) }],
+                extraUsdCents: Math.round(Number(newPo.extraUsd || 0) * 100),
+              });
+              setAdding(false); load();
+            } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإصدار'); }
+          }} />
+        </div>
+      )}
+
+      {tab === 'pos' && (pos === null ? <p className="muted">جارٍ التحميل…</p>
+        : !pos.length ? <div className="empty"><p>لا أوامر شراء بعد.</p></div>
+        : pos.map((p) => (
+          <div key={p.poNo} className="card glass">
+            <div className="row">
+              <b className="tnum">{p.poNo}</b>
+              <span className="tag">{p.state}</span>
+              <span className="muted">{p.supplier.name}</span>
+            </div>
+            <div className="grid2">
+              <div><small className="muted">البضاعة</small><div className="tnum">{usd(p.goodsUsdCents)}</div></div>
+              <div><small className="muted">التكاليف</small><div className="tnum">{usd(p.extraUsdCents)}</div></div>
+              <div><small className="muted">الإجمالي</small><div className="tnum">{usd(p.totalUsdCents)}</div></div>
+              <div><small className="muted">معامل التحميل</small><div className="tnum">{(p.landedFactor * 100).toFixed(2)}%</div></div>
+            </div>
+            {p.lines.map((l) => (
+              <div key={l.sku} className="row" style={{ fontSize: 'var(--step--1)' }}>
+                <span>{l.name}</span>
+                <span className="tnum muted">{l.qtyReceived}/{l.qty} مستلَم</span>
+                <span className="tnum">شاملة {usd(l.landedUnitCostUsdCents)}</span>
+              </div>
+            ))}
+            {p.state !== 'RECEIVED' && p.state !== 'CANCELLED' && (
+              <Receive poNo={p.poNo} lines={p.lines} onDone={load} />
+            )}
+          </div>
+        )))}
+
+      {tab === 'suppliers' && (sups === null ? <p className="muted">جارٍ التحميل…</p>
+        : sups.map((s) => (
+          <div key={s.code} className="card glass">
+            <div className="row">
+              <b>{s.name}</b><span className="tag">{s.code}</span>
+              {!s.isActive && <span className="tag tag--clay">موقوف</span>}
+            </div>
+            <div className="muted" style={{ fontSize: 'var(--step--1)' }}>
+              {s.contactPhone ?? '—'} · مهلة {s.leadTimeDays} يوماً · {s.poCount} أمر شراء
+            </div>
+            <div className="row">
+              <Btn label={s.isActive ? 'أوقفه' : 'فعّله'} kind="btn--ghost" onClick={async () => {
+                await api.patch(`/admin/procurement/suppliers/${s.code}`, { isActive: !s.isActive }); load();
+              }} />
+              <Btn label="بطاقة الأداء" kind="btn--ghost" onClick={async () => {
+                const sc = await api.get<any>(`/admin/procurement/suppliers/${s.code}/scorecard`);
+                alert(`${sc.name}\nالتزام بالمواعيد: ${sc.onTimePct ?? '—'}%\nنسبة التوريد: ${sc.fillRatePct ?? '—'}%\nالإنفاق: ${usd(sc.spendUsdCents)}${sc.note ? `\n${sc.note}` : ''}`);
+              }} />
+            </div>
+          </div>
+        )))}
+
+      {tab === 'alerts' && (alerts === null ? <p className="muted">جارٍ التحميل…</p>
+        : !alerts.length ? <div className="empty"><p>لا تنبيهات.</p></div>
+        : alerts.map((a, i) => (
+          <div key={i} className="card glass">
+            <div className="row"><b>{a.ar}</b><span className="tag">{a.code}</span></div>
+            <pre className="muted" style={{ fontSize: '0.7rem', overflowX: 'auto' }}>{JSON.stringify(a.detail, null, 1)}</pre>
+          </div>
+        )))}
+    </>
+  );
+}
+
+/** استلام البضاعة: أرقام IMEI سطراً لكل جهاز — والفحص بخوارزمية Luhn في الخادم */
+function Receive(props: { poNo: string; lines: PoRow['lines']; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [sku, setSku] = useState(props.lines[0]?.sku ?? '');
+  const [imeis, setImeis] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  if (!open) return <Btn label="استلام بضاعة" kind="btn--ghost" onClick={async () => setOpen(true)} />;
+  return (
+    <div className="card">
+      {msg && <div className="err">{msg}</div>}
+      <div className="field"><label htmlFor={`r-${props.poNo}`}>الصنف</label>
+        <select id={`r-${props.poNo}`} value={sku} onChange={(e) => setSku(e.target.value)}>
+          {props.lines.map((l) => <option key={l.sku} value={l.sku}>{l.name} ({l.qty - l.qtyReceived} متبقٍ)</option>)}
+        </select></div>
+      <div className="field"><label htmlFor={`i-${props.poNo}`}>أرقام IMEI — رقم في كل سطر</label>
+        <textarea id={`i-${props.poNo}`} dir="ltr" rows={5} value={imeis}
+          onChange={(e) => setImeis(e.target.value)} style={{ width: '100%', fontFamily: 'monospace' }} />
+        <span className="hint">كل رقم يُفحص بخوارزمية Luhn، والمرفوض يُذكر بعينه</span></div>
+      <div className="row">
+        <Btn label="استلِم" onClick={async () => {
+          setMsg(null);
+          try {
+            const r = await api.post<any>(`/admin/procurement/purchase-orders/${props.poNo}/receive`, {
+              receipts: [{ sku, imeis: imeis.split('\n').map((s) => s.trim()).filter(Boolean) }],
+            });
+            const rej = r.results?.[0]?.rejected ?? [];
+            setMsg(rej.length ? `استُلم ${r.results[0].received} · رُفض: ${rej.join('، ')}` : null);
+            setImeis(''); props.onDone();
+            if (!rej.length) setOpen(false);
+          } catch (e) { setMsg(e instanceof ApiError ? e.messageAr : 'تعذّر الاستلام'); }
+        }} />
+        <Btn label="إغلاق" kind="btn--ghost" onClick={async () => setOpen(false)} />
+      </div>
+    </div>
+  );
+}
+
+/* ————— التقارير المالية (الفصل 16 ومهام 19.2 الشهرية) ————— */
+function Reports() {
+  const [tab, setTab] = useState<'pnl' | 'dead' | 'aging' | 'commissions'>('pnl');
+  const [pnl, setPnl] = useState<any>(null);
+  const [dead, setDead] = useState<any>(null);
+  const [aging, setAging] = useState<any>(null);
+  const [comm, setComm] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fail = (e: unknown) => setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل');
+    if (tab === 'pnl' && !pnl) api.get('/admin/reports/pnl').then(setPnl).catch(fail);
+    if (tab === 'dead' && !dead) api.get('/admin/reports/dead-stock').then(setDead).catch(fail);
+    if (tab === 'aging' && !aging) api.get('/admin/reports/inventory-aging').then(setAging).catch(fail);
+    if (tab === 'commissions' && !comm) api.get('/admin/commissions/run').then(setComm).catch(fail);
+  }, [tab, pnl, dead, aging, comm]);
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      <div className="tabs">
+        {([['pnl', 'الأرباح والخسائر'], ['dead', 'مخزون راكد'],
+           ['aging', 'تقادم المخزون'], ['commissions', 'العمولات']] as const).map(([v, l]) => (
+          <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)}>{l}</button>
+        ))}
+      </div>
+
+      {tab === 'pnl' && (pnl === null ? <p className="muted">جارٍ التحميل…</p> : (
+        <>
+          <p className="warnbox">
+            الإيراد من المسلَّم وحده: طلبٌ شُحن ولم يُسلَّم لم يصر بيعاً، واحتسابه
+            إيراداً يجعل كل محاولة فاشلة ربحاً على الورق. والمرتجع يُخصم في شهر
+            صرفه لا في شهر بيعه — النقد خرج حينها.
+          </p>
+          <div className="grid2">
+            <div className="kpi glass"><small>الشهر</small><b className="tnum">{pnl.month}</b></div>
+            <div className="kpi glass"><small>طلبات مسلَّمة</small><b className="tnum">{pnl.orders}</b></div>
+            <div className="kpi glass"><small>الإيراد</small><b className="tnum">{usd(pnl.revenueUsdCents)}</b></div>
+            <div className="kpi glass"><small>كلفة البضاعة</small><b className="tnum">{usd(pnl.cogsUsdCents)}</b></div>
+            <div className="kpi glass"><small>هامش إجمالي</small><b className="tnum">{usd(pnl.grossMarginUsdCents)} ({pnl.grossMarginPct}%)</b></div>
+            <div className="kpi glass"><small>مرتجعات مصروفة</small><b className="tnum">{usd(pnl.refundsUsdCents)}</b></div>
+            <div className="kpi glass"><small>عمولة المندوبين</small><b className="tnum">{fmtSyp(pnl.courierCommissionSyp)}</b></div>
+            <div className="kpi glass"><small>الصافي</small><b className="tnum">{usd(pnl.netUsdCents)}</b></div>
+          </div>
+        </>
+      ))}
+
+      {tab === 'dead' && (dead === null ? <p className="muted">جارٍ التحميل…</p> : (
+        <>
+          <div className="grid2">
+            <div className="kpi glass"><small>أصناف راكدة ({dead.thresholdDays} يوماً)</small><b className="tnum">{dead.count}</b></div>
+            <div className="kpi glass"><small>رأس مال محبوس</small><b className="tnum">{usd(dead.tiedCapitalUsdCents)}</b></div>
+          </div>
+          {!dead.items.length ? <div className="empty"><p>لا مخزون راكد.</p></div>
+            : dead.items.map((i: any) => (
+              <div key={i.sku} className="card glass">
+                <div className="row"><b>{i.name}</b><span className="tag">{i.sku}</span></div>
+                <div className="muted" style={{ fontSize: 'var(--step--1)' }}>
+                  على الرفّ {i.onHand} · محبوس {usd(i.tiedCapitalUsdCents)}
+                  {i.ageDays !== null && ` · عمره ${i.ageDays} يوماً`}
+                  {i.lastSaleAt ? ` · آخر بيع ${new Date(i.lastSaleAt).toLocaleDateString('ar')}` : ' · لم يُبَع قط'}
+                </div>
+              </div>
+            ))}
+        </>
+      ))}
+
+      {tab === 'aging' && (aging === null ? <p className="muted">جارٍ التحميل…</p> : (
+        <div className="card glass">
+          <p className="muted" style={{ fontSize: 'var(--step--1)' }}>
+            العمر من آخر استلام في دفتر الحركات — وحدة الجهاز لا تحمل تاريخ دخولها والدفتر يحمله.
+          </p>
+          {aging.buckets.map((b: any) => (
+            <div key={b.label} className="row">
+              <span style={{ minWidth: 110 }}>{b.label}</span>
+              <span className="tnum">{b.units} وحدة</span>
+              <span className="tnum muted">{usd(b.capitalUsdCents)}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {tab === 'commissions' && (comm === null ? <p className="muted">جارٍ التحميل…</p> : (
+        <>
+          <p className="warnbox">
+            الاحتساب آلي والاعتماد يدوي — ولا صرف إلا عبر التسويات حيث فصل الواجبات.
+          </p>
+          <div className="grid2">
+            <div className="kpi glass"><small>الشهر</small><b className="tnum">{comm.month}</b></div>
+            <div className="kpi glass"><small>إجمالي العمولات</small><b className="tnum">{fmtSyp(comm.totalCommissionSyp)}</b></div>
+          </div>
+          {comm.rows.map((r: any) => (
+            <div key={r.collectorId} className="card glass">
+              <div className="row"><b>{r.name ?? r.collectorId}</b>{r.code && <span className="tag">{r.code}</span>}</div>
+              <div className="muted" style={{ fontSize: 'var(--step--1)' }}>
+                {r.daysWorked} يوم عمل · حصّل {fmtSyp(r.collectedSyp)} · عمولته {fmtSyp(r.commissionSyp)}
+              </div>
+            </div>
+          ))}
+        </>
+      ))}
+    </>
+  );
+}
+
+/* ————— الجاهزية والمهام الدورية (الفصل 19 §19.5) ————— */
+const CAT_AR: Record<string, string> = {
+  TECH: 'تقني', CONTENT: 'محتوى', OPS: 'تشغيلي', LEGAL: 'قانوني', FINANCE: 'مالي',
+};
+const RSTATUS_AR: Record<string, string> = {
+  PENDING: 'معلّق', PASSED: 'مُحقَّق', FAILED: 'فاشل', WAIVED: 'متجاوَز',
+};
+
+function Readiness() {
+  const [checks, setChecks] = useState<any[] | null>(null);
+  const [sum, setSum] = useState<any>(null);
+  const [routines, setRoutines] = useState<any[] | null>(null);
+  const [cadence, setCadence] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY'>('DAILY');
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.get<any[]>('/admin/readiness/checks').then(setChecks).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+    api.get('/admin/readiness/summary').then(setSum).catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+  useEffect(() => {
+    api.get<any[]>(`/admin/ops/routines?cadence=${cadence}`).then(setRoutines).catch(() => {});
+  }, [cadence]);
+
+  const mark = async (code: string, status: string) => {
+    setErr(null);
+    let extra: Record<string, unknown> = {};
+    if (status === 'WAIVED') {
+      const reason = prompt('سبب التجاوز — بندٌ يُتجاوَز بلا سبب مكتوب مخفيٌّ لا محسوم:');
+      if (!reason) return;
+      extra = { waiverReason: reason };
+    }
+    if (status === 'PASSED') {
+      const url = prompt('رابط الإثبات (تقرير أو لقطة أو عقد):');
+      if (url) extra = { evidenceUrl: url };
+    }
+    try { await api.patch(`/admin/readiness/checks/${code}`, { status, ...extra }); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التأشير'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+
+      {sum && (
+        <>
+          <div className={sum.launch_ready ? 'ok' : 'warnbox'}>
+            {sum.launch_ready
+              ? '✓ كل البنود المانعة محسومة — الإطلاق مسموح.'
+              : `الإطلاق ممنوع: ${sum.blocking_passed} من ${sum.blocking_total} بنداً مانعاً محسوم.`}
+          </div>
+          <div className="grid2">
+            <div className="kpi glass"><small>بنود مانعة محسومة</small><b className="tnum">{sum.blocking_passed}/{sum.blocking_total}</b></div>
+            <div className="kpi glass"><small>مجموع البنود</small><b className="tnum">{sum.total}</b></div>
+          </div>
+        </>
+      )}
+
+      {checks !== null && checks.length === 0 && (
+        <div className="card glass">
+          <p>لم تُبذَر بنود الجاهزية بعد — اثنان وثلاثون بنداً من الفصل 19.</p>
+          <Btn label="ابذر البنود" onClick={async () => { await api.post('/admin/readiness/seed'); load(); }} />
+        </div>
+      )}
+
+      {(checks ?? []).map((c) => (
+        <div key={c.code} className="card glass">
+          <div className="row">
+            <span className="tag">{CAT_AR[c.category] ?? c.category}</span>
+            <b style={{ flex: 1 }}>{c.title}</b>
+            <span className={`tag ${c.status === 'PASSED' ? 'tag--jade' : c.status === 'FAILED' ? 'tag--clay' : ''}`}>
+              {RSTATUS_AR[c.status]}
+            </span>
+          </div>
+          <div className="muted" style={{ fontSize: '0.72rem' }}>
+            {c.code} · مسؤوله: {c.ownerRole}{c.isBlocking ? ' · مانع للإطلاق' : ''}
+            {c.waiverReason ? ` · سبب التجاوز: ${c.waiverReason}` : ''}
+          </div>
+          <div className="row">
+            <Btn label="مُحقَّق" kind="btn--ghost" onClick={() => mark(c.code, 'PASSED')} />
+            <Btn label="فاشل" kind="btn--ghost" onClick={() => mark(c.code, 'FAILED')} />
+            <Btn label="تجاوز" kind="btn--ghost" onClick={() => mark(c.code, 'WAIVED')} />
+          </div>
+        </div>
+      ))}
+
+      <h2 style={{ fontSize: 'var(--step-0)', marginBlock: 16 }}>المهام الدورية</h2>
+      <div className="tabs">
+        {([['DAILY', 'يومية'], ['WEEKLY', 'أسبوعية'], ['MONTHLY', 'شهرية']] as const).map(([v, l]) => (
+          <button key={v} aria-pressed={cadence === v} onClick={() => setCadence(v)}>{l}</button>
+        ))}
+      </div>
+      {(routines ?? []).map((r) => (
+        <div key={r.code} className="card glass">
+          <div className="row">
+            <b style={{ flex: 1, fontSize: 'var(--step--1)' }}>{r.code}</b>
+            <span className="tnum muted">{r.periodKey}</span>
+            {r.status
+              ? <span className="tag tag--jade">{r.status === 'DONE' ? 'مُنجَزة' : r.status}</span>
+              : <Btn label="سجّل الإنجاز" kind="btn--ghost" onClick={async () => {
+                  await api.post(`/admin/ops/routines/${r.code}/runs`, { status: 'DONE' });
+                  api.get<any[]>(`/admin/ops/routines?cadence=${cadence}`).then(setRoutines).catch(() => {});
+                }} />}
+          </div>
+          {r.performedBy && <div className="muted" style={{ fontSize: '0.72rem' }}>نفّذها {r.performedBy}</div>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/* ————— المستخدمون والأدوار والجلسات (الفصل 9، ومراجعة 19.2 الشهرية) ————— */
+const ROLE_AR: Record<string, string> = {
+  CUSTOMER: 'زبون', SUPPORT: 'دعم', CATALOG_ADMIN: 'كتالوج',
+  OPS_MANAGER: 'عمليات', WAREHOUSE: 'مستودع', COURIER: 'مندوب', ADMIN: 'مدير عام',
+};
+
+function Users() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [sessions, setSessions] = useState<any[] | null>(null);
+  const [tab, setTab] = useState<'staff' | 'all' | 'sessions' | 'audit'>('staff');
+  const [audit, setAudit] = useState<any[] | null>(null);
+  const [q, setQ] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    const qs = new URLSearchParams();
+    if (tab === 'staff') qs.set('staff', '1');
+    if (q) qs.set('q', q);
+    api.get<any[]>(`/admin/users?${qs}`).then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, [tab, q]);
+  useEffect(() => { if (tab === 'staff' || tab === 'all') load(); }, [tab, load]);
+  useEffect(() => {
+    if (tab === 'sessions') api.get<any[]>('/admin/users/sessions').then(setSessions).catch(() => {});
+    if (tab === 'audit') api.get<any[]>('/admin/audit?limit=60').then(setAudit).catch(() => {});
+  }, [tab]);
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      <p className="warnbox">
+        تغيير الدور يُسقط كل جلسات صاحبه فوراً — وإلا بقي يعمل بصلاحيةٍ سُحبت
+        منه حتى ينتهي رمزه من تلقائه. وكل تغيير يُسجَّل في سجل التدقيق.
+      </p>
+
+      <div className="tabs">
+        {([['staff', 'الموظّفون'], ['all', 'الكل'], ['sessions', 'الجلسات النشطة'], ['audit', 'سجل التدقيق']] as const)
+          .map(([v, l]) => <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)}>{l}</button>)}
+      </div>
+
+      {(tab === 'staff' || tab === 'all') && (
+        <>
+          <div className="field">
+            <label htmlFor="uq">بحث برقم أو اسم</label>
+            <input id="uq" value={q} onChange={(e) => setQ(e.target.value)} onBlur={load} />
+          </div>
+          {(rows ?? []).map((u) => (
+            <div key={u.publicId} className="card glass">
+              <div className="row">
+                <b>{u.fullName ?? 'بلا اسم'}</b>
+                <span className="tnum muted" dir="ltr">{u.phone}</span>
+                <span className="tag">{ROLE_AR[u.role] ?? u.role}</span>
+                {u.lockedUntil && new Date(u.lockedUntil) > new Date() && <span className="tag tag--clay">مقفل</span>}
+              </div>
+              <div className="muted" style={{ fontSize: '0.72rem' }}>
+                {u.orders} طلباً · {u.activeSessions} جلسة نشطة{u.hasPassword ? ' · له كلمة سرّ' : ''}
+              </div>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <select defaultValue={u.role} onChange={async (e) => {
+                  const role = e.target.value;
+                  if (role === u.role) return;
+                  const reason = prompt(`سبب تغيير دور ${u.fullName ?? u.phone} إلى ${ROLE_AR[role]}:`) ?? '';
+                  setErr(null);
+                  try { await api.post(`/admin/users/${u.publicId}/role`, { role, reason }); load(); }
+                  catch (er) { setErr(er instanceof ApiError ? er.messageAr : 'تعذّر التغيير'); load(); }
+                }}>
+                  {Object.entries(ROLE_AR).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                {u.lockedUntil && (
+                  <Btn label="فكّ القفل" kind="btn--ghost" onClick={async () => {
+                    await api.post(`/admin/users/${u.publicId}/unlock`); load();
+                  }} />
+                )}
+                <Btn label="أسقط جلساته" kind="btn--ghost" onClick={async () => {
+                  await api.post(`/admin/users/${u.publicId}/revoke-sessions`); load();
+                }} />
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {tab === 'sessions' && (sessions ?? []).map((s) => (
+        <div key={s.id} className="card glass">
+          <div className="row">
+            <b>{s.name ?? s.publicId}</b><span className="tag">{ROLE_AR[s.role] ?? s.role}</span>
+          </div>
+          <div className="muted" style={{ fontSize: '0.72rem' }} dir="ltr">
+            {s.userAgent ?? '—'} · {s.ip ?? '—'}
+          </div>
+          <div className="muted" style={{ fontSize: '0.72rem' }}>
+            آخر نشاط: {new Date(s.lastSeenAt).toLocaleString('ar')}
+          </div>
+        </div>
+      ))}
+
+      {tab === 'audit' && (audit ?? []).map((a, i) => (
+        <div key={i} className="card glass">
+          <div className="row">
+            <b style={{ fontSize: 'var(--step--1)' }}>{a.action}</b>
+            <span className="muted">{a.actor ?? 'النظام'}</span>
+            <span className="muted tnum">{new Date(a.at).toLocaleString('ar')}</span>
+          </div>
+          {a.entityType && <div className="muted" style={{ fontSize: '0.72rem' }}>{a.entityType}</div>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/* ————— مطالبات الكفالة (الفصل 15) ————— */
+const CLAIM_AR: Record<string, string> = {
+  OPENED: 'مفتوحة', RECEIVED: 'استُلم الجهاز', DIAGNOSING: 'قيد الفحص',
+  DECISION: 'قرار', IN_REPAIR: 'قيد الإصلاح', TESTING: 'اختبار',
+  READY: 'جاهزة للتسليم', CLOSED: 'مغلقة', REJECTED: 'مرفوضة',
+};
+const CLAIM_NEXT: Record<string, string[]> = {
+  OPENED: ['RECEIVED', 'REJECTED'],
+  RECEIVED: ['DIAGNOSING', 'REJECTED'],
+  DIAGNOSING: ['DECISION', 'REJECTED'],
+  DECISION: ['IN_REPAIR', 'REJECTED'],
+  IN_REPAIR: ['TESTING'],
+  TESTING: ['READY'],
+  READY: ['CLOSED'],
+};
+
+function Warranty() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.get<any[]>('/admin/warranty-claims').then(setRows).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, []);
+  useEffect(load, [load]);
+
+  const move = async (claimNo: string, to: string) => {
+    setErr(null);
+    const body: Record<string, unknown> = { to };
+    if (to === 'REJECTED') {
+      const r = prompt('سبب الرفض — الرفض بلا سبب لا يُقبل:');
+      if (!r) return;
+      body.rejectReason = r;
+    }
+    if (to === 'DECISION') body.diagnosis = prompt('نتيجة الفحص:') ?? undefined;
+    if (to === 'READY') body.resolution = prompt('ما جرى (إصلاح أم استبدال):') ?? undefined;
+    try { await api.post(`/admin/warranty-claims/${claimNo}/transition`, body); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الانتقال'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      <p className="warnbox">
+        المحطات لا تُقفز: الجهاز لا يُصلَح قبل أن يُفحَص ولا يُسلَّم قبل أن يُختبَر.
+        والحالة في جدول حقيقي لا مستنتَجة من آخر سطر في سجل التدقيق.
+      </p>
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : !rows.length ? <div className="empty"><p>لا مطالبات كفالة.</p></div>
+        : rows.map((c) => (
+          <div key={c.claimNo} className="card glass">
+            <div className="row">
+              <b className="tnum">{c.claimNo}</b>
+              <span className="tag">{CLAIM_AR[c.state] ?? c.state}</span>
+              <span className="muted tnum" dir="ltr">{c.imei ?? '—'}</span>
+            </div>
+            <div style={{ fontSize: 'var(--step--1)' }}>{c.description}</div>
+            <div className="muted" style={{ fontSize: '0.72rem' }} dir="ltr">{c.phone}</div>
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              {(CLAIM_NEXT[c.state] ?? []).map((to) => (
+                <Btn key={to} label={CLAIM_AR[to] ?? to} kind="btn--ghost" onClick={() => move(c.claimNo, to)} />
+              ))}
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
 export default function App() {
   const { path, nav } = useRoute();
   const [fx, setFx] = useState<Fx | null>(null);
@@ -1814,7 +2413,9 @@ export default function App() {
     ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/settlements', 'التسويات'],
     ['/returns', 'المرتجعات'], ['/tickets', 'الدعم'], ['/moderation', 'الإشراف'],
     ['/catalog', 'الكتالوج'], ['/coupons', 'الكوبونات'],
+    ['/warranty', 'الكفالة'], ['/procurement', 'المشتريات'], ['/reports', 'التقارير'],
     ['/fx', 'سعر الصرف'], ['/delivery', 'التوصيل'], ['/courier', 'المندوب'],
+    ['/users', 'المستخدمون'], ['/readiness', 'الجاهزية'],
     ['/settings', 'الإعدادات'], ['/password', 'كلمة السرّ'],
   ];
 
@@ -1848,6 +2449,11 @@ export default function App() {
           : path === '/moderation' ? <Moderation />
           : path === '/coupons' ? <Coupons />
           : path === '/delivery' ? <Delivery />
+          : path === '/warranty' ? <Warranty />
+          : path === '/procurement' ? <Procurement />
+          : path === '/reports' ? <Reports />
+          : path === '/users' ? <Users />
+          : path === '/readiness' ? <Readiness />
           : path === '/settings' ? <Settings />
           : path === '/password' ? <PasswordScreen />
           : path === '/catalog' ? <Catalog />
