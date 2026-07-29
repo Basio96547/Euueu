@@ -918,57 +918,96 @@ function Catalog() {
 }
 
 function Login({ onDone }: { onDone: () => void }) {
+  const [mode, setMode] = useState<'password' | 'otp'>('password');
   const [phone, setPhone] = useState('+963');
+  const [password, setPassword] = useState('');
+  const [show, setShow] = useState(false);
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<'phone' | 'code'>('phone');
   const [err, setErr] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+
+  const reset = () => { setErr(null); setHint(null); };
 
   return (
     <div className="page" style={{ maxWidth: 420, marginInline: 'auto', paddingBlockStart: 48 }}>
       <h1 style={{ fontSize: 'var(--step-2)', fontWeight: 800, letterSpacing: '-0.02em' }}>
         تالي شام — الإدارة
       </h1>
-      <p className="muted">الدخول برقم الجوال ورمز تحقق يصلك عبر واتساب.</p>
+
+      {/* كلمة السرّ أولاً: الرمز يعتمد على مزوّد رسائل قد ينقطع،
+          ولوحة التحكم يجب أن تُفتح حتى حين ينقطع */}
+      <div className="tabs" style={{ marginBlockEnd: 12 }}>
+        {([['password', 'كلمة السرّ'], ['otp', 'رمز واتساب']] as const).map(([v, l]) => (
+          <button key={v} aria-pressed={mode === v}
+            onClick={() => { setMode(v); reset(); setStage('phone'); }}>{l}</button>
+        ))}
+      </div>
 
       {err && <div className="err">{err}</div>}
       {hint && <div className="ok">{hint}</div>}
 
       <div className="card glass">
-        {stage === 'phone' ? (
+        <div className="field">
+          <label htmlFor="ph">رقم الجوال</label>
+          <input id="ph" value={phone} onChange={(e) => setPhone(e.target.value)}
+            dir="ltr" inputMode="tel" autoComplete="username" />
+        </div>
+
+        {mode === 'password' ? (
           <>
             <div className="field">
-              <label htmlFor="ph">رقم الجوال</label>
-              <input id="ph" value={phone} onChange={(e) => setPhone(e.target.value)} dir="ltr" inputMode="tel" />
+              <label htmlFor="pw">كلمة السرّ</label>
+              <input id="pw" type={show ? 'text' : 'password'} value={password}
+                onChange={(e) => setPassword(e.target.value)} dir="ltr" autoComplete="current-password"
+                onKeyDown={(e) => { if (e.key === 'Enter') (document.getElementById('go') as HTMLButtonElement)?.click(); }} />
+              <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center', marginBlockStart: 6 }}>
+                <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)}
+                  style={{ width: 'auto', minHeight: 'auto' }} />
+                أظهر كلمة السرّ
+              </label>
             </div>
             <Btn
-              label="أرسل الرمز"
+              label="دخول"
               onClick={async () => {
-                setErr(null); setHint(null);
+                reset();
                 try {
-                  const r = await api.post<{ devCode?: string; expiresInSec: number }>(
-                    '/auth/otp/request', { phone });
-                  setStage('code');
-                  setHint(r.devCode
-                    ? `وضع التطوير — الرمز ${r.devCode}`
-                    : `أُرسل الرمز، صالح ${Math.round(r.expiresInSec / 60)} دقائق.`);
-                } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإرسال'); }
+                  const r = await api.post<{ accessToken: string; refreshToken: string }>(
+                    '/auth/password/login', { phone, password });
+                  tokens.set(r.accessToken, r.refreshToken);
+                  onDone();
+                } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الدخول'); }
               }}
             />
           </>
+        ) : stage === 'phone' ? (
+          <Btn
+            label="أرسل الرمز"
+            onClick={async () => {
+              reset();
+              try {
+                const r = await api.post<{ devCode?: string; expiresInSec: number }>(
+                  '/auth/otp/request', { phone });
+                setStage('code');
+                setHint(r.devCode
+                  ? `وضع التطوير — الرمز ${r.devCode}`
+                  : `أُرسل الرمز، صالح ${Math.round(r.expiresInSec / 60)} دقائق.`);
+              } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإرسال'); }
+            }}
+          />
         ) : (
           <>
             <div className="field">
               <label htmlFor="cd">رمز التحقق</label>
               <input id="cd" value={code} onChange={(e) => setCode(e.target.value)}
-                     dir="ltr" inputMode="numeric" maxLength={6} />
+                dir="ltr" inputMode="numeric" maxLength={6} autoComplete="one-time-code" />
             </div>
             <Btn
               label="دخول"
               onClick={async () => {
-                setErr(null);
+                reset();
                 try {
-                  const r = await api.post<{ accessToken: string; refreshToken: string; user: { role: string } }>(
+                  const r = await api.post<{ accessToken: string; refreshToken: string }>(
                     '/auth/otp/verify', { phone, code });
                   tokens.set(r.accessToken, r.refreshToken);
                   onDone();
@@ -983,8 +1022,59 @@ function Login({ onDone }: { onDone: () => void }) {
       </div>
 
       <p className="muted" style={{ fontSize: '0.72rem' }}>
-        الدخول متاح لأدوار الإدارة والعمليات والمندوب فقط. حساب العميل لن يرى هذه اللوحة.
+        الدخول متاح لأدوار الإدارة والعمليات والمندوب فقط. حساب العميل لن يرى هذه اللوحة،
+        ولا كلمة سرّ له أصلاً — الزبائن يدخلون برمز واتساب.
       </p>
+    </div>
+  );
+}
+
+/* ————— تغيير كلمة السرّ ————— */
+function PasswordScreen() {
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const match = next.length > 0 && next === again;
+
+  return (
+    <div style={{ maxWidth: 460 }}>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+      <p className="warnbox">
+        تغيير كلمة السرّ يُبطل كل جلساتك على كل الأجهزة — وهذا مقصود:
+        تغييرها إعلانٌ بأن القديمة لم تعد تُؤتمن.
+      </p>
+      <div className="card glass">
+        <div className="field">
+          <label htmlFor="p0">كلمة السرّ الحالية</label>
+          <input id="p0" type="password" dir="ltr" value={cur} onChange={(e) => setCur(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="p1">الجديدة</label>
+          <input id="p1" type="password" dir="ltr" value={next} onChange={(e) => setNext(e.target.value)} />
+          <span className="hint">عشرة محارف على الأقل. الطول أهم من الرموز.</span>
+        </div>
+        <div className="field">
+          <label htmlFor="p2">أعِد الجديدة</label>
+          <input id="p2" type="password" dir="ltr" value={again} onChange={(e) => setAgain(e.target.value)} />
+          {again.length > 0 && !match && <span className="hint" style={{ color: 'var(--clay)' }}>لا تتطابقان</span>}
+        </div>
+        <Btn
+          label="غيّرها"
+          disabled={!match || cur.length === 0}
+          onClick={async () => {
+            setErr(null); setMsg(null);
+            try {
+              await api.post('/auth/password/change', { currentPassword: cur, newPassword: next });
+              setMsg('غُيّرت كلمة السرّ — ستُطالَب بالدخول من جديد.');
+              setTimeout(() => { tokens.clear(); window.dispatchEvent(new Event('auth:expired')); }, 1500);
+            } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التغيير'); }
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -1008,7 +1098,7 @@ export default function App() {
     ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/settlements', 'التسويات'],
     ['/returns', 'المرتجعات'], ['/tickets', 'الدعم'], ['/moderation', 'الإشراف'],
     ['/catalog', 'الكتالوج'], ['/coupons', 'الكوبونات'],
-    ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'],
+    ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'], ['/password', 'كلمة السرّ'],
   ];
 
   if (!authed) return <Login onDone={() => { setAuthed(true); setTick((t) => t + 1); }} />;
@@ -1040,6 +1130,7 @@ export default function App() {
           : path === '/tickets' ? <Tickets />
           : path === '/moderation' ? <Moderation />
           : path === '/coupons' ? <Coupons />
+          : path === '/password' ? <PasswordScreen />
           : path === '/catalog' ? <Catalog />
           : path === '/fx' ? <FxScreen fx={fx} reload={() => setTick((t) => t + 1)} />
           : path === '/courier' ? <Courier />

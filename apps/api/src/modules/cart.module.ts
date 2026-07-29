@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
+import { CouponsService } from './coupons.module.js';
 import { Errors } from '../common/errors.js';
 import { cashDue } from '../common/money.js';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +13,7 @@ export class CartService {
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
     @Inject(FxService) private fx: FxService,
+    @Inject(CouponsService) private coupons: CouponsService,
   ) {}
 
   async create() {
@@ -151,7 +153,53 @@ export class CartService {
     return { ...(await this.summary(token)), valid: conflicts.length === 0, conflicts };
   }
 
-  async summary(token: string) {
+  /**
+   * تطبيق رمز خصم على السلة.
+   * يُقيَّم فوراً ليعرف الزبون أثره قبل أن يكمل، ويُحفظ الرمز وحده:
+   * حفظُ القيمة يجمّد خصماً قد تبطل شروطه قبل أن يُنشأ الطلب.
+   */
+  async applyCoupon(token: string, code: string, phone?: string) {
+    const cart = await this.get(token);
+    const sum = await this.summary(token);
+
+    // التقييم يرمي سبباً مفهوماً عند الرفض، فيصل الزبون سبب المنع لا كلمة «خطأ»
+    await this.coupons.evaluate(code, {
+      subtotalUsdCents: sum.lines.reduce((a, l) => a + l.lineTotalUsdCents, 0),
+      shippingUsdCents: sum.shippingUsdCents,
+      phone,
+    });
+
+    await this.prisma.cart.update({
+      where: { id: cart.id }, data: { couponCode: code.trim().toUpperCase() },
+    });
+    return this.summary(token, phone);
+  }
+
+  async removeCoupon(token: string) {
+    const cart = await this.get(token);
+    await this.prisma.cart.update({ where: { id: cart.id }, data: { couponCode: null } });
+    return this.summary(token);
+  }
+
+  /**
+   * الخصم يُطرح من المجموع **قبل** التقريب لا بعده.
+   * لو طُرح بعده لظهر للزبون مبلغان مختلفان: واحد على الشاشة وواحد
+   * في يد المندوب — وفرقٌ في المال لا يُغتفر مهما صغر.
+   */
+  async couponFor(cart: { couponCode: string | null }, subtotal: number, shipping: number, phone?: string) {
+    if (!cart.couponCode) return null;
+    try {
+      return await this.coupons.evaluate(cart.couponCode, {
+        subtotalUsdCents: subtotal, shippingUsdCents: shipping, phone,
+      });
+    } catch (e: any) {
+      // كوبون بطل بين الإضافة والعرض: يُعرض سببه ولا يُسقط السلة
+      return { code: cart.couponCode, discountUsdCents: 0, couponId: null, freeShipping: false,
+               invalidReason: e?.response?.error?.message?.ar ?? 'لم يعد صالحاً' };
+    }
+  }
+
+  async summary(token: string, phone?: string) {
     const cart = await this.get(token);
     const fx = await this.fx.current();
     const lines = cart.items.map((it) => ({
@@ -161,11 +209,27 @@ export class CartService {
       unitPriceUsdCents: Number(it.variant.priceUsdCents),
       lineTotalUsdCents: Number(it.variant.priceUsdCents) * it.qty,
     }));
-    const shipping = lines.length ? 200 : 0; // تعريفة دمشق الافتراضية
-    const totals = cashDue(lines.map((l) => l.lineTotalUsdCents), shipping, fx.rate);
+    const subtotal = lines.reduce((a, l) => a + l.lineTotalUsdCents, 0);
+    let shipping = lines.length ? 200 : 0; // تعريفة دمشق الافتراضية
+
+    const coupon = await this.couponFor(cart, subtotal, shipping, phone);
+    const discount = coupon?.discountUsdCents ?? 0;
+    if (coupon?.freeShipping && discount > 0) shipping = 0;
+
+    const billable = coupon?.freeShipping ? subtotal : Math.max(0, subtotal - discount);
+    const totals = cashDue([billable], shipping, fx.rate);
+
     return {
       cartToken: cart.token, lines,
       shippingUsdCents: shipping,
+      subtotalUsdCents: subtotal,
+      discountUsdCents: coupon?.freeShipping ? 0 : discount,
+      coupon: coupon && {
+        code: coupon.code,
+        discountUsdCents: discount,
+        freeShipping: Boolean(coupon.freeShipping),
+        invalidReason: (coupon as any).invalidReason ?? null,
+      },
       fx: { rate: fx.rate, health: fx.health, validUntil: fx.validUntil },
       totals: {
         ...totals,
@@ -202,6 +266,17 @@ export class CartController {
   @Delete(':token/items/:sku')
   async remove(@Param('token') token: string, @Param('sku') sku: string) {
     return { data: await this.cart.removeItem(token, sku) };
+  }
+
+  /** الرمز يُقيَّم على الخادم وحده — الرقم القادم من المتصفح رأيٌ لا حقيقة */
+  @Post(':token/coupons')
+  async applyCoupon(@Param('token') token: string, @Body() b: { code: string; phone?: string }) {
+    return { data: await this.cart.applyCoupon(token, b.code, b.phone) };
+  }
+
+  @Delete(':token/coupons')
+  async removeCoupon(@Param('token') token: string) {
+    return { data: await this.cart.removeCoupon(token) };
   }
 
   @Post(':token/validate')

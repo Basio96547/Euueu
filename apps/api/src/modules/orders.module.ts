@@ -3,6 +3,7 @@ import { MaybeAuth, Protect } from '../common/guards.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CartService } from './cart.module.js';
+import { CouponsService } from './coupons.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
 import { cashDue, orderNo, publicId } from '../common/money.js';
@@ -22,6 +23,7 @@ export class OrdersService {
     @Inject(PrismaService) private prisma: PrismaService,
     @Inject(FxService) private fx: FxService,
     @Inject(CartService) private cart: CartService,
+    @Inject(CouponsService) private coupons: CouponsService,
     @Inject(NotificationsService) private notify: NotificationsService,
   ) {}
 
@@ -52,8 +54,32 @@ export class OrdersService {
       available: it.variant.levels.reduce((a, l) => a + l.onHand, 0),
     }));
 
-    const shipping = 200;
-    const totals = cashDue(lines.map((l) => l.total), shipping, fx.rate);
+    let shipping = 200;
+    const subtotal = lines.reduce((a, l) => a + l.total, 0);
+
+    /* الخصم يُعاد تقييمه هنا من الرمز المحفوظ لا من رقم قادم مع الطلب.
+       بين لحظة إدخال الرمز ولحظة الضغط على «أكّد» قد ينتهي الكوبون أو
+       يُستنفَد أو يهبط المجموع تحت حدّه الأدنى — والقيمة المحسوبة سابقاً
+       تصير وعداً لا يقابله شرط. */
+    const cartRow = await this.prisma.cart.findUnique({ where: { token: cartToken } });
+    let coupon: { code: string; couponId: string | null; discountUsdCents: number; freeShipping: boolean } | null = null;
+    if (cartRow?.couponCode) {
+      try {
+        coupon = await this.coupons.evaluate(cartRow.couponCode, {
+          subtotalUsdCents: subtotal, shippingUsdCents: shipping, phone: address.phone,
+        });
+      } catch (e: any) {
+        // الكوبون بطل: يُرفض الإنشاء الصامت بسعر مختلف عمّا رآه الزبون
+        throw Errors.badRequest('COUPON_NO_LONGER_VALID',
+          `رمز الخصم ${cartRow.couponCode} لم يعد صالحاً: ${e?.response?.error?.message?.ar ?? 'انتهى'}. أزِله وأعد المحاولة.`,
+          'Coupon no longer valid', { code: cartRow.couponCode });
+      }
+    }
+
+    const discount = coupon?.discountUsdCents ?? 0;
+    if (coupon?.freeShipping && discount > 0) shipping = 0;
+    const billable = coupon?.freeShipping ? subtotal : Math.max(0, subtotal - discount);
+    const totals = cashDue([billable], shipping, fx.rate);
 
     const codMax = await this.setting('cod_max_order_usd_cents', 150000);
     if (totals.totalUsdCents > codMax) throw Errors.codLimit(codMax);
@@ -81,8 +107,10 @@ export class OrdersService {
         data: {
           publicId: publicId(), orderNo: orderNo(seq, now),
           userId: addr.userId, shippingAddressId: addr.id,
-          subtotalUsdCents: BigInt(totals.totalUsdCents - shipping),
+          subtotalUsdCents: BigInt(subtotal),
+          discountTotalUsdCents: BigInt(coupon?.freeShipping ? 0 : discount),
           shippingTotalUsdCents: BigInt(shipping),
+          couponCode: coupon?.code,
           totalUsdCents: BigInt(totals.totalUsdCents),
           fxRateId: fx.rateId, fxRate: fx.rate,
           totalSyp: BigInt(totals.cashSyp),
@@ -145,6 +173,16 @@ export class OrdersService {
             },
           });
         }
+      }
+
+      /* عدّاد الاستخدام يُزاد داخل معاملة إنشاء الطلب لا عند إدخال الرمز:
+         لو زِيد عند الإدخال لاستنفد فضوليٌّ كوبوناً بلا أن يشتري شيئاً،
+         ولو زِيد بعدها لاستُخدم الرمز مرتين من جهازين في اللحظة نفسها. */
+      if (coupon?.couponId) {
+        await this.coupons.redeem(tx, {
+          couponId: coupon.couponId, orderId: created.id,
+          phone: address.phone, discountUsdCents: discount,
+        });
       }
 
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });

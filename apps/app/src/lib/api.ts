@@ -86,6 +86,7 @@ export const api = {
   get: <T>(p: string) => req<T>(p),
   post: <T>(p: string, body?: unknown, headers?: Record<string, string>) =>
     req<T>(p, { method: 'POST', body: JSON.stringify(body ?? {}), headers }),
+  del: <T>(p: string) => req<T>(p, { method: 'DELETE' }),
 };
 
 export interface Me {

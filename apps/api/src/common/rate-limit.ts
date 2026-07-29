@@ -12,6 +12,9 @@ const RULES: Array<[RegExp, string, Rule]> = [
   [/^\/api\/v1\/auth\/otp\/request$/, 'POST', { limit: 5, windowSec: 3600, by: 'phone' }],
   [/^\/api\/v1\/auth\/otp\/request$/, 'POST', { limit: 20, windowSec: 3600, by: 'ip' }],
   [/^\/api\/v1\/auth\/otp\/verify$/, 'POST', { limit: 5, windowSec: 900, by: 'phone' }],
+  // تخمين كلمة السرّ أرخص من تخمين رمز: الحدّ أضيق والنافذة أطول
+  [/^\/api\/v1\/auth\/password\/login$/, 'POST', { limit: 10, windowSec: 900, by: 'phone' }],
+  [/^\/api\/v1\/auth\/password\/login$/, 'POST', { limit: 30, windowSec: 900, by: 'ip' }],
   [/^\/api\/v1\/orders$/, 'POST', { limit: 5, windowSec: 3600, by: 'ip' }],
   [/^\/api\/v1\/search/, 'GET', { limit: 60, windowSec: 60, by: 'ip' }],
   [/^\/api\/v1\/warranties\/verify/, 'GET', { limit: 20, windowSec: 3600, by: 'ip' }],

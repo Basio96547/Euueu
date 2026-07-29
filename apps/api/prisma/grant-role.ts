@@ -2,6 +2,10 @@
  * منح دور لمستخدم (أو إنشاؤه إن لم يوجد).
  *
  *   pnpm --filter @talisham/api grant-role +963900000001 ADMIN "مدير المتجر"
+ *   pnpm --filter @talisham/api grant-role +963900000001 ADMIN "الاسم" --password
+ *
+ * مع --password تُقرأ كلمة السرّ من المدخل لا من سطر الأوامر: الوسائط
+ * تبقى في سجل الصدفة وفي `ps` لكل من على الجهاز.
  *
  * تسجيل الدخول برمز OTP يُنشئ حساب زبون فقط — وهذا مقصود:
  * لا يجوز أن يمنح أحدٌ نفسَه صلاحية إدارية من الواجهة.
@@ -9,6 +13,8 @@
  */
 import { PrismaClient, UserRole } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
+import { createInterface } from 'node:readline/promises';
+import { checkPasswordStrength, hashPassword } from '../src/common/password.js';
 
 const prisma = new PrismaClient();
 const SY_PHONE = /^\+9639[0-9]{8}$/;
@@ -21,8 +27,17 @@ function publicId(): string {
   return out;
 }
 
+async function readSecret(prompt: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try { return (await rl.question(prompt)).trim(); }
+  finally { rl.close(); }
+}
+
 async function main() {
-  const [phone, roleArg, ...nameParts] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const wantsPassword = argv.includes('--password');
+  const rest = argv.filter((a) => a !== '--password');
+  const [phone, roleArg, ...nameParts] = rest;
   const fullName = nameParts.join(' ') || null;
 
   if (!phone || !roleArg) {
@@ -58,12 +73,31 @@ async function main() {
         data: { publicId: publicId(), phoneE164: phone, role, fullName },
       });
 
+  if (wantsPassword) {
+    const pw = process.env.STAFF_PASSWORD ?? await readSecret('كلمة السرّ الجديدة: ');
+    const check = checkPasswordStrength(pw);
+    if (!check.ok) { console.error(`كلمة السرّ مرفوضة: ${check.reason}`); process.exit(1); }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hashPassword(pw),
+        passwordSetAt: new Date(),
+        failedLogins: 0, lockedUntil: null,
+        // ضبط كلمة سرّ يُبطل الجلسات القائمة كتغييرها سواءً بسواء
+        tokenVersion: { increment: 1 },
+      },
+    });
+    console.log('ضُبطت كلمة السرّ وأُبطلت الجلسات السابقة.');
+  }
+
   const verb = existing ? (existing.role === role ? 'بقي' : `رُقّي من ${existing.role} إلى`) : 'أُنشئ بدور';
   console.log(`${verb} ${user.role}: ${user.phoneE164} (${user.publicId})`);
   if (existing && existing.role !== role) {
     console.log(`أُبطلت جلساته السابقة — token_version = ${user.tokenVersion}`);
   }
-  console.log('الدخول: اطلب رمزاً من /auth/otp/request بهذا الرقم ثم أكّده.');
+  console.log(wantsPassword
+    ? 'الدخول: من لوحة التحكم بالرقم وكلمة السرّ، أو برمز واتساب.'
+    : 'الدخول: اطلب رمزاً من /auth/otp/request بهذا الرقم ثم أكّده.');
 }
 
 main()

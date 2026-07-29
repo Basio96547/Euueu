@@ -147,6 +147,14 @@ model User {
   locale          String    @default("ar") @db.Char(2)
   displayCurrency String    @default("SYP") @map("display_currency") @db.Char(3)
   tokenVersion    Int       @default(0) @map("token_version")
+  /// كلمة سرّ للحسابات الإدارية فقط: مخزَّنة كـ scrypt بملح لكل حساب.
+  /// الزبون يدخل برمز واتساب ولا حاجة به إليها. ووجودها للموظّف ضرورة
+  /// لا رفاهية: الاعتماد على الواتساب وحده يعني أن انقطاع مزوّد الرسائل
+  /// يقفل لوحة التحكم في وجه صاحبها.
+  passwordHash    String?   @map("password_hash")
+  passwordSetAt   DateTime? @map("password_set_at") @db.Timestamptz
+  failedLogins    Int       @default(0) @map("failed_logins")
+  lockedUntil     DateTime? @map("locked_until") @db.Timestamptz
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
@@ -451,6 +459,9 @@ model Cart {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   token     String   @unique
   userId    String?  @map("user_id") @db.Uuid
+  /// الرمز يُحفظ لا الخصم: القيمة تُعاد حسابها عند كل عرض، فلو تغيّر
+  /// سعر أو انتهت صلاحية الكوبون بين الإضافة والطلب ظهر ذلك فوراً.
+  couponCode String? @map("coupon_code") @db.VarChar(32)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

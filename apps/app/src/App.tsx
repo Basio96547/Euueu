@@ -6,6 +6,8 @@ import { useRoute, match } from './lib/router.js';
 interface CartLine { sku: string; name: string; qty: number; unitPriceUsdCents: number; lineTotalUsdCents: number }
 interface CartSummary {
   cartToken: string; lines: CartLine[]; shippingUsdCents: number;
+  subtotalUsdCents: number; discountUsdCents: number;
+  coupon: { code: string; discountUsdCents: number; freeShipping: boolean; invalidReason: string | null } | null;
   fx: { rate: number; health: string; validUntil: string };
   totals: { totalUsdCents: number; rawSyp: number; cashSyp: number; roundingDiffSyp: number };
 }
@@ -121,9 +123,17 @@ function CartPage({ nav }: { nav: (to: string) => void }) {
             <span className="tnum" style={{ fontWeight: 700 }}>{fmtUsd(l.lineTotalUsdCents)}</span>
           </div>
         ))}
+        {cart.discountUsdCents > 0 && (
+          <div className="row">
+            <span className="muted">خصم {cart.coupon?.code}</span>
+            <span className="tnum" style={{ color: 'var(--jade)' }}>− {fmtUsd(cart.discountUsdCents)}</span>
+          </div>
+        )}
         <div className="row"><span className="muted">التوصيل</span><span className="tnum">{fmtUsd(cart.shippingUsdCents)}</span></div>
         <div className="tot"><span>المستحق نقداً</span><span className="tnum">{fmtSyp(cart.totals.cashSyp)}</span></div>
       </div>
+
+      <CouponBox cart={cart} onChange={setCart} />
 
       <p className="warnbox">
         المبلغ يُحسب على المجموع ثم يُقرَّب لأقرب 1000 ليرة، وقد يختلف قليلاً عن جمع الأسعار المعروضة.
@@ -506,6 +516,278 @@ function AccountPage({ nav }: { nav: (to: string) => void }) {
   );
 }
 
+
+/* ————— رمز الخصم ————— */
+function CouponBox({ cart, onChange }: { cart: CartSummary; onChange: (c: CartSummary) => void }) {
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const applied = cart.coupon;
+
+  if (applied && !applied.invalidReason) {
+    return (
+      <div className="ok" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <span>رمز {applied.code} مُطبَّق{applied.freeShipping ? ' — شحن مجاني' : ''}</span>
+        <button
+          className="btn btn--ghost"
+          style={{ minHeight: 34, padding: '0 12px', width: 'auto' }}
+          onClick={async () => {
+            try { onChange(await api.del<CartSummary>(`/carts/${cart.cartToken}/coupons`)); }
+            catch { /* الإزالة لا تُسقط السلة: يبقى المعروض كما هو */ }
+          }}
+        >
+          إزالة
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card glass">
+      {applied?.invalidReason && (
+        <div className="err">رمز {applied.code} لم يعد صالحاً: {applied.invalidReason}</div>
+      )}
+      {err && <div className="err">{err}</div>}
+      <div className="field">
+        <label htmlFor="cp">رمز خصم</label>
+        <input id="cp" dir="ltr" value={code} placeholder="SHAM10"
+          onChange={(e) => { setCode(e.target.value); setErr(null); }} />
+      </div>
+      <ActionButton
+        label="طبِّق الرمز"
+        busyLabel="جارٍ التحقق…"
+        className="btn btn--ghost"
+        disabled={code.trim().length < 3}
+        onClick={async () => {
+          setErr(null);
+          try { onChange(await api.post<CartSummary>(`/carts/${cart.cartToken}/coupons`, { code })); }
+          catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر تطبيق الرمز'); }
+        }}
+      />
+    </div>
+  );
+}
+
+/* ————— طلب إرجاع ————— */
+const RETURN_REASONS: Array<[string, string]> = [
+  ['NOT_AS_DESCRIBED', 'غير مطابق للوصف'],
+  ['DEFECTIVE', 'عيب في الجهاز'],
+  ['WRONG_ITEM', 'وصلني صنف خاطئ'],
+  ['CHANGED_MIND', 'عدلت عن الشراء'],
+  ['DAMAGED_IN_TRANSIT', 'تضرَّر أثناء الشحن'],
+];
+
+function ReturnBox({ orderNo }: { orderNo: string }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('NOT_AS_DESCRIBED');
+  const [note, setNote] = useState('');
+  const [imei, setImei] = useState('');
+  const [done, setDone] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (done) {
+    return (
+      <div className="ok">
+        استلمنا طلب الإرجاع {done}. أبقِ العلبة والملحقات كاملة — سنراجعه ونعلمك خلال يوم عمل.
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button className="btn btn--ghost" onClick={() => setOpen(true)}>
+        أريد إرجاع الطلب
+      </button>
+    );
+  }
+
+  return (
+    <div className="card glass">
+      {err && <div className="err">{err}</div>}
+      <p className="muted" style={{ lineHeight: 1.7 }}>
+        الإرجاع خلال سبعة أيام من التسليم. يُشترط أن تكون العلبة والملحقات كاملة
+        والجهاز بالحالة نفسها. رقم الجهاز يُطابَق مع الذي بعناه لك.
+      </p>
+      <div className="field">
+        <label htmlFor="rr">سبب الإرجاع</label>
+        <select id="rr" value={reason} onChange={(e) => setReason(e.target.value)}>
+          {RETURN_REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="ri">رقم الجهاز IMEI</label>
+        <input id="ri" dir="ltr" inputMode="numeric" value={imei} onChange={(e) => setImei(e.target.value)} />
+        <span className="hint">اطلبه بالضغط على ‎*#06#‎ من لوحة الاتصال.</span>
+      </div>
+      <div className="field">
+        <label htmlFor="rn">ملاحظتك</label>
+        <textarea id="rn" rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <ActionButton
+        label="أرسل طلب الإرجاع"
+        busyLabel="جارٍ الإرسال…"
+        onClick={async () => {
+          setErr(null);
+          try {
+            const r = await api.post<{ returnNo: string }>('/returns', { orderNo, reason, note, imei });
+            setDone(r.returnNo);
+          } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر إرسال الطلب'); }
+        }}
+      />
+    </div>
+  );
+}
+
+/* ————— كتابة مراجعة ————— */
+function ReviewBox({ orderNo, sku, name }: { orderNo: string; sku: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (done) return <div className="ok">شكراً — مراجعتك في طابور الإشراف وتُنشر خلال يوم عمل.</div>;
+  if (!open) return <button className="btn btn--ghost" onClick={() => setOpen(true)}>قيّم {name}</button>;
+
+  return (
+    <div className="card glass">
+      {err && <div className="err">{err}</div>}
+      <div className="field">
+        <label>تقييمك</label>
+        <div className="stars" role="group" aria-label="التقييم">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} type="button" aria-pressed={rating >= n}
+              aria-label={`${n} من 5`} onClick={() => setRating(n)}>
+              {rating >= n ? '★' : '☆'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="vt">عنوان</label>
+        <input id="vt" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="vb">رأيك بعد الاستعمال</label>
+        <textarea id="vb" rows={4} value={body} onChange={(e) => setBody(e.target.value)}
+          placeholder="البطارية، الكاميرا، الحرارة، الشبكة…" />
+      </div>
+      <ActionButton
+        label="أرسل المراجعة"
+        busyLabel="جارٍ الإرسال…"
+        onClick={async () => {
+          setErr(null);
+          try { await api.post('/reviews', { orderNo, sku, rating, title, body }); setDone(true); }
+          catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر إرسال المراجعة'); }
+        }}
+      />
+    </div>
+  );
+}
+
+/* ————— الدعم ————— */
+interface MyTicket {
+  ticketNo: string; status: string; statusAr: string;
+  subject: string | null; contactReason: string; orderNo: string | null; createdAt: string;
+}
+const REASONS: Array<[string, string]> = [
+  ['WHERE_IS_MY_ORDER', 'أين طلبي؟'],
+  ['DEVICE_ISSUE', 'مشكلة في الجهاز'],
+  ['WRONG_AMOUNT', 'خطأ في المبلغ المحصَّل'],
+  ['CANCEL_ORDER', 'أريد إلغاء طلب'],
+  ['WARRANTY', 'سؤال عن الكفالة'],
+  ['OTHER', 'استفسار آخر'],
+];
+
+function SupportPage() {
+  const [mine, setMine] = useState<MyTicket[] | null>(null);
+  const [reason, setReason] = useState('WHERE_IS_MY_ORDER');
+  const [orderNo, setOrderNo] = useState('');
+  const [body, setBody] = useState('');
+  const [phone, setPhone] = useState('+963');
+  const [done, setDone] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = () => {
+    if (!auth.isSignedIn()) { setMine([]); return; }
+    api.get<MyTicket[]>('/support/tickets/mine').then(setMine).catch(() => setMine([]));
+  };
+  useEffect(() => {
+    load();
+    if (auth.isSignedIn()) auth.me().then((u) => setPhone((p) => (p === '+963' ? u.phone : p))).catch(() => {});
+  }, []);
+
+  const phoneOk = /^\+9639[0-9]{8}$/.test(phone);
+
+  return (
+    <div className="page">
+      {err && <div className="err">{err}</div>}
+      {done && (
+        <div className="ok">
+          استلمنا رسالتك — رقم التذكرة {done}. سنردّ ضمن ساعات الدوام
+          (السبت–الخميس ١٠ صباحاً – ٨ مساءً).
+        </div>
+      )}
+
+      <div className="card glass">
+        <div className="field">
+          <label htmlFor="sr">سبب التواصل</label>
+          <select id="sr" value={reason} onChange={(e) => setReason(e.target.value)}>
+            {REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="so">رقم الطلب (اختياري)</label>
+          <input id="so" dir="ltr" value={orderNo} placeholder="TS-2607-000001"
+            onChange={(e) => setOrderNo(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="sp">رقم جوالك <span className="req">*</span></label>
+          <input id="sp" dir="ltr" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="sb">اشرح المشكلة <span className="req">*</span></label>
+          <textarea id="sb" rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
+        </div>
+        <ActionButton
+          label="أرسل"
+          busyLabel="جارٍ الإرسال…"
+          disabled={!phoneOk || body.trim().length < 5}
+          onClick={async () => {
+            setErr(null); setDone(null);
+            try {
+              const t = await api.post<{ ticketNo: string }>('/support/tickets', {
+                phone, contactReason: reason, subject: REASONS.find(([v]) => v === reason)?.[1],
+                body, orderNo: orderNo || undefined,
+              });
+              setDone(t.ticketNo); setBody(''); load();
+            } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإرسال'); }
+          }}
+        />
+      </div>
+
+      {mine && mine.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>تذاكري</h2>
+          <div className="card glass">
+            {mine.map((t) => (
+              <div className="line" key={t.ticketNo}>
+                <span className="mid">
+                  <b className="tnum">{t.ticketNo}</b>
+                  <small className="muted">
+                    {t.subject ?? t.contactReason} · {fmtDate(t.createdAt)}
+                  </small>
+                </span>
+                <span className="tag">{t.statusAr}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const { path, nav } = useRoute();
   const order = match(path, '/app/orders/:orderNo');
@@ -515,6 +797,7 @@ export default function App() {
     : path.startsWith('/app/checkout') ? 'بيانات التسليم'
     : path.startsWith('/app/track') ? 'تتبّع طلب'
     : path.startsWith('/app/account') ? 'حسابي'
+    : path.startsWith('/app/support') ? 'الدعم'
     : 'سلتي';
 
   return (
@@ -533,6 +816,7 @@ export default function App() {
         : path.startsWith('/app/checkout') ? <CheckoutPage nav={nav} />
         : path.startsWith('/app/track') ? <TrackPage />
         : path.startsWith('/app/account') ? <AccountPage nav={nav} />
+        : path.startsWith('/app/support') ? <SupportPage />
         : <CartPage nav={nav} />}
     </>
   );

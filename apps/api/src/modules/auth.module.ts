@@ -5,6 +5,7 @@ import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
 import { publicId } from '../common/money.js';
 import { issue, verify } from '../common/jwt.js';
+import { checkPasswordStrength, hashPassword, verifyPassword } from '../common/password.js';
 import { Protect } from '../common/guards.js';
 
 const OTP_LEN = Number(process.env.OTP_LENGTH ?? 6);
@@ -13,6 +14,11 @@ const MAX_VERIFY_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 const RESEND_COOLDOWN_SEC = 60;
 const SY_PHONE = /^\+9639[0-9]{8}$/;
+/** الأدوار التي يجوز لها الدخول بكلمة سرّ — الزبون يدخل برمز وحده */
+const STAFF_ROLES = new Set(['SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN']);
+const MAX_PASSWORD_ATTEMPTS = 5;
+const PASSWORD_LOCK_MINUTES = 15;
+
 /** كل دور مسجَّل — للمسارات التي تلزمها هوية لا صلاحية بعينها */
 const ANY_ROLE = ['CUSTOMER', 'SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN'];
 
@@ -122,6 +128,83 @@ export class AuthService {
     return issue(user.publicId, user.role, user.tokenVersion);
   }
 
+  /**
+   * الدخول بكلمة سرّ — للموظّفين وحدهم.
+   *
+   * رسالة الفشل واحدة مهما كان السبب: رقم غير موجود، أو بلا كلمة سرّ،
+   * أو كلمة خاطئة. تمييزُها يحوّل نموذج الدخول إلى أداة تعداد: يجرّب
+   * المهاجم أرقاماً حتى يعرف أيّها موظّف، ثم يركّز عليه وحده.
+   */
+  async loginWithPassword(phone: string, password: string) {
+    const fail = () => Errors.badRequest('LOGIN_FAILED',
+      'الرقم أو كلمة السرّ غير صحيحة', 'Invalid credentials');
+
+    if (!SY_PHONE.test(phone) || !password) throw fail();
+
+    const user = await this.prisma.user.findUnique({ where: { phoneE164: phone } });
+    if (!user || user.deletedAt || !user.passwordHash || !STAFF_ROLES.has(user.role)) {
+      throw fail();
+    }
+
+    const now = new Date();
+    if (user.lockedUntil && user.lockedUntil > now) {
+      const mins = Math.ceil((user.lockedUntil.getTime() - now.getTime()) / 60_000);
+      throw Errors.badRequest('ACCOUNT_TEMP_LOCKED',
+        `الحساب مقفل مؤقتاً — أعد المحاولة بعد ${mins} دقيقة`, 'Temporarily locked');
+    }
+
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      const attempts = user.failedLogins + 1;
+      const locks = attempts >= MAX_PASSWORD_ATTEMPTS;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLogins: locks ? 0 : attempts,
+          lockedUntil: locks ? new Date(now.getTime() + PASSWORD_LOCK_MINUTES * 60_000) : null,
+        },
+      });
+      if (locks) {
+        throw Errors.badRequest('ACCOUNT_TEMP_LOCKED',
+          `خمس محاولات خاطئة — قُفل الحساب ${PASSWORD_LOCK_MINUTES} دقيقة`, 'Locked after 5 attempts');
+      }
+      throw fail();
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: 0, lockedUntil: null },
+    });
+
+    const tokens = issue(user.publicId, user.role, user.tokenVersion);
+    return { ...tokens, user: { publicId: user.publicId, role: user.role, phone: user.phoneE164 } };
+  }
+
+  /** تغيير كلمة السرّ: تُبطل كل الجلسات — تغييرها إعلانُ أن القديمة لم تعد تُؤتمن */
+  async changePassword(publicIdValue: string, current: string, next: string) {
+    const user = await this.prisma.user.findUnique({ where: { publicId: publicIdValue } });
+    if (!user) throw Errors.notFound('المستخدم');
+    if (!STAFF_ROLES.has(user.role)) {
+      throw Errors.badRequest('PASSWORD_NOT_APPLICABLE',
+        'حسابات الزبائن تدخل برمز واتساب ولا كلمة سرّ لها', 'Password not applicable');
+    }
+    if (user.passwordHash && !(await verifyPassword(current, user.passwordHash))) {
+      throw Errors.badRequest('CURRENT_PASSWORD_WRONG', 'كلمة السرّ الحالية غير صحيحة', 'Current password wrong');
+    }
+    const check = checkPasswordStrength(next);
+    if (!check.ok) throw Errors.badRequest('PASSWORD_WEAK', check.reason!, 'Password too weak');
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hashPassword(next),
+        passwordSetAt: new Date(),
+        failedLogins: 0, lockedUntil: null,
+        tokenVersion: { increment: 1 },
+      },
+    });
+    return { changed: true, note: 'أُبطلت كل الجلسات — سجّل الدخول من جديد.' };
+  }
+
   async me(publicIdValue: string) {
     const u = await this.prisma.user.findUnique({ where: { publicId: publicIdValue } });
     if (!u) throw Errors.notFound('المستخدم');
@@ -151,6 +234,21 @@ export class AuthController {
   @Post('otp/verify')
   async verify(@Body() b: { phone: string; code: string }) {
     return { data: await this.auth.verifyCode(b.phone, b.code) };
+  }
+
+  /** دخول الموظّفين بكلمة سرّ — الزبون يدخل برمز واتساب */
+  @Post('password/login')
+  async passwordLogin(@Body() b: { phone: string; password: string }) {
+    return { data: await this.auth.loginWithPassword(b.phone, b.password) };
+  }
+
+  @Post('password/change')
+  @Protect(...ANY_ROLE)
+  async passwordChange(
+    @Body() b: { currentPassword: string; newPassword: string },
+    @Req() req: { user?: { sub: string } },
+  ) {
+    return { data: await this.auth.changePassword(req.user!.sub, b.currentPassword, b.newPassword) };
   }
 
   @Post('refresh')
