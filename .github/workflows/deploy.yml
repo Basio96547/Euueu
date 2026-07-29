@@ -1,0 +1,74 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @talisham/site run build
+        env:
+          PUBLIC_SITE_URL: https://talisham.com
+      # بوابة الأداء: ميزانيات الفصل 5 مفروضة قبل النشر لا بعده
+      - name: ميزانية الحزمة
+        run: |
+          JS=$(find apps/site/dist -name '*.js' -exec cat {} + 2>/dev/null | gzip -c | wc -c || echo 0)
+          echo "JavaScript المضغوط: ${JS} بايت"
+          if [ "$JS" -gt 61440 ]; then echo "تجاوز ميزانية 60 كيلوبايت"; exit 1; fi
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/site
+          command: deploy
+
+  app:
+    runs-on: ubuntu-latest
+    needs: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @talisham/app run build
+        env:
+          VITE_API_URL: https://api.talisham.com/api/v1
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/app
+          command: deploy
+
+  admin:
+    runs-on: ubuntu-latest
+    needs: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @talisham/admin run build
+        env:
+          VITE_API_URL: https://api.talisham.com/api/v1
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/admin
+          command: deploy

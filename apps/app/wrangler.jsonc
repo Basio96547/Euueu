@@ -1,0 +1,11 @@
+{
+  // تطبيق السلة والحساب — يُخدَم تحت /app/*
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "talisham-app",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": { "enabled": true }
+}
