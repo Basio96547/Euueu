@@ -24,6 +24,7 @@ import { TicketsController, TicketsService } from './modules/tickets.module.js';
 import { AlertsController, AlertsService } from './modules/alerts.module.js';
 import { ProductsAdminController, ProductsAdminService } from './modules/products.admin.js';
 import { PushController, PushService } from './modules/push.module.js';
+import { DeliveryController, DeliveryService } from './modules/delivery.module.js';
 
 @Module({
   controllers: [
@@ -32,7 +33,7 @@ import { PushController, PushService } from './modules/push.module.js';
     SearchController, WarrantyController, ProcurementController, AuthController,
     SettlementsController, ReturnsController, CouponsController,
     ReviewsController, TicketsController, AlertsController, ProductsAdminController,
-    PushController,
+    PushController, DeliveryController,
   ],
   providers: [
     PrismaService, FxService, CatalogService, CartService, OrdersService,
@@ -40,6 +41,7 @@ import { PushController, PushService } from './modules/push.module.js';
     ReservationSweeper,
     SettlementsService, ReturnsService, CouponsService,
     ReviewsService, TicketsService, AlertsService, ProductsAdminService, PushService,
+    DeliveryService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

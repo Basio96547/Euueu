@@ -818,6 +818,254 @@ function Moderation() {
 
 
 
+
+/* ————— المندوبون والمناطق ————— */
+interface CourierRow {
+  code: string; fullName: string; phone: string;
+  status: string; statusAr: string; suspensionReason: string | null;
+  vehicleType: string; vehiclePlate: string | null; employmentType: string;
+  homeGovernorate: string; dailyCapacity: number; deliveredToday: number;
+  cashCapUsdCents: number; depositUsdCents: number;
+  guarantorName: string | null; guarantorPhone: string | null;
+  active: boolean; zones: Array<{ code: string; name: any; priority: number }>;
+}
+interface ZoneRow {
+  code: string; name: any; governorate: string; city: string;
+  neighborhoods: string[]; zoneType: string;
+  surchargeUsdCents: number; slaHours: number; codMaxUsdCents: number | null;
+  defaultCourier: string | null;
+  couriers: Array<{ code: string; name: string; priority: number }>;
+  active: boolean;
+}
+const VEHICLE_AR: Record<string, string> = {
+  MOTORCYCLE: 'دراجة', CAR: 'سيارة', VAN: 'فان', ON_FOOT: 'على الأقدام',
+};
+const ZONE_TYPE_AR: Record<string, string> = {
+  URBAN_CORE: 'مركز المدينة', URBAN_OUTER: 'أطراف المدينة',
+  SUBURBAN: 'ضواحٍ', REMOTE: 'نائية',
+};
+const CSTATUS_AR: Record<string, string> = {
+  AVAILABLE: 'متاح', ON_ROUTE: 'في جولة', OFF_DUTY: 'خارج الوردية', SUSPENDED: 'موقوف',
+};
+
+function Delivery() {
+  const [tab, setTab] = useState<'couriers' | 'zones'>('couriers');
+  const [couriers, setCouriers] = useState<CourierRow[] | null>(null);
+  const [zones, setZones] = useState<ZoneRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [newC, setNewC] = useState({ code: '', fullName: '', phone: '+963', vehicleType: 'MOTORCYCLE', guarantorName: '', guarantorPhone: '' });
+  const [newZ, setNewZ] = useState({ code: '', nameAr: '', governorate: 'DAMASCUS', city: 'دمشق', zoneType: 'URBAN_CORE', neighborhoods: '' });
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(() => {
+    api.get<CourierRow[]>('/admin/delivery/couriers').then(setCouriers).catch((e) =>
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+    api.get<ZoneRow[]>('/admin/delivery/zones').then(setZones).catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+
+  const setStatus = async (code: string, status: string) => {
+    setErr(null); setMsg(null);
+    try {
+      const body: any = { status };
+      if (status === 'SUSPENDED') {
+        const reason = prompt('سبب الإيقاف — يُقرأ لاحقاً ليُعرف أيُرفع أم لا:');
+        if (!reason) return;
+        body.reason = reason;
+      }
+      await api.post(`/admin/delivery/couriers/${code}/status`, body);
+      setMsg(`${code}: ${CSTATUS_AR[status]}`); load();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التغيير'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+
+      <div className="row" style={{ marginBlockEnd: 12 }}>
+        <div className="tabs">
+          {([['couriers', 'المندوبون'], ['zones', 'المناطق']] as const).map(([v, l]) => (
+            <button key={v} aria-pressed={tab === v} onClick={() => { setTab(v); setAdding(false); }}>{l}</button>
+          ))}
+        </div>
+        <button className="btn" style={{ width: 'auto', padding: '0 16px' }}
+          onClick={() => setAdding((a) => !a)}>
+          {adding ? 'إلغاء' : tab === 'couriers' ? '+ مندوب' : '+ منطقة'}
+        </button>
+      </div>
+
+      {adding && tab === 'couriers' && (
+        <div className="card glass">
+          <div className="grid2">
+            <div className="field">
+              <label>الرمز</label>
+              <input dir="ltr" value={newC.code} placeholder="DMS-03"
+                onChange={(e) => setNewC({ ...newC, code: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="field">
+              <label>الاسم الثلاثي</label>
+              <input value={newC.fullName} onChange={(e) => setNewC({ ...newC, fullName: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>رقم الجوال</label>
+              <input dir="ltr" inputMode="tel" value={newC.phone}
+                onChange={(e) => setNewC({ ...newC, phone: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>المركبة</label>
+              <select value={newC.vehicleType} onChange={(e) => setNewC({ ...newC, vehicleType: e.target.value })}>
+                {Object.entries(VEHICLE_AR).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>اسم الكفيل</label>
+              <input value={newC.guarantorName} onChange={(e) => setNewC({ ...newC, guarantorName: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>جوال الكفيل</label>
+              <input dir="ltr" inputMode="tel" value={newC.guarantorPhone}
+                onChange={(e) => setNewC({ ...newC, guarantorPhone: e.target.value })} />
+            </div>
+          </div>
+          <span className="hint">
+            إنشاء المندوب يُنشئ له حساب دخول بدور COURIER — بلا حساب لا يفتح تطبيقه.
+          </span>
+          <Btn label="أنشئ المندوب" onClick={async () => {
+            setErr(null);
+            try {
+              await api.post('/admin/delivery/couriers', newC);
+              setNewC({ code: '', fullName: '', phone: '+963', vehicleType: 'MOTORCYCLE', guarantorName: '', guarantorPhone: '' });
+              setAdding(false); load();
+            } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإنشاء'); }
+          }} />
+        </div>
+      )}
+
+      {adding && tab === 'zones' && (
+        <div className="card glass">
+          <div className="grid2">
+            <div className="field">
+              <label>الرمز</label>
+              <input dir="ltr" value={newZ.code} placeholder="DMS-S1"
+                onChange={(e) => setNewZ({ ...newZ, code: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="field">
+              <label>الاسم</label>
+              <input value={newZ.nameAr} placeholder="دمشق — الجنوب"
+                onChange={(e) => setNewZ({ ...newZ, nameAr: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>المحافظة</label>
+              <select value={newZ.governorate} onChange={(e) => setNewZ({ ...newZ, governorate: e.target.value })}>
+                {Object.entries(GOV_AR).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>نموذج المنطقة</label>
+              <select value={newZ.zoneType} onChange={(e) => setNewZ({ ...newZ, zoneType: e.target.value })}>
+                {Object.entries(ZONE_TYPE_AR).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>الأحياء (يفصل بينها فاصلة)</label>
+            <textarea rows={2} value={newZ.neighborhoods} placeholder="المزة، دمر، كفرسوسة"
+              onChange={(e) => setNewZ({ ...newZ, neighborhoods: e.target.value })} />
+            <span className="hint">
+              المطابقة بالاسم المطبَّع: «المزّة» و«المزه» تُطابقان «المزة».
+              أضف المرادفات الشائعة ليقلّ ما يسقط خارج التقسيم.
+            </span>
+          </div>
+          <Btn label="أنشئ المنطقة" onClick={async () => {
+            setErr(null);
+            try {
+              await api.post('/admin/delivery/zones', {
+                code: newZ.code, name: { ar: newZ.nameAr },
+                governorate: newZ.governorate, city: newZ.city, zoneType: newZ.zoneType,
+                neighborhoods: newZ.neighborhoods.split(/[،,]/).map((n) => n.trim()).filter(Boolean),
+              });
+              setNewZ({ code: '', nameAr: '', governorate: 'DAMASCUS', city: 'دمشق', zoneType: 'URBAN_CORE', neighborhoods: '' });
+              setAdding(false); load();
+            } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإنشاء'); }
+          }} />
+        </div>
+      )}
+
+      {tab === 'couriers' && (couriers === null ? <p className="muted">جارٍ التحميل…</p>
+        : !couriers.length ? <div className="empty"><p>لا مندوبين بعد.</p></div>
+        : couriers.map((c) => (
+          <div className="qrow glass" key={c.code}>
+            <div className="top">
+              <div>
+                <div className="no">{c.code} · {c.fullName}</div>
+                <div className="muted"><span dir="ltr">{c.phone}</span> · {VEHICLE_AR[c.vehicleType] ?? c.vehicleType}</div>
+                <div className="muted">
+                  اليوم {c.deliveredToday} من {c.dailyCapacity} · سقف نقدي {(c.cashCapUsdCents / 100).toFixed(0)}$
+                </div>
+                {c.guarantorName && <div className="muted">كفيل: {c.guarantorName} · <span dir="ltr">{c.guarantorPhone}</span></div>}
+                {c.zones.length > 0 && (
+                  <div className="muted">
+                    مناطقه: {c.zones.sort((a, b) => a.priority - b.priority).map((z) => z.code).join(' · ')}
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: 'end' }}>
+                <span className={`tag ${c.status === 'SUSPENDED' ? 'tag--clay' : c.status === 'AVAILABLE' ? 'tag--jade' : ''}`}>
+                  {c.statusAr}
+                </span>
+                {c.deliveredToday >= c.dailyCapacity && <div className="clock" data-urgent>بلغ سعته</div>}
+              </div>
+            </div>
+            {c.suspensionReason && <div className="err" style={{ marginBlock: 8 }}>{c.suspensionReason}</div>}
+            <div className="acts">
+              <a className="btn btn--ghost" href={`tel:${c.phone}`}>اتصال</a>
+              {c.status !== 'AVAILABLE' && <Btn label="متاح" onClick={() => setStatus(c.code, 'AVAILABLE')} />}
+              {c.status !== 'OFF_DUTY' && <Btn label="خارج الوردية" kind="btn--ghost" onClick={() => setStatus(c.code, 'OFF_DUTY')} />}
+              {c.status !== 'SUSPENDED' && <Btn label="أوقفه" kind="btn--danger" onClick={() => setStatus(c.code, 'SUSPENDED')} />}
+            </div>
+          </div>
+        )))}
+
+      {tab === 'zones' && (zones === null ? <p className="muted">جارٍ التحميل…</p>
+        : !zones.length ? <div className="empty"><p>لا مناطق بعد.</p></div>
+        : zones.map((z) => (
+          <div className="qrow glass" key={z.code}>
+            <div className="top">
+              <div>
+                <div className="no">{z.code} · {z.name?.ar}</div>
+                <div className="muted">{GOV_AR[z.governorate] ?? z.governorate} · {ZONE_TYPE_AR[z.zoneType]}</div>
+                <div className="muted">{z.neighborhoods.join(' · ')}</div>
+                <div className="muted">
+                  مهلة {z.slaHours} ساعة
+                  {z.surchargeUsdCents > 0 && ` · رسم إضافي ${(z.surchargeUsdCents / 100).toFixed(2)}$`}
+                </div>
+              </div>
+              <div style={{ textAlign: 'end' }}>
+                <span className={`tag ${z.active ? 'tag--jade' : 'tag--clay'}`}>
+                  {z.active ? 'فعّالة' : 'موقوفة'}
+                </span>
+              </div>
+            </div>
+            <div className="acts">
+              {z.couriers.map((c) => (
+                <span key={c.code} className="tag">{c.code} ({c.priority})</span>
+              ))}
+              <Btn label="+ اربط مندوباً" kind="btn--ghost" onClick={async () => {
+                const code = prompt(`رمز المندوب لربطه بـ${z.code}:`);
+                if (!code) return;
+                const pr = Number(prompt('الأولوية (الأصغر أولى):', '10') ?? 10);
+                try { await api.post(`/admin/delivery/zones/${z.code}/couriers`, { courierCode: code.toUpperCase(), priority: pr }); load(); }
+                catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الربط'); }
+              }} />
+            </div>
+          </div>
+        )))}
+    </>
+  );
+}
+
 /* ————— إعدادات المتجر ————— */
 const SETTING_AR: Record<string, { label: string; hint?: string; kind: 'number' | 'boolean' | 'array'; money?: boolean }> = {
   store_paused: { label: 'إيقاف المتجر', kind: 'boolean', hint: 'يوقف استقبال الطلبات فوراً — للأزمات لا للإجازات.' },
@@ -1566,7 +1814,7 @@ export default function App() {
     ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/settlements', 'التسويات'],
     ['/returns', 'المرتجعات'], ['/tickets', 'الدعم'], ['/moderation', 'الإشراف'],
     ['/catalog', 'الكتالوج'], ['/coupons', 'الكوبونات'],
-    ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'],
+    ['/fx', 'سعر الصرف'], ['/delivery', 'التوصيل'], ['/courier', 'المندوب'],
     ['/settings', 'الإعدادات'], ['/password', 'كلمة السرّ'],
   ];
 
@@ -1599,6 +1847,7 @@ export default function App() {
           : path === '/tickets' ? <Tickets />
           : path === '/moderation' ? <Moderation />
           : path === '/coupons' ? <Coupons />
+          : path === '/delivery' ? <Delivery />
           : path === '/settings' ? <Settings />
           : path === '/password' ? <PasswordScreen />
           : path === '/catalog' ? <Catalog />

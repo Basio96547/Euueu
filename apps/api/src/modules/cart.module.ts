@@ -23,7 +23,13 @@ export class CartService {
   async get(token: string) {
     const cart = await this.prisma.cart.findUnique({
       where: { token },
-      include: { items: { include: { variant: { include: { product: true, levels: true } } } } },
+      include: {
+        items: {
+          include: {
+            variant: { include: { product: { include: { category: true } }, levels: true } },
+          },
+        },
+      },
     });
     if (!cart) throw Errors.notFound('السلة');
     return cart;
@@ -202,12 +208,24 @@ export class CartService {
   async summary(token: string, phone?: string) {
     const cart = await this.get(token);
     const fx = await this.fx.current();
-    const lines = cart.items.map((it) => ({
-      sku: it.variant.sku,
-      name: (it.variant.product.name as any).ar,
-      qty: it.qty,
-      unitPriceUsdCents: Number(it.variant.priceUsdCents),
-      lineTotalUsdCents: Number(it.variant.priceUsdCents) * it.qty,
+    /* عرض الكمية يُطبَّق على السطر قبل أي شيء آخر: هو أول سلّم الأولوية
+       (كمية ← حزمة ← قاعدة تسعير ← كوبون)، وحسابه بعد الكوبون يعطي
+       رقماً يعتمد على ترتيب الحساب لا على ما يستحقه الزبون. */
+    const lines = await Promise.all(cart.items.map(async (it) => {
+      const unit = Number(it.variant.priceUsdCents);
+      const brk = await this.coupons.quantityBreakFor(
+        it.variant.sku, it.variant.product.category?.slug ?? null, it.qty,
+      );
+      const gross = unit * it.qty;
+      const off = brk ? Math.floor((gross * brk.discountBp) / 10_000) : 0;
+      return {
+        sku: it.variant.sku,
+        name: (it.variant.product.name as any).ar,
+        qty: it.qty,
+        unitPriceUsdCents: unit,
+        lineTotalUsdCents: gross - off,
+        quantityBreak: brk ? { minQty: brk.minQty, discountPct: brk.discountBp / 100, savedUsdCents: off } : null,
+      };
     }));
     const subtotal = lines.reduce((a, l) => a + l.lineTotalUsdCents, 0);
     let shipping = lines.length ? 200 : 0; // تعريفة دمشق الافتراضية

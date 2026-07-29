@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
 import { Protect } from '../common/guards.js';
@@ -109,6 +109,76 @@ export class CouponsService {
     });
   }
 
+  /**
+   * عرض الكمية — الفصل 7 §7.7
+   *
+   * يُطبَّق على السطر لا على السلة: من اشترى ثلاث سماعات يستحق شريحتها،
+   * ولا يستحقها من اشترى سماعة وجرابين. وأولويته قبل الكوبون في سلّم
+   * التعارض، وهما لا يجتمعان إلا إن كان الكوبون قابلاً للتراكم.
+   */
+  async quantityBreakFor(sku: string, categorySlug: string | null, qty: number) {
+    const rows = await this.prisma.quantityBreak.findMany({
+      where: {
+        isActive: true,
+        minQty: { lte: qty },
+        OR: [
+          { variantSku: sku },
+          ...(categorySlug ? [{ categorySlug }] : []),
+        ],
+      },
+      orderBy: [{ minQty: 'desc' }],
+    });
+    // الأخصّ يفوز: شريحة الصنف قبل شريحة فئته مهما كانت النسبة
+    const exact = rows.find((r) => r.variantSku === sku);
+    const best = exact ?? rows[0];
+    return best ? { minQty: best.minQty, discountBp: best.discountBp } : null;
+  }
+
+  async listBreaks() {
+    const rows = await this.prisma.quantityBreak.findMany({
+      orderBy: [{ categorySlug: 'asc' }, { minQty: 'asc' }],
+    });
+    return rows.map((r) => ({
+      id: r.id, variantSku: r.variantSku, categorySlug: r.categorySlug,
+      minQty: r.minQty, discountBp: r.discountBp,
+      discountPct: r.discountBp / 100,
+      isActive: r.isActive, note: r.note,
+    }));
+  }
+
+  async upsertBreak(b: any) {
+    if (!b.variantSku && !b.categorySlug) {
+      throw Errors.badRequest('TARGET_REQUIRED',
+        'الشريحة تحتاج صنفاً أو فئة', 'Specify a SKU or a category');
+    }
+    if (b.variantSku && b.categorySlug) {
+      throw Errors.badRequest('TARGET_AMBIGUOUS',
+        'الشريحة على صنف أو على فئة، لا على الاثنين', 'Choose SKU or category, not both');
+    }
+    if (!Number.isInteger(b.minQty) || b.minQty < 2) {
+      throw Errors.badRequest('MIN_QTY_INVALID',
+        'أقل كمية للشريحة قطعتان', 'Minimum quantity must be 2 or more');
+    }
+    if (!Number.isInteger(b.discountBp) || b.discountBp < 1 || b.discountBp > 5000) {
+      throw Errors.badRequest('DISCOUNT_INVALID',
+        'الخصم بين 1 و5000 نقطة أساس (0.01% إلى 50%)', 'Discount must be 1..5000 bp');
+    }
+    const row = await this.prisma.quantityBreak.create({
+      data: {
+        variantSku: b.variantSku ?? null,
+        categorySlug: b.categorySlug ?? null,
+        minQty: b.minQty, discountBp: b.discountBp,
+        note: b.note ?? null,
+      },
+    });
+    return { id: row.id, minQty: row.minQty, discountBp: row.discountBp };
+  }
+
+  async deleteBreak(id: string) {
+    await this.prisma.quantityBreak.deleteMany({ where: { id } });
+    return { deleted: true };
+  }
+
   async list() {
     const rows = await this.prisma.coupon.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
     const now = new Date();
@@ -185,6 +255,18 @@ export class CouponsController {
       }),
     };
   }
+
+  @Get('admin/quantity-breaks')
+  @Protect('OPS_MANAGER', 'ADMIN')
+  async listBreaks() { return { data: await this.c.listBreaks() }; }
+
+  @Post('admin/quantity-breaks')
+  @Protect('ADMIN')
+  async upsertBreak(@Body() b: any) { return { data: await this.c.upsertBreak(b) }; }
+
+  @Delete('admin/quantity-breaks/:id')
+  @Protect('ADMIN')
+  async deleteBreak(@Param('id') id: string) { return { data: await this.c.deleteBreak(id) }; }
 
   @Get('admin/coupons')
   @Protect('OPS_MANAGER', 'ADMIN')

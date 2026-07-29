@@ -170,6 +170,7 @@ model User {
   ticketsAssigned SupportTicket[]    @relation("TicketAssignee")
   settlements     CashSettlement[]   @relation("SettlementCollector")
   pushSubs        PushSubscription[]
+  courier         Courier?
 
   @@map("users")
 }
@@ -1093,4 +1094,127 @@ model StockAlert {
 
   @@unique([phone, variantId])
   @@map("stock_alerts")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  إدارة التوصيل — الفصل 17
+// ═══════════════════════════════════════════════════════════════
+
+enum EmploymentType {
+  EMPLOYEE
+  CONTRACTOR
+}
+
+enum VehicleType {
+  MOTORCYCLE
+  CAR
+  VAN
+  ON_FOOT
+}
+
+enum CourierStatus {
+  AVAILABLE
+  ON_ROUTE
+  OFF_DUTY
+  SUSPENDED
+}
+
+enum ZoneType {
+  URBAN_CORE
+  URBAN_OUTER
+  SUBURBAN
+  REMOTE
+}
+
+/// سجل تشغيلي مستقل عن حساب الدخول: المندوب قد يُوقَف تشغيلياً
+/// مع بقاء حسابه ليطّلع على مستحقاته — إيقافُ عمله ليس مصادرةَ ماله.
+model Courier {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String         @unique @map("user_id") @db.Uuid
+  code             String         @unique @db.VarChar(8)
+  fullName         String         @map("full_name") @db.VarChar(120)
+  phone            String         @db.VarChar(16)
+  employmentType   EmploymentType @default(CONTRACTOR) @map("employment_type")
+  vehicleType      VehicleType    @default(MOTORCYCLE) @map("vehicle_type")
+  vehiclePlate     String?        @map("vehicle_plate") @db.VarChar(20)
+  homeGovernorate  Governorate    @map("home_governorate")
+  dailyCapacity    Int            @default(18) @map("daily_capacity")
+  /// السقف النقدي بالمرجع الدولاري: الليرة تتغيّر والسقف لا يتبعها يدوياً
+  cashCapUsdCents  BigInt         @default(200000) @map("cash_cap_usd_cents")
+  status           CourierStatus  @default(OFF_DUTY)
+  suspensionReason String?        @map("suspension_reason")
+  /// كفيل شخصي — عرف سوري راسخ يقلّل مخاطر النقد
+  guarantorName    String?        @map("guarantor_name") @db.VarChar(120)
+  guarantorPhone   String?        @map("guarantor_phone") @db.VarChar(16)
+  depositUsdCents  BigInt         @default(0) @map("deposit_usd_cents")
+  ratingAvg        Decimal?       @map("rating_avg") @db.Decimal(3, 2)
+  active           Boolean        @default(true)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  user       User           @relation(fields: [userId], references: [id])
+  zones      CourierZone[]
+  defaultFor DeliveryZone[] @relation("ZoneDefaultCourier")
+
+  @@index([status, active])
+  @@map("couriers")
+}
+
+/// وحدة التخطيط هي الحي لا الرمز البريدي: المدينة السورية تُعرف
+/// بأسماء أحيائها، ولا رموز بريدية عاملة تُبنى عليها خريطة توصيل.
+model DeliveryZone {
+  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String      @unique @db.VarChar(16)
+  name              Json
+  governorate       Governorate
+  city              String      @db.VarChar(40)
+  /// أسماء الأحياء ومرادفاتها الشائعة — المطابقة بالاسم لا بالإحداثيات
+  neighborhoods     String[]    @default([])
+  zoneType          ZoneType    @default(URBAN_CORE) @map("zone_type")
+  surchargeUsdCents Int         @default(0) @map("surcharge_usd_cents")
+  slaHours          Int         @default(24) @map("sla_hours")
+  defaultCourierId  String?     @map("default_courier_id") @db.Uuid
+  codMaxUsdCents    BigInt?     @map("cod_max_usd_cents")
+  active            Boolean     @default(true)
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  defaultCourier Courier?      @relation("ZoneDefaultCourier", fields: [defaultCourierId], references: [id])
+  couriers       CourierZone[]
+
+  @@index([governorate, active])
+  @@map("delivery_zones")
+}
+
+model CourierZone {
+  courierId String @map("courier_id") @db.Uuid
+  zoneId    String @map("zone_id") @db.Uuid
+  /// الأصغر أولى: مندوب المنطقة الأساسي قبل من يغطّيها احتياطاً
+  priority  Int    @default(10)
+
+  courier Courier      @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  zone    DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@id([courierId, zoneId])
+  @@map("courier_zones")
+}
+
+/// عرض الكمية — الفصل 7 §7.7
+/// «ثلاث قطع بخصم 10%» لمحلات الجوالات الصغيرة التي تشتري بالجملة.
+/// الشريحة على مستوى المتغيّر أو الفئة، والأسعار بسنتات الدولار كغيرها.
+model QuantityBreak {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// أحدهما لا كلاهما: شريحة على صنف بعينه أو على فئة كاملة
+  variantSku   String?  @map("variant_sku") @db.VarChar(40)
+  categorySlug String?  @map("category_slug")
+  minQty       Int      @map("min_qty")
+  /// نسبة الخصم بنقاط الأساس: 1000 = 10%
+  discountBp   Int      @map("discount_bp")
+  isActive     Boolean  @default(true) @map("is_active")
+  note         String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([variantSku, minQty])
+  @@index([categorySlug, minQty])
+  @@map("quantity_breaks")
 }
