@@ -2,6 +2,7 @@ import { Body, Controller, Get, Inject, Injectable, Param, Post } from '@nestjs/
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
 import { publicId } from '../common/money.js';
+import { Protect } from '../common/guards.js';
 
 /**
  * المشتريات والتكلفة الشاملة (الفصل 16).
@@ -208,6 +209,7 @@ function luhn(imei: string): boolean {
 }
 
 @Controller('admin/procurement')
+@Protect('ADMIN')
 export class ProcurementController {
   constructor(@Inject(ProcurementService) private p: ProcurementService) {}
 

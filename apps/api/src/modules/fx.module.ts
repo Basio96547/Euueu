@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Inject, Injectable, Post } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
+import { Protect } from '../common/guards.js';
 
 export type FxHealth = 'FRESH' | 'EXPIRING' | 'STALE_MARGIN' | 'STALE_HALT';
 
@@ -54,6 +55,7 @@ export class FxController {
 
   /** معاينة أثر سعر جديد قبل اعتماده (الفصل 10 §10.7) */
   @Post('preview')
+  @Protect('CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN')
   async preview(@Body() body: { rate: number }) {
     const cur = await this.fx.current();
     const variants = await this.prisma.productVariant.findMany({

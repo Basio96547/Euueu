@@ -1,10 +1,12 @@
 /**
  * طبقة البيانات وقت البناء.
- * تقرأ بذرة الكتالوج مباشرة، فيعمل الموقع بلا قاعدة بيانات ولا واجهة برمجية —
- * وهو ما يجعل فحص الواجهة ممكناً قبل تشغيل أي بنية تحتية.
- * عند توفر الـ API تُستبدل الدوال الثلاث أدناه بنداءات إليه دون تغيير الصفحات.
+ * المصدر الأول هو الواجهة البرمجية إن كان PUBLIC_API_URL مضبوطاً ومتاحاً،
+ * وإلا تُقرأ بذرة الكتالوج مباشرة — فيبقى فحص الواجهة ممكناً بلا بنية تحتية،
+ * ولا يفشل البناء لأن الخادم متوقف.
  */
 import seed from '../../../../seed/catalog.demo.json';
+
+const API = import.meta.env.PUBLIC_API_URL ?? process.env.PUBLIC_API_URL ?? '';
 
 export type Loc = { ar: string; en?: string };
 
@@ -60,11 +62,49 @@ function mapVariant(v: any): Variant {
   };
 }
 
-export const products: Product[] = (seed.products as any[]).map((p) => ({
+const fromSeed = (): Product[] => (seed.products as any[]).map((p) => ({
   slug: p.slug, brand: p.brand, brandName: brands.get(p.brand) ?? { ar: p.brand },
   category: p.category, name: p.name, shortDesc: p.short_desc,
   spec: p.spec ?? {}, variants: p.variants.map(mapVariant), isDemo: p.is_demo,
 }));
+
+function fromApi(rows: any[]): Product[] {
+  return rows.map((p) => ({
+    slug: p.slug, brand: p.brand.slug, brandName: p.brand.name,
+    category: p.categorySlug ?? 'smartphones',
+    name: p.name, shortDesc: p.shortDesc, spec: p.spec ?? {},
+    isDemo: p.isDemo,
+    variants: p.variants.map((v: any): Variant => ({
+      sku: v.sku, storageGb: v.storageGb, ramGb: v.ramGb,
+      colorCode: null, colorName: v.colorName,
+      networkGen: v.networkGen, dualSim: v.dualSim, esimOnly: v.esimOnly,
+      partCode: v.partCode, condition: v.condition,
+      batteryHealthPct: v.batteryHealthPct, deviceOrigin: v.deviceOrigin,
+      warrantyType: v.warrantyType, warrantyMonths: v.warrantyMonths,
+      priceUsdCents: v.priceUsdCents, compareAtPriceUsdCents: v.compareAtPriceUsdCents,
+      stock: v.available ?? 0,
+    })),
+  }));
+}
+
+/** جلب وقت البناء: نجاحه يعني كتالوجاً حياً، وفشله يعني بذرة — لا انهيار */
+async function load(): Promise<{ items: Product[]; source: 'api' | 'seed' }> {
+  if (!API) return { items: fromSeed(), source: 'seed' };
+  try {
+    const r = await fetch(`${API}/catalog/products?limit=200`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const body = (await r.json()) as { data: any[] };
+    if (!body.data?.length) throw new Error('كتالوج فارغ');
+    return { items: fromApi(body.data), source: 'api' };
+  } catch (e) {
+    console.warn(`[catalog] تعذّر جلب الكتالوج من الـAPI (${String(e)}) — البناء من البذرة.`);
+    return { items: fromSeed(), source: 'seed' };
+  }
+}
+
+const loaded = await load();
+export const products: Product[] = loaded.items;
+export const catalogSource = loaded.source;
 
 export const getProduct = (slug: string) => products.find((p) => p.slug === slug);
 

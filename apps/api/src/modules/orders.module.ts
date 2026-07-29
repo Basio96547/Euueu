@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, Inject, Injectable, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Inject, Injectable, Param, Post, Req } from '@nestjs/common';
+import { MaybeAuth, Protect } from '../common/guards.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CartService } from './cart.module.js';
@@ -10,6 +11,7 @@ import type { Prisma } from '@prisma/client';
 /** الحجز الأوّلي ساعتان — عمر الحجز ليس عمر الطلب (الفصل 3) */
 const ORDER_HOLD_HOURS = 2;
 const CONFIRM_WINDOW_HOURS = 48;
+const ANY_ROLE = ['CUSTOMER', 'SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN'];
 const RARE_THRESHOLD = 2;
 
 @Injectable()
@@ -23,7 +25,7 @@ export class OrdersService {
     @Inject(NotificationsService) private notify: NotificationsService,
   ) {}
 
-  async create(cartToken: string, address: any, idempotencyKey?: string) {
+  async create(cartToken: string, address: any, idempotencyKey?: string, buyerPublicId?: string) {
     if (idempotencyKey && this.idem.has(idempotencyKey)) {
       return this.byNo(this.idem.get(idempotencyKey)!);
     }
@@ -45,7 +47,9 @@ export class OrdersService {
       total: Number(it.variant.priceUsdCents) * it.qty,
       name: it.variant.product.name,
       levelWarehouseId: it.variant.levels[0]?.warehouseId,
-      available: it.variant.levels.reduce((a, l) => a + (l.onHand - l.reserved), 0),
+      // «النادر» يُقاس بما في المستودع لا بما تبقّى بعد الحجوزات:
+      // المهلة القصيرة تخصّ آخر قطعتين حقيقتين، لا سلالاً معلّقة.
+      available: it.variant.levels.reduce((a, l) => a + l.onHand, 0),
     }));
 
     const shipping = 200;
@@ -58,9 +62,14 @@ export class OrdersService {
     const order = await this.prisma.$transaction(async (tx) => {
       const seq = (await tx.order.count()) + 1;
 
+      // الطلب يُنسب لصاحبه إن كان داخلاً؛ وإلا لحساب الرقم الذي كتبه في العنوان.
+      // الشراء بلا حساب هو الحالة الغالبة هنا، فلا يجوز أن يقف تسجيل الدخول
+      // في وجه بيع — لكن الطلب يجب أن يبقى موصولاً برقم يُتتبَّع به.
+      const owner = await this.buyer(tx, buyerPublicId, address.phone);
+
       const addr = await tx.address.create({
         data: {
-          userId: (await this.systemUser(tx)).id,
+          userId: owner.id,
           recipientName: address.recipientName, governorate: address.governorate,
           city: address.city, neighborhood: address.neighborhood, street: address.street,
           landmark: address.landmark, details: address.details,
@@ -91,27 +100,51 @@ export class OrdersService {
         },
       });
 
-      // ترقية الحجز المرن إلى حجز أوّلي ساعتين — ويُقصَّر للأجهزة النادرة
+      // ترقية الحجز المرن إلى حجز أوّلي ساعتين — ويُقصَّر للأجهزة النادرة.
+      // ترقيةٌ لا إضافة: الحجز المرن خصم من المتاح أصلاً، فإنشاء حجز ثانٍ
+      // بجانبه يخصم الكمية مرتين ويحجب بضاعة موجودة عن زبائن آخرين
+      // حتى تنتهي مهلة المرن — والعدّاد لا يُصلح نفسه.
       for (const l of lines) {
         if (!l.levelWarehouseId) continue;
         const hours = l.available <= RARE_THRESHOLD ? 1 : ORDER_HOLD_HOURS;
-        await tx.inventoryReservation.create({
-          data: {
-            variantId: l.variantId, warehouseId: l.levelWarehouseId, kind: 'ORDER_HOLD',
-            qty: l.qty, orderId: created.id,
-            expiresAt: new Date(now.getTime() + hours * 3_600_000),
-          },
+        const expiresAt = new Date(now.getTime() + hours * 3_600_000);
+
+        const soft = await tx.inventoryReservation.findFirst({
+          where: { cartId: cart.id, variantId: l.variantId, kind: 'SOFT_HOLD' },
         });
-        await tx.inventoryLevel.updateMany({
-          where: { variantId: l.variantId, warehouseId: l.levelWarehouseId },
-          data: { reserved: { increment: l.qty }, version: { increment: 1 } },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            variantId: l.variantId, warehouseId: l.levelWarehouseId,
-            reason: 'RESERVE', qtyDelta: -l.qty, refType: 'order', refId: created.id,
-          },
-        });
+        const alreadyHeld = soft?.qty ?? 0;
+
+        if (soft) {
+          await tx.inventoryReservation.update({
+            where: { id: soft.id },
+            data: { kind: 'ORDER_HOLD', qty: l.qty, orderId: created.id, cartId: null, expiresAt },
+          });
+        } else {
+          await tx.inventoryReservation.create({
+            data: {
+              variantId: l.variantId, warehouseId: l.levelWarehouseId, kind: 'ORDER_HOLD',
+              qty: l.qty, orderId: created.id, expiresAt,
+            },
+          });
+        }
+
+        // الفرق فقط: ما حجزته السلّة محسوب في العدّاد منذ الإضافة
+        const delta = l.qty - alreadyHeld;
+        if (delta !== 0) {
+          await tx.inventoryLevel.updateMany({
+            where: { variantId: l.variantId, warehouseId: l.levelWarehouseId },
+            data: { reserved: { increment: delta }, version: { increment: 1 } },
+          });
+          // الدفتر يسجّل حركة الكميات؛ سطرٌ بفرق صفر ضجيج يُخفي الحركات الحقيقية
+          await tx.inventoryMovement.create({
+            data: {
+              variantId: l.variantId, warehouseId: l.levelWarehouseId,
+              reason: delta > 0 ? 'RESERVE' : 'RELEASE',
+              qtyDelta: -delta, refType: 'order', refId: created.id,
+              note: soft ? 'ترقية حجز مرن إلى حجز طلب' : undefined,
+            },
+          });
+        }
       }
 
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -177,13 +210,39 @@ export class OrdersService {
     return (s?.value as T) ?? fallback;
   }
 
-  private async systemUser(tx: Prisma.TransactionClient) {
-    const phone = '+963900000000';
+  /**
+   * صاحب الطلب: المستخدم الداخل إن وُجد، وإلا حساب يُنشأ بصمت لرقم التسليم.
+   * إنشاء الحساب من الرقم لا يمنحه شيئاً — لا رمز ولا صلاحية — لكنه يجعل
+   * الزبون حين يسجّل دخوله لاحقاً بالرقم نفسه يجد طلباته السابقة في مكانها.
+   */
+  private async buyer(tx: Prisma.TransactionClient, buyerPublicId?: string, orderPhone?: string) {
+    if (buyerPublicId) {
+      const u = await tx.user.findUnique({ where: { publicId: buyerPublicId } });
+      if (u) return u;
+    }
+    const phone = orderPhone && /^\+9639[0-9]{8}$/.test(orderPhone) ? orderPhone : '+963900000000';
     return tx.user.upsert({
       where: { phoneE164: phone },
       update: {},
-      create: { publicId: publicId(), phoneE164: phone, fullName: 'زبون تجريبي' },
+      create: { publicId: publicId(), phoneE164: phone },
     });
+  }
+
+  /** طلباتي — تُقرأ بالهوية لا برقم يُخمَّن */
+  async mine(userPublicId: string) {
+    const user = await this.prisma.user.findUnique({ where: { publicId: userPublicId } });
+    if (!user) throw Errors.notFound('المستخدم');
+    const orders = await this.prisma.order.findMany({
+      where: { userId: user.id },
+      orderBy: { placedAt: 'desc' },
+      take: 50,
+      include: { items: true },
+    });
+    return orders.map((o) => ({
+      orderNo: o.orderNo, status: o.status, paymentStatus: o.paymentStatus,
+      cashDueSyp: Number(o.totalSyp), itemCount: o.items.reduce((a, i) => a + i.qty, 0),
+      placedAt: o.placedAt,
+    }));
   }
 }
 
@@ -194,11 +253,20 @@ export class OrdersController {
   ) {}
 
   @Post()
+  @MaybeAuth()
   async create(
     @Body() b: { cartToken: string; address: any },
+    @Req() req: { user?: { sub: string } },
     @Headers('idempotency-key') key?: string,
   ) {
-    return { data: await this.orders.create(b.cartToken, b.address, key) };
+    return { data: await this.orders.create(b.cartToken, b.address, key, req.user?.sub) };
+  }
+
+  // «طلباتي» قبل «:orderNo» — وإلا التقطه المسار المتغيّر كرقم طلب
+  @Get('mine')
+  @Protect(...ANY_ROLE)
+  async mine(@Req() req: { user?: { sub: string } }) {
+    return { data: await this.orders.mine(req.user!.sub) };
   }
 
   @Get(':orderNo')

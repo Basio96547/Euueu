@@ -1,7 +1,7 @@
 ---
 import '@talisham/ui/tokens.css';
 import '@talisham/ui/base.css';
-import { currentFx, isDemoMode } from '../lib/catalog';
+import { currentFx, isDemoMode, catalogSource } from '../lib/catalog';
 import BottomNav from '../components/BottomNav.astro';
 
 interface Props {
@@ -41,7 +41,7 @@ const full = `${title} | تالي شام`;
     {demo && (
       <div class="sysbar sysbar--demo" role="status">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5" /><path d="M12 16h.01" /><circle cx="12" cy="12" r="9" /></svg>
-        بيانات تجريبية — هذه ليست منتجات حقيقية للبيع
+        بيانات تجريبية — هذه ليست منتجات حقيقية للبيع{catalogSource === 'seed' ? ' (بُنيت من ملف البذرة)' : ''}
       </div>
     )}
 

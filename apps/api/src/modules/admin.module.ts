@@ -2,7 +2,9 @@ import { Inject, Body, Controller, Get, Param, Post, Query } from '@nestjs/commo
 import { PrismaService } from '../common/prisma.service.js';
 import { OrdersService } from './orders.module.js';
 import { NotificationsService } from './notifications.service.js';
+import { ReservationSweeper } from './reservations.sweeper.js';
 import { Errors } from '../common/errors.js';
+import { Protect } from '../common/guards.js';
 
 type Outcome = 'CONFIRMED' | 'NO_ANSWER' | 'RESCHEDULE' | 'ADDRESS_FIXED' | 'CANCELLED';
 
@@ -12,11 +14,13 @@ const RARE_EXT_HOURS = 12;
 const RARE_THRESHOLD = 2;
 
 @Controller('admin')
+@Protect('OPS_MANAGER', 'ADMIN')
 export class AdminController {
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
     @Inject(OrdersService) private orders: OrdersService,
     @Inject(NotificationsService) private notify: NotificationsService,
+    @Inject(ReservationSweeper) private sweeper: ReservationSweeper,
   ) {}
 
   @Get('orders')
@@ -141,6 +145,92 @@ export class AdminController {
     });
     return { data: { rate: Number(row.rate), validUntil: row.validUntil.toISOString() } };
   }
+
+  /** قائمة المنتجات للوحة — تشمل التجريبية التي يخفيها المتجر العام */
+  @Get('catalog/products')
+  async products(@Query('demo') demo?: string) {
+    const rows = await this.prisma.product.findMany({
+      where: {
+        deletedAt: null,
+        ...(demo === 'true' ? { isDemo: true } : demo === 'false' ? { isDemo: false } : {}),
+      },
+      orderBy: [{ isDemo: 'desc' }, { slug: 'asc' }],
+      include: { brand: true, variants: { include: { levels: true } } },
+    });
+    return {
+      data: rows.map((p) => ({
+        slug: p.slug, name: p.name, status: p.status, isDemo: p.isDemo,
+        brand: p.brand.name,
+        variants: p.variants.map((v) => ({
+          sku: v.sku,
+          priceUsdCents: Number(v.priceUsdCents),
+          onHand: v.levels.reduce((a, l) => a + l.onHand, 0),
+          reserved: v.levels.reduce((a, l) => a + l.reserved, 0),
+        })),
+      })),
+    };
+  }
+
+  /**
+   * تحويل منتج تجريبي إلى حقيقي.
+   *
+   * مخزون المنتج التجريبي رقمٌ عرضيّ كُتب في inventory_levels مباشرة:
+   * لا وحدات أجهزة خلفه ولا حركة في الدفتر. لو تُرك كما هو بعد التحويل
+   * لصار المتجر يبيع هواءً، ولانفجر محفِّز التطابق عند أول استلام حقيقي
+   * (count(units) ≠ on_hand). لذلك التحويل يصفّر الكمية بالضرورة:
+   * المنتج يصير حقيقياً بمخزون صفر، والبضاعة تدخل من بوابة المشتريات وحدها.
+   */
+  @Post('catalog/products/:slug/promote')
+  async promote(@Param('slug') slug: string) {
+    // كنس أولاً: حجز ميت لا يجوز أن يقف في وجه التحويل
+    await this.sweeper.sweep();
+
+    const product = await this.prisma.product.findFirst({
+      where: { slug, deletedAt: null },
+      include: { variants: { include: { levels: true } } },
+    });
+    if (!product) throw Errors.notFound('المنتج');
+    if (!product.isDemo) {
+      throw Errors.badRequest('PRODUCT_ALREADY_REAL',
+        'هذا المنتج حقيقي أصلاً', 'Product is already real');
+    }
+
+    // حجز قائم يعني سلّة أو طلباً معلّقاً على كمية وهمية — تصفيرها يُنتج متاحاً سالباً
+    const held = product.variants.flatMap((v) => v.levels).reduce((a, l) => a + l.reserved, 0);
+    if (held > 0) {
+      throw Errors.badRequest('PRODUCT_HAS_HOLDS',
+        `على المنتج ${held} حجزاً قائماً — حرِّرها قبل التحويل`,
+        'Release existing reservations first');
+    }
+
+    const cleared = await this.prisma.$transaction(async (tx) => {
+      const ids = product.variants.map((v) => v.id);
+      const before = product.variants.flatMap((v) => v.levels).reduce((a, l) => a + l.onHand, 0);
+      await tx.inventoryLevel.updateMany({
+        where: { variantId: { in: ids } },
+        data: { onHand: 0, version: { increment: 1 } },
+      });
+      await tx.product.update({ where: { id: product.id }, data: { isDemo: false } });
+      await tx.auditLog.create({
+        data: {
+          action: 'catalog.promote', entityType: 'products', entityId: product.id,
+          diff: { slug, isDemo: { from: true, to: false }, demoStockCleared: before },
+        },
+      });
+      return before;
+    });
+
+    return {
+      data: {
+        slug, isDemo: false, demoStockCleared: cleared,
+        note: 'المنتج حقيقي الآن بمخزون صفر — استلم البضاعة من المشتريات لتفعيل البيع.',
+      },
+    };
+  }
+
+  /** كنس يدوي — الدوري يعمل كل دقيقة، وهذا لمن أراد التحقق فوراً */
+  @Post('inventory/sweep')
+  async sweep() { return { data: await this.sweeper.sweep() }; }
 
   @Get('dashboard')
   async dashboard() {

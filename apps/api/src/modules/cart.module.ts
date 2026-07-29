@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { Errors } from '../common/errors.js';
@@ -27,39 +27,94 @@ export class CartService {
     return cart;
   }
 
-  async addItem(token: string, sku: string, qty: number) {
+  /**
+   * ضبط كمية صنف في السلة (qty = 0 يحذفه).
+   *
+   * الحجز المرن ليس صفاً في جدول فحسب: قيمته أنه يخصم من المتاح.
+   * صفٌّ بلا خصم حجزٌ اسمه فقط — يظنّ ثلاثة زبائن أن آخر جهاز لهم،
+   * فيصل طلب واحد إلى المستودع ويُخذل اثنان بعد أن دفعوا وقتهم.
+   * لذلك الصف والعدّاد يتحرّكان معاً في معاملة واحدة أو لا يتحرّكان.
+   *
+   * ولأن الحجز واحد لكل (سلّة، متغيّر) يُحدَّث في مكانه، فإعادة الضبط
+   * تخصم الفرق لا الكمية كلها — وإلا تراكمت الحجوزات على سلّة واحدة.
+   */
+  async setItem(token: string, sku: string, qty: number) {
+    if (!Number.isInteger(qty) || qty < 0 || qty > 20) {
+      throw Errors.badRequest('QTY_INVALID', 'الكمية يجب أن تكون بين صفر وعشرين', 'Invalid quantity');
+    }
+
     const cart = await this.get(token);
     const variant = await this.prisma.productVariant.findUnique({
       where: { sku }, include: { product: true, levels: true },
     });
     if (!variant) throw Errors.notFound('المتغيّر');
 
-    // المنتج التجريبي يُضاف للسلة في بيئة الفحص لكنه يُرفض عند إنشاء الطلب
-    const available = variant.levels.reduce((a, l) => a + (l.onHand - l.reserved), 0);
-    if (available < qty) throw Errors.outOfStock(variant.publicId, available);
+    const level = variant.levels[0];
+    if (!level) throw Errors.outOfStock(variant.publicId, 0);
 
-    await this.prisma.cartItem.upsert({
-      where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
-      update: { qty },
-      create: {
-        cartId: cart.id, variantId: variant.id, qty,
-        unitPriceSnapshotUsdCents: variant.priceUsdCents,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const held = await tx.inventoryReservation.findFirst({
+        where: { cartId: cart.id, variantId: variant.id, kind: 'SOFT_HOLD' },
+      });
+      const mine = held?.qty ?? 0;
+
+      // المتاح لهذه السلّة يشمل ما تحجزه هي أصلاً — وإلا مُنعت من زيادة كميتها بنفسها
+      const fresh = await tx.inventoryLevel.findFirst({
+        where: { variantId: variant.id, warehouseId: level.warehouseId },
+      });
+      const available = (fresh?.onHand ?? 0) - (fresh?.reserved ?? 0) + mine;
+      if (qty > available) throw Errors.outOfStock(variant.publicId, available);
+
+      const delta = qty - mine;
+      const expiresAt = new Date(Date.now() + SOFT_HOLD_MINUTES * 60_000);
+
+      if (qty === 0) {
+        await tx.cartItem.deleteMany({ where: { cartId: cart.id, variantId: variant.id } });
+        if (held) await tx.inventoryReservation.delete({ where: { id: held.id } });
+      } else {
+        await tx.cartItem.upsert({
+          where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
+          update: { qty },
+          create: {
+            cartId: cart.id, variantId: variant.id, qty,
+            unitPriceSnapshotUsdCents: variant.priceUsdCents,
+          },
+        });
+        // أي تفاعل مع السلة يجدّد المهلة — الزبون الحيّ لا يُسحب من تحته
+        if (held) await tx.inventoryReservation.update({ where: { id: held.id }, data: { qty, expiresAt } });
+        else {
+          await tx.inventoryReservation.create({
+            data: {
+              variantId: variant.id, warehouseId: level.warehouseId, kind: 'SOFT_HOLD',
+              qty, cartId: cart.id, expiresAt,
+            },
+          });
+        }
+      }
+
+      if (delta !== 0) {
+        await tx.inventoryLevel.updateMany({
+          where: { variantId: variant.id, warehouseId: level.warehouseId },
+          data: { reserved: { increment: delta }, version: { increment: 1 } },
+        });
+        await tx.inventoryMovement.create({
+          data: {
+            variantId: variant.id, warehouseId: level.warehouseId,
+            reason: delta > 0 ? 'RESERVE' : 'RELEASE',
+            qtyDelta: -delta,                 // سالب يخصم من المتاح، موجب يعيده
+            refType: 'cart', refId: cart.id,
+          },
+        });
+      }
     });
 
-    // حجز مرن 15 دقيقة يتجدّد بأي تفاعل مع السلة
-    const level = variant.levels[0];
-    if (level) {
-      await this.prisma.inventoryReservation.create({
-        data: {
-          variantId: variant.id, warehouseId: level.warehouseId, kind: 'SOFT_HOLD',
-          qty, cartId: cart.id,
-          expiresAt: new Date(Date.now() + SOFT_HOLD_MINUTES * 60_000),
-        },
-      });
-    }
     return this.summary(token);
   }
+
+  /** الإضافة ضبطٌ للكمية — أُبقيت باسمها لأن الواجهات تناديها به */
+  addItem(token: string, sku: string, qty: number) { return this.setItem(token, sku, qty); }
+
+  removeItem(token: string, sku: string) { return this.setItem(token, sku, 0); }
 
   /** التحقق قبل إنشاء الطلب: التوفر والسعر وسعر الصرف معاً (الفصل 8 §8.2) */
   async validate(token: string) {
@@ -67,8 +122,18 @@ export class CartService {
     const fx = await this.fx.current();
     const conflicts: any[] = [];
 
+    // حجوزات هذه السلّة نفسها مخصومة من reserved — تُردّ قبل المقارنة
+    // وإلا رفضت السلّةُ نفسَها: تحجز آخر جهاز ثم تُخبر صاحبها أنه نفد.
+    const own = new Map<string, number>();
+    for (const r of await this.prisma.inventoryReservation.findMany({
+      where: { cartId: cart.id, kind: 'SOFT_HOLD' },
+    })) {
+      own.set(r.variantId, (own.get(r.variantId) ?? 0) + r.qty);
+    }
+
     for (const it of cart.items) {
-      const available = it.variant.levels.reduce((a, l) => a + (l.onHand - l.reserved), 0);
+      const available = it.variant.levels.reduce((a, l) => a + (l.onHand - l.reserved), 0)
+        + (own.get(it.variantId) ?? 0);
       if (available < it.qty) {
         conflicts.push({ code: 'OUT_OF_STOCK', sku: it.variant.sku, requested: it.qty, available, requiresConsent: true });
       }
@@ -126,6 +191,17 @@ export class CartController {
   @Post(':token/items')
   async add(@Param('token') token: string, @Body() b: { sku: string; qty?: number }) {
     return { data: await this.cart.addItem(token, b.sku, b.qty ?? 1) };
+  }
+
+  /** ضبط الكمية صراحة — والصفر حذف */
+  @Post(':token/items/:sku')
+  async set(@Param('token') token: string, @Param('sku') sku: string, @Body() b: { qty: number }) {
+    return { data: await this.cart.setItem(token, sku, b.qty) };
+  }
+
+  @Delete(':token/items/:sku')
+  async remove(@Param('token') token: string, @Param('sku') sku: string) {
+    return { data: await this.cart.removeItem(token, sku) };
   }
 
   @Post(':token/validate')

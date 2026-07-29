@@ -3,8 +3,10 @@ import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
 import { roundCash } from '../common/money.js';
+import { Protect } from '../common/guards.js';
 
 @Controller('courier')
+@Protect('COURIER', 'OPS_MANAGER', 'ADMIN')
 export class CourierController {
   /** مفاتيح التفرّد: الإرسال المكرر بعد عودة الشبكة لا يحصّل مرتين (الفصل 17 §17.11) */
   private idem = new Map<string, unknown>();
@@ -106,6 +108,55 @@ export class CourierController {
           actorType: 'COURIER', source: 'COURIER_APP',
         },
       });
+
+      /* التسليم هو لحظة خروج البضاعة، فهنا يُقيَّد البيع لا في مكان آخر:
+         الحجز يموت لأنه أدّى غرضه، وon_hand ينقص لأن الجهاز صار بيد زبونه،
+         وسطر SALE يُكتب ليبقى الدفتر شاهداً. تأجيل هذا إلى تفعيل الكفالة
+         يعني أن المتجر يعرض للبيع أجهزةً سلّمها بالفعل. */
+      const items = await tx.orderItem.findMany({ where: { orderId: o.id } });
+      const holds = await tx.inventoryReservation.findMany({ where: { orderId: o.id } });
+
+      for (const h of holds) {
+        await tx.inventoryReservation.delete({ where: { id: h.id } });
+        await tx.$executeRaw`
+          UPDATE inventory_levels
+             SET reserved = GREATEST(0, reserved - ${h.qty}), version = version + 1
+           WHERE variant_id = ${h.variantId}::uuid AND warehouse_id = ${h.warehouseId}::uuid`;
+      }
+
+      for (const item of items) {
+        const wh = holds.find((h) => h.variantId === item.variantId)?.warehouseId
+          ?? (await tx.inventoryLevel.findFirst({ where: { variantId: item.variantId } }))?.warehouseId;
+        if (!wh) continue;
+
+        /* المتغيّر المسلسل: تُختار وحدات بعينها وتُختم SOLD وتُربط بالسطر.
+           المحفِّز المؤجَّل يقارن عدد IN_STOCK بـ on_hand، فالخطوتان معاً
+           في هذه المعاملة أو لا تقع أيٌّ منهما. */
+        const units = await tx.deviceUnit.findMany({
+          where: { variantId: item.variantId, warehouseId: wh, state: 'IN_STOCK' },
+          orderBy: { id: 'asc' }, take: item.qty,
+        });
+        for (const [i, u] of units.entries()) {
+          await tx.deviceUnit.update({
+            where: { id: u.id },
+            data: { state: 'SOLD', ...(i === 0 ? { orderItemId: item.id } : {}) },
+          });
+        }
+
+        await tx.$executeRaw`
+          UPDATE inventory_levels
+             SET on_hand = GREATEST(0, on_hand - ${item.qty}), version = version + 1
+           WHERE variant_id = ${item.variantId}::uuid AND warehouse_id = ${wh}::uuid`;
+
+        await tx.inventoryMovement.create({
+          data: {
+            variantId: item.variantId, warehouseId: wh,
+            reason: 'SALE', qtyDelta: -item.qty, refType: 'order', refId: o.id,
+            note: units.length ? `وحدات مسلسلة: ${units.length}` : undefined,
+          },
+        });
+      }
+
       return updated;
     });
 

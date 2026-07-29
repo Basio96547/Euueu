@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, idemKey, fmtSyp, fmtUsd } from './lib/api.js';
+import { api, ApiError, auth, idemKey, fmtSyp, fmtUsd, fmtDate, fmtDateTime, type Me } from './lib/api.js';
 import { useRoute, match } from './lib/router.js';
 
 /* ————— أنواع الاستجابة ————— */
@@ -91,14 +91,32 @@ function CartPage({ nav }: { nav: (to: string) => void }) {
     );
   }
 
+  // تغيير الكمية يعيد الملخّص كاملاً من الخادم: المتاح والسعر والمستحق
+  // تُحسب هناك، فلا تعرض الواجهة رقماً لم يُقرّه المخزون.
+  const setQty = async (sku: string, qty: number) => {
+    setErr(null);
+    try {
+      setCart(await api.post<CartSummary>(`/carts/${cart.cartToken}/items/${sku}`, { qty }));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر تعديل السلة');
+    }
+  };
+
   return (
     <div className="page">
+      {err && <div className="err">{err}</div>}
       <div className="card glass">
         {cart.lines.map((l) => (
           <div className="line" key={l.sku}>
             <span className="mid">
               <b>{l.name}</b>
-              <small className="muted">{l.qty} × {fmtUsd(l.unitPriceUsdCents)}</small>
+              <small className="muted">{fmtUsd(l.unitPriceUsdCents)} للقطعة</small>
+              <span className="qty" role="group" aria-label={`كمية ${l.name}`}>
+                <button aria-label="إنقاص" onClick={() => setQty(l.sku, l.qty - 1)}>−</button>
+                <span className="tnum" aria-live="polite">{l.qty}</span>
+                <button aria-label="زيادة" onClick={() => setQty(l.sku, l.qty + 1)}>+</button>
+                <button className="rm" onClick={() => setQty(l.sku, 0)}>إزالة</button>
+              </span>
             </span>
             <span className="tnum" style={{ fontWeight: 700 }}>{fmtUsd(l.lineTotalUsdCents)}</span>
           </div>
@@ -127,6 +145,16 @@ function CheckoutPage({ nav }: { nav: (to: string) => void }) {
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // الداخل لا يُعيد كتابة رقمه — وما كتبه بيده يبقى كما هو
+  useEffect(() => {
+    if (!auth.isSignedIn()) return;
+    auth.me().then((u) => setForm((f) => ({
+      ...f,
+      phone: f.phone === '+963' ? u.phone : f.phone,
+      recipientName: f.recipientName || u.fullName || '',
+    }))).catch(() => {});
+  }, []);
 
   const phoneOk = /^\+9639[0-9]{8}$/.test(form.phone);
   const ready = form.recipientName.length >= 3 && form.neighborhood.length >= 2
@@ -279,7 +307,7 @@ function OrderPage({ orderNo }: { orderNo: string }) {
         {o.history.map((h, n) => (
           <div className="row" key={n}>
             <span>{STATUS_AR[h.to] ?? h.to}</span>
-            <span className="muted tnum">{new Date(h.at).toLocaleString('ar-SY')}</span>
+            <span className="muted tnum">{fmtDateTime(h.at)}</span>
           </div>
         ))}
       </div>
@@ -324,6 +352,160 @@ function TrackPage() {
   );
 }
 
+/* ————— الحساب: دخول برمز، ثم الطلبات ————— */
+interface MyOrder {
+  orderNo: string; status: string; paymentStatus: string;
+  cashDueSyp: number; itemCount: number; placedAt: string;
+}
+
+function SignInCard({ onDone }: { onDone: (me: Me) => void }) {
+  const [stage, setStage] = useState<'phone' | 'code'>('phone');
+  const [phone, setPhone] = useState('+963');
+  const [code, setCode] = useState('');
+  const [hint, setHint] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const phoneOk = /^\+9639[0-9]{8}$/.test(phone);
+
+  return (
+    <div className="card glass">
+      <p className="muted" style={{ lineHeight: 1.7 }}>
+        سجّل دخولك لتتابع طلباتك في مكان واحد. لا يلزمك حساب للشراء —
+        الدفع عند الاستلام يعمل للضيف أيضاً.
+      </p>
+
+      {err && <div className="err">{err}</div>}
+      {hint && <div className="ok">{hint}</div>}
+
+      {stage === 'phone' ? (
+        <>
+          <div className="field">
+            <label htmlFor="lp">رقم الجوال</label>
+            <input id="lp" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" dir="ltr" />
+            {!phoneOk && phone.length > 4 && (
+              <span className="hint" style={{ color: 'var(--clay)' }}>
+                يجب أن يبدأ بـ +9639 ويتكوّن من اثنتي عشرة خانة.
+              </span>
+            )}
+          </div>
+          <ActionButton
+            label="أرسل الرمز"
+            busyLabel="جارٍ الإرسال…"
+            disabled={!phoneOk}
+            onClick={async () => {
+              setErr(null); setHint(null);
+              try {
+                const r = await auth.requestOtp(phone);
+                setStage('code');
+                // devCode يظهر في التطوير فقط — الخادم لا يُعيده في الإنتاج
+                setHint(r.devCode ? `رمز التطوير: ${r.devCode}` : 'أرسلنا الرمز على واتساب، وإن تعذّر فرسالة نصية.');
+              } catch (e) {
+                setErr(e instanceof ApiError ? e.messageAr : 'تعذّر إرسال الرمز');
+              }
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <div className="field">
+            <label htmlFor="lc">الرمز</label>
+            <input id="lc" value={code} onChange={(e) => setCode(e.target.value)}
+              inputMode="numeric" maxLength={6} dir="ltr" autoComplete="one-time-code" />
+          </div>
+          <ActionButton
+            label="ادخل"
+            busyLabel="جارٍ التحقق…"
+            disabled={code.length < 4}
+            onClick={async () => {
+              setErr(null);
+              try { onDone(await auth.verifyOtp(phone, code)); }
+              catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحقق'); }
+            }}
+          />
+          <button className="btn btn--ghost" style={{ marginBlockStart: 8 }}
+            onClick={() => { setStage('phone'); setCode(''); setErr(null); setHint(null); }}>
+            تغيير الرقم
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AccountPage({ nav }: { nav: (to: string) => void }) {
+  const [me, setMe] = useState<Me | null>(null);
+  const [orders, setOrders] = useState<MyOrder[] | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const load = () => {
+    api.get<MyOrder[]>('/orders/mine').then(setOrders).catch(() => setOrders([]));
+  };
+
+  useEffect(() => {
+    if (!auth.isSignedIn()) { setReady(true); return; }
+    auth.me()
+      .then((u) => { setMe(u); load(); })
+      .catch(() => auth.signOut())
+      .finally(() => setReady(true));
+    const out = () => { setMe(null); setOrders(null); };
+    window.addEventListener('auth:expired', out);
+    return () => window.removeEventListener('auth:expired', out);
+  }, []);
+
+  if (!ready) return <div className="page"><p className="muted">جارٍ التحميل…</p></div>;
+
+  if (!me) {
+    return (
+      <div className="page">
+        <SignInCard onDone={(u) => { setMe(u); load(); }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <div className="card glass">
+        <div className="row">
+          <span className="muted">الرقم</span>
+          <span className="tnum" dir="ltr">{me.phone}</span>
+        </div>
+        {me.fullName && <div className="row"><span className="muted">الاسم</span><span>{me.fullName}</span></div>}
+        <button className="btn btn--ghost" style={{ marginBlockStart: 12 }}
+          onClick={() => { auth.signOut(); setMe(null); setOrders(null); }}>
+          خروج
+        </button>
+      </div>
+
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px' }}>طلباتي</h2>
+
+      {orders === null ? <p className="muted">جارٍ التحميل…</p>
+        : orders.length === 0 ? (
+          <div className="empty">
+            <p>لا طلبات بعد.</p>
+            <p className="muted">طلباتك السابقة بالرقم نفسه تظهر هنا تلقائياً.</p>
+            <a className="btn" href="/" style={{ marginBlockStart: 16 }}>تصفّح المتجر</a>
+          </div>
+        ) : (
+          <div className="card glass">
+            {orders.map((o) => (
+              <button key={o.orderNo} className="line" style={{ width: '100%', textAlign: 'inherit', background: 'none', border: 0, font: 'inherit', color: 'inherit' }}
+                onClick={() => nav(`/app/orders/${o.orderNo}`)}>
+                <span className="mid">
+                  <b className="tnum">{o.orderNo}</b>
+                  <small className="muted">
+                    {STATUS_AR[o.status] ?? o.status} · {o.itemCount} قطعة ·{' '}
+                    {fmtDate(o.placedAt)}
+                  </small>
+                </span>
+                <span className="tnum" style={{ fontWeight: 700 }}>{fmtSyp(o.cashDueSyp)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
 export default function App() {
   const { path, nav } = useRoute();
   const order = match(path, '/app/orders/:orderNo');
@@ -332,6 +514,7 @@ export default function App() {
     order ? 'طلبك'
     : path.startsWith('/app/checkout') ? 'بيانات التسليم'
     : path.startsWith('/app/track') ? 'تتبّع طلب'
+    : path.startsWith('/app/account') ? 'حسابي'
     : 'سلتي';
 
   return (
@@ -341,12 +524,15 @@ export default function App() {
           <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
         </a>
         <h1>{title}</h1>
-        <a className="muted sp" href="/app/track">تتبّع بلا حساب</a>
+        <a className="muted sp" href={path.startsWith('/app/account') ? '/app/track' : '/app/account'}>
+          {path.startsWith('/app/account') ? 'تتبّع بلا حساب' : 'حسابي'}
+        </a>
       </header>
 
       {order ? <OrderPage orderNo={order.orderNo!} />
         : path.startsWith('/app/checkout') ? <CheckoutPage nav={nav} />
         : path.startsWith('/app/track') ? <TrackPage />
+        : path.startsWith('/app/account') ? <AccountPage nav={nav} />
         : <CartPage nav={nav} />}
     </>
   );

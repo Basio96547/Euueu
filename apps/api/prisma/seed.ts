@@ -198,6 +198,24 @@ async function main() {
     await prisma.storeSetting.upsert({ where: { key }, update: { value: value as any }, create: { key, value: value as any } });
   }
 
+  // ——— حساب إداري أولي ———
+  // بدونه لا يستطيع أحد دخول لوحة التحكم: رمز OTP يُنشئ زبوناً فقط.
+  // يُضبط الرقم بـ ADMIN_PHONE؛ وللترقية لاحقاً استخدم prisma/grant-role.ts
+  const adminPhone = process.env.ADMIN_PHONE ?? '+963900000001';
+  if (/^\+9639[0-9]{8}$/.test(adminPhone)) {
+    const admin = await prisma.user.upsert({
+      where: { phoneE164: adminPhone },
+      update: { role: 'ADMIN' },
+      create: {
+        publicId: publicId(), phoneE164: adminPhone,
+        role: 'ADMIN', fullName: 'مدير المتجر',
+      },
+    });
+    console.log(`حساب الإدارة: ${admin.phoneE164} — ادخل به إلى لوحة التحكم برمز OTP.`);
+  } else {
+    console.warn(`ADMIN_PHONE غير صالح (${adminPhone}) — لم يُنشأ حساب إداري.`);
+  }
+
   console.log(`تم: ${seed.products.length} منتجاً · ${variantCount} متغيّراً · ${rates.length} تعريفة شحن`);
   console.log('تنبيه: كل المنتجات is_demo=true — لن تظهر في الإنتاج قبل تحويلها من لوحة التحكم.');
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError, idemKey, fmtSyp } from './lib/api.js';
+import { api, ApiError, idemKey, fmtSyp, tokens } from './lib/api.js';
 import { useRoute } from './lib/router.js';
 
 interface AdminOrder {
@@ -308,23 +308,214 @@ function Courier() {
   );
 }
 
+/* ————— بوابة الدخول: اللوحة بلا مصادقة تعني تسليم المتجر لأي عابر ————— */
+/* ————— الكتالوج: تحويل المنتجات التجريبية إلى حقيقية ————— */
+interface AdminProduct {
+  slug: string; name: { ar: string; en?: string }; status: string; isDemo: boolean;
+  brand: { ar: string; en?: string };
+  variants: Array<{ sku: string; priceUsdCents: number; onHand: number; reserved: number }>;
+}
+
+function Catalog() {
+  const [rows, setRows] = useState<AdminProduct[] | null>(null);
+  const [filter, setFilter] = useState<'all' | 'demo' | 'real'>('demo');
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    const q = filter === 'all' ? '' : `?demo=${filter === 'demo'}`;
+    api.get<AdminProduct[]>(`/admin/catalog/products${q}`).then(setRows)
+      .catch((e) => setErr(e instanceof ApiError ? e.messageAr : 'تعذّر تحميل الكتالوج'));
+  }, [filter]);
+  useEffect(() => { setRows(null); load(); }, [load]);
+
+  const label = filter === 'demo' ? 'منتجاً تجريبياً' : filter === 'real' ? 'منتجاً حقيقياً' : 'منتجاً';
+
+  return (
+    <>
+      <div className="tabs" style={{ marginBlockEnd: 12 }}>
+        {([['demo', 'تجريبية'], ['real', 'حقيقية'], ['all', 'الكل']] as const).map(([v, l]) => (
+          <button key={v} aria-pressed={filter === v} onClick={() => setFilter(v)}>{l}</button>
+        ))}
+      </div>
+
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+
+      <p className="warnbox">
+        التحويل يصفّر المخزون الوهمي: المنتج يصير حقيقياً بكمية صفر، ولا يُباع
+        حتى تستلم بضاعته فعلياً من المشتريات. هذا يمنع بيع ما لا تملكه.
+      </p>
+
+      {rows === null ? <p className="muted">جارٍ التحميل…</p>
+        : rows.length === 0 ? <div className="empty"><p>لا منتجات في هذا التصنيف.</p></div>
+        : (
+          <>
+            <p className="muted" style={{ marginBlockEnd: 8 }}>{rows.length} {label}</p>
+            {rows.map((p) => {
+              const onHand = p.variants.reduce((a, v) => a + v.onHand, 0);
+              const held = p.variants.reduce((a, v) => a + v.reserved, 0);
+              return (
+                <div className="card glass" key={p.slug}>
+                  <div className="line" style={{ alignItems: 'start' }}>
+                    <span className="mid">
+                      <b>{p.name.ar}</b>
+                      <small className="muted">{p.brand.ar} · {p.variants.length} متغيّراً · مخزون {onHand}</small>
+                    </span>
+                    <span className={`tag ${p.isDemo ? 'tag--clay' : 'tag--jade'}`} style={{ flexShrink: 0 }}>
+                      {p.isDemo ? 'تجريبي' : 'حقيقي'}
+                    </span>
+                  </div>
+
+                  {p.isDemo && (
+                    confirming === p.slug ? (
+                      <div className="row" style={{ gap: 8, marginBlockStart: 10 }}>
+                        <Btn
+                          label={`أكّد — سيُصفَّر ${onHand}`}
+                          onClick={async () => {
+                            setErr(null); setMsg(null);
+                            try {
+                              const r = await api.post<{ demoStockCleared: number }>(
+                                `/admin/catalog/products/${p.slug}/promote`, {},
+                                { 'idempotency-key': idemKey() },
+                              );
+                              setMsg(`${p.name.ar}: صار حقيقياً — صُفِّر ${r.demoStockCleared} من المخزون الوهمي.`);
+                              setConfirming(null); load();
+                            } catch (e) {
+                              setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحويل');
+                              setConfirming(null);
+                            }
+                          }}
+                        />
+                        <button className="btn btn--ghost" onClick={() => setConfirming(null)}>تراجع</button>
+                      </div>
+                    ) : (
+                      <button
+                        className="btn"
+                        style={{ marginBlockStart: 10 }}
+                        disabled={held > 0}
+                        onClick={() => { setErr(null); setMsg(null); setConfirming(p.slug); }}
+                      >
+                        {held > 0 ? `عليه ${held} حجزاً — لا يمكن التحويل` : 'حوّله إلى منتج حقيقي'}
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
+    </>
+  );
+}
+
+function Login({ onDone }: { onDone: () => void }) {
+  const [phone, setPhone] = useState('+963');
+  const [code, setCode] = useState('');
+  const [stage, setStage] = useState<'phone' | 'code'>('phone');
+  const [err, setErr] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+
+  return (
+    <div className="page" style={{ maxWidth: 420, marginInline: 'auto', paddingBlockStart: 48 }}>
+      <h1 style={{ fontSize: 'var(--step-2)', fontWeight: 800, letterSpacing: '-0.02em' }}>
+        تالي شام — الإدارة
+      </h1>
+      <p className="muted">الدخول برقم الجوال ورمز تحقق يصلك عبر واتساب.</p>
+
+      {err && <div className="err">{err}</div>}
+      {hint && <div className="ok">{hint}</div>}
+
+      <div className="card glass">
+        {stage === 'phone' ? (
+          <>
+            <div className="field">
+              <label htmlFor="ph">رقم الجوال</label>
+              <input id="ph" value={phone} onChange={(e) => setPhone(e.target.value)} dir="ltr" inputMode="tel" />
+            </div>
+            <Btn
+              label="أرسل الرمز"
+              onClick={async () => {
+                setErr(null); setHint(null);
+                try {
+                  const r = await api.post<{ devCode?: string; expiresInSec: number }>(
+                    '/auth/otp/request', { phone });
+                  setStage('code');
+                  setHint(r.devCode
+                    ? `وضع التطوير — الرمز ${r.devCode}`
+                    : `أُرسل الرمز، صالح ${Math.round(r.expiresInSec / 60)} دقائق.`);
+                } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الإرسال'); }
+              }}
+            />
+          </>
+        ) : (
+          <>
+            <div className="field">
+              <label htmlFor="cd">رمز التحقق</label>
+              <input id="cd" value={code} onChange={(e) => setCode(e.target.value)}
+                     dir="ltr" inputMode="numeric" maxLength={6} />
+            </div>
+            <Btn
+              label="دخول"
+              onClick={async () => {
+                setErr(null);
+                try {
+                  const r = await api.post<{ accessToken: string; refreshToken: string; user: { role: string } }>(
+                    '/auth/otp/verify', { phone, code });
+                  tokens.set(r.accessToken, r.refreshToken);
+                  onDone();
+                } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الدخول'); }
+              }}
+            />
+            <button className="btn btn--ghost" onClick={() => { setStage('phone'); setCode(''); }}>
+              تغيير الرقم
+            </button>
+          </>
+        )}
+      </div>
+
+      <p className="muted" style={{ fontSize: '0.72rem' }}>
+        الدخول متاح لأدوار الإدارة والعمليات والمندوب فقط. حساب العميل لن يرى هذه اللوحة.
+      </p>
+    </div>
+  );
+}
+
 export default function App() {
   const { path, nav } = useRoute();
   const [fx, setFx] = useState<Fx | null>(null);
   const [tick, setTick] = useState(0);
+  const [authed, setAuthed] = useState(() => Boolean(tokens.access));
+
+  useEffect(() => {
+    const onExpired = () => setAuthed(false);
+    window.addEventListener('auth:expired', onExpired);
+    return () => window.removeEventListener('auth:expired', onExpired);
+  }, []);
 
   const loadFx = useCallback(() => { api.get<Fx>('/fx/current').then(setFx).catch(() => {}); }, []);
   useEffect(() => { loadFx(); }, [loadFx, tick]);
 
   const tabs: Array<[string, string]> = [
-    ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'],
+    ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/catalog', 'الكتالوج'],
+    ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'],
   ];
+
+  if (!authed) return <Login onDone={() => { setAuthed(true); setTick((t) => t + 1); }} />;
 
   return (
     <>
       <FxBanner fx={fx} />
       <header className="hd glass">
         <h1>تالي شام — الإدارة</h1>
+        <button
+          className="btn btn--ghost sp"
+          style={{ minHeight: 34, padding: '0 12px', fontSize: 'var(--step--1)' }}
+          onClick={() => { tokens.clear(); setAuthed(false); }}
+        >
+          خروج
+        </button>
       </header>
 
       <div className="page">
@@ -335,6 +526,7 @@ export default function App() {
         </div>
 
         {path === '/orders' ? <OrdersQueue onChanged={() => setTick((t) => t + 1)} />
+          : path === '/catalog' ? <Catalog />
           : path === '/fx' ? <FxScreen fx={fx} reload={() => setTick((t) => t + 1)} />
           : path === '/courier' ? <Courier />
           : <Dashboard />}

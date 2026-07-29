@@ -2,6 +2,7 @@ import { Body, Controller, Get, Inject, Injectable, Param, Post, Query } from '@
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
+import { Protect } from '../common/guards.js';
 
 type ClaimState = 'OPENED' | 'RECEIVED' | 'DIAGNOSING' | 'DECISION' | 'IN_REPAIR' | 'TESTING' | 'READY' | 'CLOSED' | 'REJECTED';
 
@@ -53,32 +54,17 @@ export class WarrantyService {
       const end = new Date(start);
       end.setMonth(end.getMonth() + months);
 
-      /* بيع الوحدة يغيّر عدد IN_STOCK، فيجب أن ينقص العدّاد في المعاملة
-         نفسها وإلا رفض المحفِّز العملية — والوحدة تُقيَّد في دفتر الحركات. */
+      /* الوحدة خرجت من المخزون لحظة التسليم وقُيّد بيعها هناك (وحدة المندوب).
+         التفعيل هنا يضع تواريخ الكفالة فقط — ولو حرّك المخزون ثانيةً
+         لخُصم الجهاز مرتين وانحرف الدفتر عن الرفّ. */
       const unit = item.unit;
-      await this.prisma.$transaction(async (tx) => {
-        await tx.deviceUnit.update({
-          where: { id: unit.id },
-          data: {
-            state: 'SOLD',
-            warrantyType: item.variant.warrantyType,
-            warrantyStartAt: start,
-            warrantyEndAt: end,
-          },
-        });
-        const remaining = await tx.deviceUnit.count({
-          where: { variantId: unit.variantId, warehouseId: unit.warehouseId, state: 'IN_STOCK' },
-        });
-        await tx.inventoryLevel.updateMany({
-          where: { variantId: unit.variantId, warehouseId: unit.warehouseId },
-          data: { onHand: remaining, version: { increment: 1 } },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            variantId: unit.variantId, warehouseId: unit.warehouseId,
-            reason: 'SALE', qtyDelta: -1, refType: 'order', refId: order.id,
-          },
-        });
+      await this.prisma.deviceUnit.update({
+        where: { id: unit.id },
+        data: {
+          warrantyType: item.variant.warrantyType,
+          warrantyStartAt: start,
+          warrantyEndAt: end,
+        },
       });
       activated++;
     }
@@ -190,9 +176,11 @@ export class WarrantyController {
   }
 
   @Get('admin/warranty-claims')
+  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
   async list() { return { data: await this.w.listClaims() }; }
 
   @Post('admin/warranty-claims/:claimNo/transition')
+  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
   async transition(@Param('claimNo') no: string, @Body() b: { to: ClaimState }) {
     return { data: await this.w.transition(no, b.to) };
   }

@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "seed": "tsx prisma/seed.ts",
     "purge-demo": "tsx prisma/purge-demo.ts",
+    "grant-role": "tsx prisma/grant-role.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

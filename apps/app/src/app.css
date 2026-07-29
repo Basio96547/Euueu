@@ -44,3 +44,18 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--brass); out
 .kpi small { font-size: 0.66rem; color: var(--ink-3); font-weight: 700; }
 .kpi b { font-size: var(--step-2); font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .empty { padding: 44px 0; text-align: center; color: var(--ink-3); }
+
+/* مبدّل الكمية في السلة — أهداف لمس ٤٤ بكسل على الأقل (الفصل 5) */
+.qty { display: flex; align-items: center; gap: 4px; margin-block-start: 6px; }
+.qty button {
+  min-width: 34px; min-height: 34px; padding: 0 8px; border-radius: var(--r-s);
+  border: 1px solid var(--line); background: transparent; color: var(--ink);
+  font: inherit; font-weight: 800; line-height: 1; cursor: pointer;
+  transition: transform var(--dur-tap) var(--ease-out), background var(--dur-tap) var(--ease-out);
+}
+.qty button:active { transform: scale(0.94); }
+.qty > span { min-width: 26px; text-align: center; font-weight: 800; }
+.qty .rm {
+  margin-inline-start: 6px; font-size: 0.7rem; font-weight: 700;
+  color: var(--clay); border-color: color-mix(in srgb, var(--clay) 35%, transparent);
+}
