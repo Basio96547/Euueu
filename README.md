@@ -148,7 +148,8 @@ psql "$DATABASE_URL" -f apps/api/prisma/sql/constraints.sql   # القيود و�
 | `apps/site` — Astro: الرئيسية والفئة وصفحة المنتج | جاهز · 35 صفحة · صفر JavaScript · يُبنى من الواجهة الحية وإلا من البذرة |
 | `apps/app` — السلة وتعديل الكميات وإتمام الطلب والتتبع والحساب وطلباتي | جاهز |
 | `apps/admin` — المؤشرات والطلبات والكتالوج (تحويل التجريبي إلى حقيقي) وسعر الصرف والمندوب | جاهز |
-| النشر على Cloudflare | مُهيَّأ — [دليل النشر](docs/DEPLOY.md) |
+| النشر على Cloudflare | **منشور للمعاينة** — [talisham.vigorous-nannyberry.workers.dev](https://talisham.vigorous-nannyberry.workers.dev) · [دليل النشر](docs/DEPLOY.md) |
+| استضافة الواجهة البرمجية | لم تبدأ — NestJS + PostgreSQL لا يعملان على Workers |
 | إشعارات واتساب الفعلية | القناة مكتوبة؛ تعمل بالمحاكاة حتى يُضبط `WHATSAPP_PROVIDER_TOKEN` |
 | التسويات النقدية · المرتجعات · التذاكر · التقييمات · الكوبونات · لوحة المندوب دون اتصال | لم يبدأ |
 | الاختبارات الآلية · هجرات Prisma (يُستخدم `db push`) | لم يبدأ |
