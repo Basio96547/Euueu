@@ -816,6 +816,447 @@ function Moderation() {
   );
 }
 
+
+
+/* ————— إعدادات المتجر ————— */
+const SETTING_AR: Record<string, { label: string; hint?: string; kind: 'number' | 'boolean' | 'array'; money?: boolean }> = {
+  store_paused: { label: 'إيقاف المتجر', kind: 'boolean', hint: 'يوقف استقبال الطلبات فوراً — للأزمات لا للإجازات.' },
+  demo_mode: { label: 'وضع البيانات التجريبية', kind: 'boolean', hint: 'يُظهر المنتجات التجريبية في المتجر. أطفئه قبل الافتتاح.' },
+  cod_max_order_usd_cents: { label: 'سقف الطلب الواحد', kind: 'number', money: true, hint: 'ما فوقه يحتاج موافقة أو استلاماً من المعرض.' },
+  open_orders_per_phone_max: { label: 'طلبات مفتوحة لكل رقم', kind: 'number' },
+  free_shipping_above_usd_cents: { label: 'شحن مجاني فوق', kind: 'number', money: true },
+  courier_commission_bp: { label: 'عمولة المندوب (نقطة أساس)', kind: 'number', hint: '500 = 5%.' },
+  confirmation_window_hours: { label: 'نافذة تثبيت السعر (ساعة)', kind: 'number' },
+  order_hold_hours: { label: 'الحجز الأوّلي (ساعة)', kind: 'number' },
+  order_hold_ext_hours: { label: 'الحجز المُمدَّد (ساعة)', kind: 'number' },
+  rare_stock_threshold: { label: 'حد الجهاز النادر', kind: 'number', hint: 'عند هذه الكمية أو أقل تُقصَّر مهلة الحجز.' },
+  rare_hold_ext_hours: { label: 'حجز النادر المُمدَّد (ساعة)', kind: 'number' },
+  cash_rounding_step_syp: { label: 'وحدة التقريب النقدي', kind: 'number' },
+  served_governorates: { label: 'المحافظات المخدومة', kind: 'array' },
+};
+
+function Settings() {
+  const [rows, setRows] = useState<Array<{ key: string; value: any }> | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.get<Array<{ key: string; value: any }>>('/admin/settings')
+      .then((r) => { setRows(r); setDraft(Object.fromEntries(r.map((x) => [x.key, String(x.value)]))); })
+      .catch((e) => setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, []);
+  useEffect(load, [load]);
+
+  const save = async (key: string, value: unknown) => {
+    setErr(null); setMsg(null);
+    try {
+      await api.post('/admin/settings', { key, value });
+      setMsg(`حُفظ: ${SETTING_AR[key]?.label ?? key}`);
+      load();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الحفظ'); }
+  };
+
+  if (rows === null) return <p className="muted">جارٍ التحميل…</p>;
+
+  const paused = rows.find((r) => r.key === 'store_paused')?.value === true;
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+      {paused && <div className="err">المتجر متوقف الآن — لا يستقبل أي طلب جديد.</div>}
+
+      <p className="warnbox">
+        كل تغيير هنا يُسجَّل في سجل التدقيق باسم من غيّره. المبالغ بسنتات
+        الدولار لأن المرجع بالدولار — والليرة تُحسب من سعر الصرف.
+      </p>
+
+      {rows.map((r) => {
+        const meta = SETTING_AR[r.key];
+        if (!meta) return null;
+
+        if (meta.kind === 'boolean') {
+          const on = r.value === true;
+          return (
+            <div className="card glass" key={r.key}>
+              <div className="line" style={{ alignItems: 'start' }}>
+                <span className="mid">
+                  <b>{meta.label}</b>
+                  {meta.hint && <small className="muted">{meta.hint}</small>}
+                </span>
+                <button
+                  className={`btn ${on ? 'btn--danger' : 'btn--ghost'}`}
+                  style={{ width: 'auto', padding: '0 16px', flexShrink: 0 }}
+                  onClick={() => save(r.key, !on)}
+                >
+                  {on ? 'مُفعَّل — أطفئه' : 'مُطفأ — فعّله'}
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        if (meta.kind === 'array') {
+          const list: string[] = Array.isArray(r.value) ? r.value : [];
+          return (
+            <div className="card glass" key={r.key}>
+              <b>{meta.label}</b>
+              <div className="tabs" style={{ flexWrap: 'wrap', marginBlock: 8 }}>
+                {Object.entries(GOV_AR).map(([code, label]) => {
+                  const on = list.includes(code);
+                  return (
+                    <button key={code} aria-pressed={on}
+                      onClick={() => save(r.key, on ? list.filter((g) => g !== code) : [...list, code])}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="hint">محافظة غير مختارة يُرفض الطلب إليها عند إتمام الشراء.</span>
+            </div>
+          );
+        }
+
+        const cur = draft[r.key] ?? String(r.value);
+        const changed = cur !== String(r.value);
+        return (
+          <div className="card glass" key={r.key}>
+            <div className="field">
+              <label htmlFor={`s-${r.key}`}>{meta.label}</label>
+              <input id={`s-${r.key}`} dir="ltr" inputMode="numeric" value={cur}
+                onChange={(e) => setDraft((d) => ({ ...d, [r.key]: e.target.value }))} />
+              {meta.money && <span className="hint">{(Number(cur) / 100).toFixed(2)} $</span>}
+              {meta.hint && <span className="hint">{meta.hint}</span>}
+            </div>
+            {changed && (
+              <div className="acts">
+                <Btn label="احفظ" onClick={() => save(r.key, Number(cur))} />
+                <button className="btn btn--ghost"
+                  onClick={() => setDraft((d) => ({ ...d, [r.key]: String(r.value) }))}>
+                  تراجع
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/* ————— محرّر المنتج ————— */
+interface EditorVariant {
+  sku: string; priceUsdCents: string; compareAtPriceUsdCents: string; costPriceUsdCents: string;
+  storageGb: string; ramGb: string; colorNameAr: string; colorCode: string;
+  condition: string; deviceOrigin: string; warrantyType: string; warrantyMonths: string;
+  dualSim: boolean; partCode: string; onHand?: number;
+}
+const emptyVariant = (): EditorVariant => ({
+  sku: '', priceUsdCents: '', compareAtPriceUsdCents: '', costPriceUsdCents: '',
+  storageGb: '', ramGb: '', colorNameAr: '', colorCode: '#000000',
+  condition: 'NEW', deviceOrigin: 'GULF', warrantyType: 'STORE', warrantyMonths: '12',
+  dualSim: true, partCode: '',
+});
+
+const CONDITION_AR: Record<string, string> = {
+  NEW: 'جديد', OPEN_BOX: 'مفتوح العلبة', REFURBISHED: 'مجدَّد',
+  USED_A: 'مستعمل — ممتاز', USED_B: 'مستعمل — جيد',
+};
+const ORIGIN_AR: Record<string, string> = {
+  GULF: 'خليجي', EURO: 'أوروبي', US: 'أمريكي', ASIA: 'آسيوي', OTHER: 'غير ذلك',
+};
+const WARRANTY_AR: Record<string, string> = {
+  STORE: 'كفالة المحل', AGENT: 'كفالة الوكيل', IMPORTER: 'كفالة المستورد', NONE: 'بلا كفالة',
+};
+const STATUS_PROD_AR: Record<string, string> = {
+  DRAFT: 'مسوّدة', IN_REVIEW: 'قيد المراجعة', PUBLISHED: 'منشور', ARCHIVED: 'مسحوب',
+};
+
+function ProductEditor({ slug, onDone }: { slug: string | null; onDone: () => void }) {
+  const [brands, setBrands] = useState<Array<{ slug: string; name: any }>>([]);
+  const [cats, setCats] = useState<Array<{ slug: string; name: any; depth: number }>>([]);
+  const [f, setF] = useState({
+    slug: '', brandSlug: '', categorySlug: '', nameAr: '', nameEn: '',
+    shortDescAr: '', descriptionAr: '', status: 'DRAFT',
+  });
+  const [variants, setVariants] = useState<EditorVariant[]>([emptyVariant()]);
+  const [media, setMedia] = useState<Array<{ id: string; url: string }>>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get<any[]>('/admin/catalog/brands').then(setBrands).catch(() => {});
+    api.get<any[]>('/admin/catalog/categories').then(setCats).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!slug) return;
+    api.get<any>(`/admin/catalog/product/${slug}`).then((p) => {
+      setF({
+        slug: p.slug, brandSlug: p.brandSlug, categorySlug: p.categorySlug,
+        nameAr: p.name?.ar ?? '', nameEn: p.name?.en ?? '',
+        shortDescAr: p.shortDesc?.ar ?? '', descriptionAr: p.description?.ar ?? '',
+        status: p.status,
+      });
+      setMedia(p.media ?? []);
+      setVariants((p.variants ?? []).map((v: any) => ({
+        sku: v.sku,
+        priceUsdCents: String(v.priceUsdCents),
+        compareAtPriceUsdCents: v.compareAtPriceUsdCents ? String(v.compareAtPriceUsdCents) : '',
+        costPriceUsdCents: v.costPriceUsdCents ? String(v.costPriceUsdCents) : '',
+        storageGb: v.storageGb != null ? String(v.storageGb) : '',
+        ramGb: v.ramGb != null ? String(v.ramGb) : '',
+        colorNameAr: v.colorName?.ar ?? '', colorCode: v.colorCode ?? '#000000',
+        condition: v.condition, deviceOrigin: v.deviceOrigin,
+        warrantyType: v.warrantyType, warrantyMonths: String(v.warrantyMonths),
+        dualSim: v.dualSim, partCode: v.partCode ?? '', onHand: v.onHand,
+      })));
+    }).catch((e) => setErr(e instanceof ApiError ? e.messageAr : 'تعذّر التحميل'));
+  }, [slug]);
+
+  const setV = (i: number, k: keyof EditorVariant, val: any) =>
+    setVariants((vs) => vs.map((v, n) => (n === i ? { ...v, [k]: val } : v)));
+
+  /* الصورة تُقرأ في المتصفح وتُرسل داخل JSON: لا حاجة إلى multipart
+     ولا إلى مكتبة رفع، والملف يمرّ بالمسار المصادَق عليه نفسه. */
+  const upload = async (file: File) => {
+    if (file.size > 3 * 1024 * 1024) { setErr('الصورة أكبر من ثلاثة ميغابايت — اضغطها أولاً'); return; }
+    setErr(null); setBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result));
+        r.onerror = () => rej(new Error('read'));
+        r.readAsDataURL(file);
+      });
+      const m = await api.post<{ id: string; url: string }>(
+        `/admin/catalog/product/${f.slug}/media`, { dataUrl });
+      setMedia((ms) => [...ms, m]);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّر رفع الصورة');
+    } finally { setBusy(false); }
+  };
+
+  const save = async () => {
+    setErr(null); setMsg(null);
+    const payload = {
+      slug: f.slug, brandSlug: f.brandSlug, categorySlug: f.categorySlug,
+      name: { ar: f.nameAr, ...(f.nameEn ? { en: f.nameEn } : {}) },
+      shortDesc: f.shortDescAr ? { ar: f.shortDescAr } : null,
+      description: f.descriptionAr ? { ar: f.descriptionAr } : null,
+      status: f.status,
+      variants: variants.map((v) => ({
+        sku: v.sku.trim().toUpperCase(),
+        priceUsdCents: Number(v.priceUsdCents),
+        compareAtPriceUsdCents: v.compareAtPriceUsdCents ? Number(v.compareAtPriceUsdCents) : null,
+        costPriceUsdCents: v.costPriceUsdCents ? Number(v.costPriceUsdCents) : null,
+        storageGb: v.storageGb ? Number(v.storageGb) : null,
+        ramGb: v.ramGb ? Number(v.ramGb) : null,
+        colorName: v.colorNameAr ? { ar: v.colorNameAr } : null,
+        colorCode: v.colorCode || null,
+        condition: v.condition, deviceOrigin: v.deviceOrigin,
+        warrantyType: v.warrantyType, warrantyMonths: Number(v.warrantyMonths || 0),
+        dualSim: v.dualSim, partCode: v.partCode || null,
+      })),
+    };
+    try {
+      await api.post('/admin/catalog/product', payload);
+      setMsg('حُفظ المنتج.');
+      onDone();
+    } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر الحفظ'); }
+  };
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+
+      <div className="card glass">
+        <div className="grid2">
+          <div className="field">
+            <label htmlFor="pn">الاسم بالعربية <span className="req">*</span></label>
+            <input id="pn" value={f.nameAr} onChange={(e) => setF({ ...f, nameAr: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="pe">الاسم بالإنجليزية</label>
+            <input id="pe" dir="ltr" value={f.nameEn} onChange={(e) => setF({ ...f, nameEn: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="ps">المُعرِّف في الرابط <span className="req">*</span></label>
+            <input id="ps" dir="ltr" value={f.slug} placeholder="samsung-galaxy-a55"
+              disabled={Boolean(slug)}
+              onChange={(e) => setF({ ...f, slug: e.target.value })} />
+            {slug && <span className="hint">لا يُغيَّر بعد النشر — الروابط القديمة تنكسر.</span>}
+          </div>
+          <div className="field">
+            <label htmlFor="pst">الحالة</label>
+            <select id="pst" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+              {Object.entries(STATUS_PROD_AR).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="pb">العلامة <span className="req">*</span></label>
+            <select id="pb" value={f.brandSlug} onChange={(e) => setF({ ...f, brandSlug: e.target.value })}>
+              <option value="">— اختر —</option>
+              {brands.map((b) => <option key={b.slug} value={b.slug}>{b.name?.ar ?? b.slug}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="pc">الفئة <span className="req">*</span></label>
+            <select id="pc" value={f.categorySlug} onChange={(e) => setF({ ...f, categorySlug: e.target.value })}>
+              <option value="">— اختر —</option>
+              {cats.map((c) => (
+                <option key={c.slug} value={c.slug}>{'— '.repeat(c.depth)}{c.name?.ar ?? c.slug}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="pd">وصف مختصر</label>
+          <input id="pd" value={f.shortDescAr} onChange={(e) => setF({ ...f, shortDescAr: e.target.value })} />
+        </div>
+        <div className="field">
+          <label htmlFor="pl">الوصف الكامل</label>
+          <textarea id="pl" rows={4} value={f.descriptionAr}
+            onChange={(e) => setF({ ...f, descriptionAr: e.target.value })} />
+        </div>
+      </div>
+
+      {slug && (
+        <div className="card glass">
+          <b style={{ fontSize: 'var(--step--1)' }}>الصور</b>
+          <div className="thumbs">
+            {media.map((m) => (
+              <div className="thumb" key={m.id}>
+                <img src={m.url} alt="" loading="lazy" />
+                <button aria-label="حذف" onClick={async () => {
+                  await api.del(`/admin/catalog/media/${m.id}`).catch(() => {});
+                  setMedia((ms) => ms.filter((x) => x.id !== m.id));
+                }}>×</button>
+              </div>
+            ))}
+          </div>
+          <label className="btn btn--ghost" style={{ marginBlockStart: 10, cursor: 'pointer' }}>
+            {busy ? 'جارٍ الرفع…' : 'أضف صورة'}
+            <input type="file" accept="image/*" hidden
+              onChange={(e) => { const fl = e.target.files?.[0]; if (fl) void upload(fl); e.currentTarget.value = ''; }} />
+          </label>
+          <span className="hint">JPEG أو PNG أو WebP، حتى ثلاثة ميغابايت. الأولى هي الرئيسية.</span>
+        </div>
+      )}
+
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '18px 0 8px' }}>المتغيّرات</h2>
+      <p className="warnbox">
+        الأسعار بسنتات الدولار (٢٣٠٠٠ = ٢٣٠٫٠٠$). المرجع بالدولار والعرض بالليرة
+        يُحسب من سعر الصرف — فلا تُراجَع آلاف الأسعار بعد كل قفزة.
+      </p>
+
+      {variants.map((v, i) => (
+        <div className="card glass" key={i}>
+          <div className="grid2">
+            <div className="field">
+              <label>رمز التخزين SKU <span className="req">*</span></label>
+              <input dir="ltr" value={v.sku} placeholder="SMA55-256-BLK-GULF"
+                onChange={(e) => setV(i, 'sku', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>السعر (سنت) <span className="req">*</span></label>
+              <input dir="ltr" inputMode="numeric" value={v.priceUsdCents}
+                onChange={(e) => setV(i, 'priceUsdCents', e.target.value)} />
+              {v.priceUsdCents && <span className="hint">{(Number(v.priceUsdCents) / 100).toFixed(2)} $</span>}
+            </div>
+            <div className="field">
+              <label>السعر المشطوب (سنت)</label>
+              <input dir="ltr" inputMode="numeric" value={v.compareAtPriceUsdCents}
+                onChange={(e) => setV(i, 'compareAtPriceUsdCents', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>تكلفتك (سنت)</label>
+              <input dir="ltr" inputMode="numeric" value={v.costPriceUsdCents}
+                onChange={(e) => setV(i, 'costPriceUsdCents', e.target.value)} />
+              <span className="hint">لا تظهر للزبون — تُستعمل في تقرير الربحية.</span>
+            </div>
+            <div className="field">
+              <label>السعة (جيجا)</label>
+              <input dir="ltr" inputMode="numeric" value={v.storageGb}
+                onChange={(e) => setV(i, 'storageGb', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>الذاكرة (جيجا)</label>
+              <input dir="ltr" inputMode="numeric" value={v.ramGb}
+                onChange={(e) => setV(i, 'ramGb', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>اللون</label>
+              <input value={v.colorNameAr} placeholder="أسود فحمي"
+                onChange={(e) => setV(i, 'colorNameAr', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>رمز اللون</label>
+              <input type="color" value={v.colorCode}
+                onChange={(e) => setV(i, 'colorCode', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>الحالة</label>
+              <select value={v.condition} onChange={(e) => setV(i, 'condition', e.target.value)}>
+                {Object.entries(CONDITION_AR).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>المنشأ</label>
+              <select value={v.deviceOrigin} onChange={(e) => setV(i, 'deviceOrigin', e.target.value)}>
+                {Object.entries(ORIGIN_AR).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>نوع الكفالة</label>
+              <select value={v.warrantyType} onChange={(e) => setV(i, 'warrantyType', e.target.value)}>
+                {Object.entries(WARRANTY_AR).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>مدة الكفالة (شهر)</label>
+              <input dir="ltr" inputMode="numeric" value={v.warrantyMonths}
+                onChange={(e) => setV(i, 'warrantyMonths', e.target.value)} />
+            </div>
+            <div className="field">
+              <label>رمز النسخة</label>
+              <input dir="ltr" value={v.partCode} placeholder="ZA/A"
+                onChange={(e) => setV(i, 'partCode', e.target.value)} />
+              <span className="hint">يبحث به السوق السوري كثيراً.</span>
+            </div>
+            <div className="field">
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={v.dualSim} style={{ width: 'auto', minHeight: 'auto' }}
+                  onChange={(e) => setV(i, 'dualSim', e.target.checked)} />
+                شريحتان
+              </label>
+            </div>
+          </div>
+          <div className="row">
+            {v.onHand !== undefined && <span className="muted">المخزون: {v.onHand}</span>}
+            {variants.length > 1 && (
+              <button className="btn btn--danger" style={{ minHeight: 34, padding: '0 12px', width: 'auto' }}
+                onClick={() => setVariants((vs) => vs.filter((_, n) => n !== i))}>
+                احذف المتغيّر
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      <div className="acts">
+        <button className="btn btn--ghost" onClick={() => setVariants((vs) => [...vs, emptyVariant()])}>
+          أضف متغيّراً
+        </button>
+        <Btn label="احفظ المنتج" onClick={save} />
+      </div>
+    </>
+  );
+}
+
 /* ————— الكتالوج: تحويل المنتجات التجريبية إلى حقيقية ————— */
 interface AdminProduct {
   slug: string; name: { ar: string; en?: string }; status: string; isDemo: boolean;
@@ -825,7 +1266,8 @@ interface AdminProduct {
 
 function Catalog() {
   const [rows, setRows] = useState<AdminProduct[] | null>(null);
-  const [filter, setFilter] = useState<'all' | 'demo' | 'real'>('demo');
+  const [editing, setEditing] = useState<string | null | undefined>(undefined);
+  const [filter, setFilter] = useState<'all' | 'demo' | 'real'>('real');
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -839,12 +1281,31 @@ function Catalog() {
 
   const label = filter === 'demo' ? 'منتجاً تجريبياً' : filter === 'real' ? 'منتجاً حقيقياً' : 'منتجاً';
 
+  // undefined = القائمة · null = منتج جديد · نص = تعديل منتج قائم
+  if (editing !== undefined) {
+    return (
+      <>
+        <button className="btn btn--ghost" style={{ marginBlockEnd: 12 }}
+          onClick={() => { setEditing(undefined); load(); }}>
+          ← عودة للقائمة
+        </button>
+        <ProductEditor slug={editing} onDone={() => { setEditing(undefined); load(); }} />
+      </>
+    );
+  }
+
   return (
     <>
-      <div className="tabs" style={{ marginBlockEnd: 12 }}>
-        {([['demo', 'تجريبية'], ['real', 'حقيقية'], ['all', 'الكل']] as const).map(([v, l]) => (
-          <button key={v} aria-pressed={filter === v} onClick={() => setFilter(v)}>{l}</button>
-        ))}
+      <div className="row" style={{ marginBlockEnd: 12 }}>
+        <div className="tabs">
+          {([['real', 'حقيقية'], ['demo', 'تجريبية'], ['all', 'الكل']] as const).map(([v, l]) => (
+            <button key={v} aria-pressed={filter === v} onClick={() => setFilter(v)}>{l}</button>
+          ))}
+        </div>
+        <button className="btn" style={{ width: 'auto', padding: '0 16px' }}
+          onClick={() => setEditing(null)}>
+          + منتج جديد
+        </button>
       </div>
 
       {err && <div className="err">{err}</div>}
@@ -873,6 +1334,13 @@ function Catalog() {
                     <span className={`tag ${p.isDemo ? 'tag--clay' : 'tag--jade'}`} style={{ flexShrink: 0 }}>
                       {p.isDemo ? 'تجريبي' : 'حقيقي'}
                     </span>
+                  </div>
+
+                  <div className="acts" style={{ marginBlockStart: 8 }}>
+                    <button className="btn btn--ghost" style={{ width: 'auto', padding: '0 14px' }}
+                      onClick={() => setEditing(p.slug)}>
+                      عدّله
+                    </button>
                   </div>
 
                   {p.isDemo && (
@@ -1098,7 +1566,8 @@ export default function App() {
     ['/', 'المؤشرات'], ['/orders', 'الطلبات'], ['/settlements', 'التسويات'],
     ['/returns', 'المرتجعات'], ['/tickets', 'الدعم'], ['/moderation', 'الإشراف'],
     ['/catalog', 'الكتالوج'], ['/coupons', 'الكوبونات'],
-    ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'], ['/password', 'كلمة السرّ'],
+    ['/fx', 'سعر الصرف'], ['/courier', 'المندوب'],
+    ['/settings', 'الإعدادات'], ['/password', 'كلمة السرّ'],
   ];
 
   if (!authed) return <Login onDone={() => { setAuthed(true); setTick((t) => t + 1); }} />;
@@ -1130,6 +1599,7 @@ export default function App() {
           : path === '/tickets' ? <Tickets />
           : path === '/moderation' ? <Moderation />
           : path === '/coupons' ? <Coupons />
+          : path === '/settings' ? <Settings />
           : path === '/password' ? <PasswordScreen />
           : path === '/catalog' ? <Catalog />
           : path === '/fx' ? <FxScreen fx={fx} reload={() => setTick((t) => t + 1)} />

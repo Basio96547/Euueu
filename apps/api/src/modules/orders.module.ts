@@ -32,6 +32,37 @@ export class OrdersService {
       return this.byNo(this.idem.get(idempotencyKey)!);
     }
 
+    /* الإعدادات تُفرض هنا لا في الواجهة: زرٌّ مخفيّ في المتصفح ليس
+       إيقافاً، ومن يعرف عنوان المسار يطلب رغم أنف الشاشة. */
+    const paused = await this.setting('store_paused', false);
+    if (paused) {
+      throw Errors.badRequest('STORE_PAUSED',
+        'المتجر متوقف مؤقتاً عن استقبال الطلبات — عد بعد قليل',
+        'Store is paused');
+    }
+
+    const served = await this.setting('served_governorates', [] as any);
+    if (Array.isArray(served) && served.length && !served.includes(address?.governorate)) {
+      throw Errors.badRequest('GOVERNORATE_NOT_SERVED',
+        'لا نوصّل إلى هذه المحافظة بعد — راسلنا لنرتّب لك عبر مكتب نقل',
+        'Governorate not served', { governorate: address?.governorate });
+    }
+
+    const openMax = await this.setting('open_orders_per_phone_max', 2);
+    if (address?.phone) {
+      const open = await this.prisma.order.count({
+        where: {
+          shippingAddress: { phone: address.phone },
+          status: { in: ['PENDING_CONFIRMATION', 'PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] },
+        },
+      });
+      if (open >= Number(openMax)) {
+        throw Errors.badRequest('COD_OPEN_ORDERS_LIMIT',
+          `لديك ${open} طلبات مفتوحة — أكمل استلامها قبل طلب جديد`,
+          'Too many open orders');
+      }
+    }
+
     const fx = await this.fx.requireSellable();
     const check = await this.cart.validate(cartToken);
     if (!check.valid) {

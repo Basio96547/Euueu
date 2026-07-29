@@ -145,3 +145,46 @@ export const ORIGIN_AR: Record<Variant['deviceOrigin'], string> = {
 export const WARRANTY_AR: Record<Variant['warrantyType'], string> = {
   STORE: 'كفالة محل', AGENT: 'كفالة وكيل', IMPORTER: 'كفالة مستورد', NONE: 'بلا كفالة',
 };
+
+
+/* ——— التقييمات والأسئلة ———
+ *
+ * تُجلب وقت البناء وتُدرَج في الصفحة الساكنة، فلا تُحمَّل عبر جافاسكربت
+ * على شبكة بطيئة ولا تُخفى عن محركات البحث. غيابُ الواجهة البرمجية
+ * لا يمنع البناء: صفحةٌ بلا مراجعات أفضل من بناء فاشل.
+ */
+export interface ReviewSummary {
+  count: number;
+  average: number;
+  distribution: Record<string, number>;
+  items: Array<{
+    rating: number; title: string | null; body: string | null;
+    author: string; createdAt: string;
+    merchantReply: string | null; merchantReplyAt: string | null;
+  }>;
+}
+
+export interface QuestionItem {
+  body: string; answer: string | null; answerSource: string | null; answeredAt: string | null;
+}
+
+const EMPTY_REVIEWS: ReviewSummary = {
+  count: 0, average: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, items: [],
+};
+
+async function apiJson<T>(path: string, fallback: T): Promise<T> {
+  if (!API) return fallback;
+  try {
+    const r = await fetch(`${API}${path}`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return fallback;
+    return ((await r.json()).data as T) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export const reviewsFor = (slug: string) =>
+  apiJson<ReviewSummary>(`/catalog/products/${slug}/reviews`, EMPTY_REVIEWS);
+
+export const questionsFor = (slug: string) =>
+  apiJson<QuestionItem[]>(`/catalog/products/${slug}/questions`, []);

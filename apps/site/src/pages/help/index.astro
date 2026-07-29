@@ -1,0 +1,46 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import { ARTICLES } from '../../lib/help';
+---
+
+<Base title="مركز المساعدة" description="كيف تطلب، وكيف يُحسب السعر، وسياسة الإرجاع والكفالة — تالي شام">
+  <Header title="مركز المساعدة" />
+
+  <div class="wrap">
+    <p class="lead">
+      كل ما يخطر لك قبل أن تطلب أو بعده. الصفحات ساكنة وتفتح على أبطأ شبكة.
+    </p>
+
+    <div class="cards">
+      {ARTICLES.map((a) => (
+        <a class="card glass" href={`/help/${a.slug}/`}>
+          <b>{a.title}</b>
+          <small>{a.summary}</small>
+        </a>
+      ))}
+    </div>
+
+    <div class="contact glass">
+      <b>لم تجد جوابك؟</b>
+      <p>راسلنا على واتساب أو افتح تذكرة دعم — نردّ ضمن الدوام: السبت–الخميس ١٠ صباحاً – ٨ مساءً.</p>
+      <div class="row">
+        <a class="btn" href="/app/support">افتح تذكرة</a>
+        <a class="btn btn--ghost" href="https://wa.me/963900000000">واتساب</a>
+      </div>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .wrap { padding: 12px 12px 96px; display: grid; gap: 14px; }
+  .lead { color: var(--ink-2); line-height: 1.8; }
+  .cards { display: grid; gap: 9px; }
+  .card { display: grid; gap: 3px; padding: 14px; border-radius: var(--r-l); color: inherit; text-decoration: none; }
+  .card b { font-size: var(--step-0); font-weight: 800; }
+  .card small { color: var(--ink-3); line-height: 1.6; }
+  .contact { padding: 14px; border-radius: var(--r-l); display: grid; gap: 8px; }
+  .contact p { color: var(--ink-2); line-height: 1.7; font-size: var(--step--1); }
+  .row { display: flex; gap: 8px; }
+  @media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }
+</style>

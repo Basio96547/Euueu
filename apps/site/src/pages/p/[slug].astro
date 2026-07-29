@@ -4,7 +4,7 @@ import Header from '../../components/Header.astro';
 import ProductCard from '../../components/ProductCard.astro';
 import Price from '../../components/Price.astro';
 import {
-  products, compatibleAccessories, currentFx,
+  products, compatibleAccessories, currentFx, reviewsFor, questionsFor,
   CONDITION_AR, ORIGIN_AR, WARRANTY_AR,
 } from '../../lib/catalog';
 
@@ -16,6 +16,14 @@ const { product } = Astro.props;
 const v = product.variants[0]!;
 const fx = currentFx();
 const accessories = compatibleAccessories(product.slug);
+
+/* تُجلب وقت البناء وتُدرَج في HTML: لا استدعاء شبكة عند الزائر،
+   وتقرؤها محركات البحث كما يقرؤها الإنسان. */
+const [reviews, questions] = await Promise.all([
+  reviewsFor(product.slug),
+  questionsFor(product.slug),
+]);
+const stars = (n: number) => '★'.repeat(n) + '☆'.repeat(5 - n);
 const specRows: Array<[string, string]> = [
   ['الحالة', CONDITION_AR[v.condition]],
   ['المصدر', ORIGIN_AR[v.deviceOrigin]],
@@ -117,6 +125,53 @@ const jsonLd = {
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /></svg>
       الدفع نقداً عند الاستلام — تفحص الجهاز قبل أن تدفع
     </div>
+
+    {reviews.count > 0 && (
+      <section class="also">
+        <h2>آراء من اشتروه</h2>
+        <div class="rsum">
+          <span class="ravg tnum">{reviews.average.toFixed(1)}</span>
+          <span class="rstars" aria-label={`${reviews.average} من 5`}>{stars(Math.round(reviews.average))}</span>
+          <span class="muted">{reviews.count} مراجعة</span>
+        </div>
+        <div class="rbars">
+          {[5, 4, 3, 2, 1].map((n) => (
+            <div class="rbar">
+              <span class="tnum">{n}</span>
+              <span class="track">
+                <span class="fill" style={`inline-size:${reviews.count ? (reviews.distribution[String(n)] ?? 0) / reviews.count * 100 : 0}%`}></span>
+              </span>
+              <span class="tnum muted">{reviews.distribution[String(n)] ?? 0}</span>
+            </div>
+          ))}
+        </div>
+        {reviews.items.slice(0, 8).map((r) => (
+          <article class="rev">
+            <div class="rhead">
+              <span class="rstars">{stars(r.rating)}</span>
+              <span class="muted">{r.author}</span>
+            </div>
+            {r.title && <b>{r.title}</b>}
+            {r.body && <p>{r.body}</p>}
+            {r.merchantReply && (
+              <p class="reply"><b>رد تالي شام:</b> {r.merchantReply}</p>
+            )}
+          </article>
+        ))}
+      </section>
+    )}
+
+    {questions.length > 0 && (
+      <section class="also">
+        <h2>أسئلة عن هذا الجهاز</h2>
+        {questions.slice(0, 10).map((q) => (
+          <article class="rev">
+            <b>{q.body}</b>
+            {q.answer && <p>{q.answer}</p>}
+          </article>
+        ))}
+      </section>
+    )}
 
     {accessories.length > 0 && (
       <section class="also">
@@ -222,6 +277,22 @@ const jsonLd = {
     font-size: var(--step--1); font-weight: 700;
   }
   .cod .icon { color: var(--brass); flex: none; }
+
+  .rsum { display: flex; align-items: baseline; gap: 10px; }
+  .ravg { font-size: var(--step-3); font-weight: 800; letter-spacing: -0.03em; }
+  .rstars { color: var(--brass); letter-spacing: 2px; }
+  .rbars { display: grid; gap: 4px; }
+  .rbar { display: grid; grid-template-columns: 1ch 1fr 3ch; gap: 8px; align-items: center; font-size: 0.72rem; }
+  .rbar .track { block-size: 6px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
+  .rbar .fill { display: block; block-size: 100%; background: var(--brass); }
+  .rev { display: grid; gap: 4px; padding-block: 10px; border-block-start: 1px solid var(--line); }
+  .rev p { color: var(--ink-2); line-height: 1.7; font-size: var(--step--1); }
+  .rev .rhead { display: flex; gap: 8px; align-items: center; font-size: 0.75rem; }
+  .rev .reply {
+    margin-block-start: 4px; padding: 8px 10px; border-radius: var(--r-m);
+    background: color-mix(in srgb, var(--jade) 8%, transparent);
+    border-inline-start: 3px solid color-mix(in srgb, var(--jade) 50%, transparent);
+  }
 
   .also { display: grid; gap: 10px; padding-block-start: 6px; }
   .also h2 { font-size: var(--step-1); font-weight: 800; }

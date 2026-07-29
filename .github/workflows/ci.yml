@@ -1,0 +1,26 @@
+name: تحقق
+
+# يعمل على كل دفعة وكل طلب دمج: ما لا يُفحص عند الكتابة يُفحص عند العميل.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  تحقق:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run typecheck
+      - run: pnpm turbo run test
+      - run: pnpm turbo run build

@@ -22,6 +22,8 @@ import { CouponsController, CouponsService } from './modules/coupons.module.js';
 import { ReviewsController, ReviewsService } from './modules/reviews.module.js';
 import { TicketsController, TicketsService } from './modules/tickets.module.js';
 import { AlertsController, AlertsService } from './modules/alerts.module.js';
+import { ProductsAdminController, ProductsAdminService } from './modules/products.admin.js';
+import { PushController, PushService } from './modules/push.module.js';
 
 @Module({
   controllers: [
@@ -29,14 +31,15 @@ import { AlertsController, AlertsService } from './modules/alerts.module.js';
     CartController, OrdersController, AdminController, CourierController,
     SearchController, WarrantyController, ProcurementController, AuthController,
     SettlementsController, ReturnsController, CouponsController,
-    ReviewsController, TicketsController, AlertsController,
+    ReviewsController, TicketsController, AlertsController, ProductsAdminController,
+    PushController,
   ],
   providers: [
     PrismaService, FxService, CatalogService, CartService, OrdersService,
     NotificationsService, SearchService, WarrantyService, ProcurementService, AuthService,
     ReservationSweeper,
     SettlementsService, ReturnsService, CouponsService,
-    ReviewsService, TicketsService, AlertsService,
+    ReviewsService, TicketsService, AlertsService, ProductsAdminService, PushService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

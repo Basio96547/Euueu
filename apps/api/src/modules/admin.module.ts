@@ -1,4 +1,4 @@
-import { Inject, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Inject, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { OrdersService } from './orders.module.js';
 import { NotificationsService } from './notifications.service.js';
@@ -231,6 +231,67 @@ export class AdminController {
   /** كنس يدوي — الدوري يعمل كل دقيقة، وهذا لمن أراد التحقق فوراً */
   @Post('inventory/sweep')
   async sweep() { return { data: await this.sweeper.sweep() }; }
+
+  /**
+   * إعدادات المتجر — الفصل 18
+   * ما يتغيّر بلا نشر كود: السقوف والمحافظات المخدومة وإيقاف المتجر.
+   * غيابها يعني أن تعطيل الطلبات ساعةَ أزمة يحتاج مبرمجاً ونشراً.
+   */
+  @Get('settings')
+  async settings() {
+    const rows = await this.prisma.storeSetting.findMany({ orderBy: { key: 'asc' } });
+    return { data: rows.map((r) => ({ key: r.key, value: r.value, updatedAt: r.updatedAt })) };
+  }
+
+  @Post('settings')
+  @Protect('ADMIN')
+  async setSetting(@Body() b: { key: string; value: unknown }, @Req() req: { user?: { sub: string } }) {
+    const KNOWN: Record<string, 'number' | 'boolean' | 'array'> = {
+      cod_max_order_usd_cents: 'number',
+      open_orders_per_phone_max: 'number',
+      cash_rounding_step_syp: 'number',
+      confirmation_window_hours: 'number',
+      order_hold_hours: 'number',
+      order_hold_ext_hours: 'number',
+      rare_stock_threshold: 'number',
+      rare_hold_ext_hours: 'number',
+      free_shipping_above_usd_cents: 'number',
+      courier_commission_bp: 'number',
+      served_governorates: 'array',
+      store_paused: 'boolean',
+      demo_mode: 'boolean',
+    };
+    const kind = KNOWN[b.key];
+    // مفتاح غير معروف يعني خطأً مطبعياً يُنشئ إعداداً لا يقرؤه أحد
+    if (!kind) {
+      throw Errors.badRequest('SETTING_UNKNOWN',
+        `مفتاح غير معروف: ${b.key}`, 'Unknown setting key');
+    }
+    const okType =
+      kind === 'number' ? typeof b.value === 'number' && Number.isFinite(b.value) && b.value >= 0
+      : kind === 'boolean' ? typeof b.value === 'boolean'
+      : Array.isArray(b.value);
+    if (!okType) {
+      throw Errors.badRequest('SETTING_TYPE_INVALID',
+        `قيمة ${b.key} يجب أن تكون ${kind === 'number' ? 'رقماً غير سالب' : kind === 'boolean' ? 'صح أو خطأ' : 'قائمة'}`,
+        'Invalid setting value');
+    }
+
+    const actor = await this.prisma.user.findUnique({ where: { publicId: req.user!.sub } });
+    const before = await this.prisma.storeSetting.findUnique({ where: { key: b.key } });
+    const row = await this.prisma.storeSetting.upsert({
+      where: { key: b.key },
+      update: { value: b.value as any, updatedBy: actor?.id },
+      create: { key: b.key, value: b.value as any, updatedBy: actor?.id },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor?.id, action: 'settings.update', entityType: 'store_settings', entityId: null,
+        diff: { key: b.key, from: (before?.value ?? null) as any, to: b.value as any },
+      },
+    });
+    return { data: { key: row.key, value: row.value } };
+  }
 
   @Get('dashboard')
   async dashboard() {

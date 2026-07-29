@@ -166,9 +166,10 @@ model User {
   questions       ProductQuestion[]
   priceAlerts     PriceAlert[]
   stockAlerts     StockAlert[]
-  ticketsOwned    SupportTicket[]   @relation("TicketOwner")
-  ticketsAssigned SupportTicket[]   @relation("TicketAssignee")
-  settlements     CashSettlement[]  @relation("SettlementCollector")
+  ticketsOwned    SupportTicket[]    @relation("TicketOwner")
+  ticketsAssigned SupportTicket[]    @relation("TicketAssignee")
+  settlements     CashSettlement[]   @relation("SettlementCollector")
+  pushSubs        PushSubscription[]
 
   @@map("users")
 }
@@ -456,14 +457,14 @@ model FxRate {
 // ——————————————————— السلة والطلب ———————————————————
 
 model Cart {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  token     String   @unique
-  userId    String?  @map("user_id") @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token      String   @unique
+  userId     String?  @map("user_id") @db.Uuid
   /// الرمز يُحفظ لا الخصم: القيمة تُعاد حسابها عند كل عرض، فلو تغيّر
   /// سعر أو انتهت صلاحية الكوبون بين الإضافة والطلب ظهر ذلك فوراً.
-  couponCode String? @map("coupon_code") @db.VarChar(32)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  couponCode String?  @map("coupon_code") @db.VarChar(32)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   user  User?      @relation(fields: [userId], references: [id])
   items CartItem[]
@@ -1052,6 +1053,29 @@ model PriceAlert {
 
   @@unique([userId, variantId])
   @@map("price_alerts")
+}
+
+/// اشتراك متصفح بإشعارات الويب — الفصل 20
+/// الاشتراك مربوط بالجهاز لا بالحساب: الزبون قد يتصفّح بلا دخول،
+/// وحرمانُه الإشعار حتى يسجّل يعني ألا يعرف أن طلبه خرج للتوصيل.
+model PushSubscription {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  phone      String?   @db.VarChar(16)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?   @map("user_agent")
+  isActive   Boolean   @default(true) @map("is_active")
+  failCount  Int       @default(0) @map("fail_count")
+  lastSentAt DateTime? @map("last_sent_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([phone])
+  @@map("push_subscriptions")
 }
 
 model StockAlert {

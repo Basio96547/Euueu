@@ -1,0 +1,50 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import { ARTICLES } from '../../lib/help';
+
+export function getStaticPaths() {
+  return ARTICLES.map((a) => ({ params: { slug: a.slug }, props: { article: a } }));
+}
+
+const { article } = Astro.props;
+
+/* JSON-LD يجعل الجواب يظهر في نتائج البحث نفسها، فيصل الزبون
+   إلى ما يريد بلا أن يفتح الصفحة — وهذا مقصود لا خسارة. */
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: article.sections.map((s) => ({
+    '@type': 'Question',
+    name: s.q,
+    acceptedAnswer: { '@type': 'Answer', text: s.a },
+  })),
+};
+---
+
+<Base title={article.title} description={article.summary}>
+  <Header title={article.title} back="/help/" />
+
+  <article class="wrap">
+    <p class="lead">{article.summary}</p>
+
+    {article.sections.map((s) => (
+      <section class="qa glass">
+        <h2>{s.q}</h2>
+        <p>{s.a}</p>
+      </section>
+    ))}
+
+    <a class="btn btn--ghost" href="/app/support">ما زال عندي سؤال</a>
+  </article>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
+</Base>
+
+<style>
+  .wrap { padding: 12px 12px 96px; display: grid; gap: 12px; }
+  .lead { color: var(--ink-2); line-height: 1.8; }
+  .qa { padding: 14px; border-radius: var(--r-l); display: grid; gap: 6px; }
+  .qa h2 { font-size: var(--step-0); font-weight: 800; }
+  .qa p { color: var(--ink-2); line-height: 1.85; font-size: var(--step--1); }
+</style>

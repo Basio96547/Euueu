@@ -62,3 +62,15 @@ textarea { line-height: 1.6; resize: vertical; min-height: 62px; }
   border-radius: 999px; padding: 8px 14px; min-height: 40px; cursor: pointer;
 }
 .tabs button[aria-pressed='true'] { background: var(--brass); border-color: var(--brass); color: #0b1416; }
+
+/* شبكة الصور في محرّر المنتج */
+.thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px; }
+.thumb { position: relative; width: 84px; height: 84px; border-radius: var(--r-m); overflow: hidden; border: 1px solid var(--line); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb button {
+  position: absolute; inset-block-start: 2px; inset-inline-end: 2px;
+  width: 24px; height: 24px; border-radius: 50%; border: 0; cursor: pointer;
+  background: color-mix(in srgb, var(--clay) 88%, transparent); color: #fff;
+  font-size: 15px; line-height: 1; font-weight: 800;
+}
+input[type='color'] { padding: 4px; min-height: 44px; }

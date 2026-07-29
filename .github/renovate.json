@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "timezone": "Asia/Damascus",
+  "schedule": ["* 0-6 1 */2 *"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "تحديث:",
+  "rangeStrategy": "bump",
+  "postUpdateOptions": ["pnpmDedupe"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 0-6 1 */2 *"]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["security", "dependencies"],
+    "prPriority": 10
+  },
+  "packageRules": [
+    {
+      "description": "الترقيعات والثانوية تُجمع في طلب واحد: عشرون طلباً صغيراً لا يراجعها أحد",
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "تحديثات ثانوية",
+      "automerge": false
+    },
+    {
+      "description": "الرئيسية كلٌّ على حدة — كسرها متوقَّع ويحتاج قراءة",
+      "matchUpdateTypes": ["major"],
+      "groupName": null,
+      "labels": ["dependencies", "major"]
+    },
+    {
+      "description": "Prisma والعميل يتحركان معاً وإلا انكسر التوليد",
+      "matchPackageNames": ["prisma", "@prisma/client"],
+      "groupName": "Prisma"
+    },
+    {
+      "description": "حزم Nest متسقة الإصدارات فيما بينها",
+      "matchPackagePatterns": ["^@nestjs/"],
+      "groupName": "NestJS"
+    },
+    {
+      "description": "React وأنواعه معاً",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
+      "groupName": "React"
+    },
+    {
+      "description": "Node ثابت على 22: الترقية قرار بنية لا تحديث مكتبة",
+      "matchPackageNames": ["node", "@types/node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
