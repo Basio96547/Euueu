@@ -12,5 +12,8 @@
   "vars": {
     "PUBLIC_SITE_URL": "https://talisham.com"
   },
-  "routes": [{ "pattern": "talisham.com", "custom_domain": true }]
+  "routes": [
+    { "pattern": "talisham.com", "custom_domain": true },
+    { "pattern": "www.talisham.com", "custom_domain": true }
+  ]
 }
