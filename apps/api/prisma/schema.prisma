@@ -1218,3 +1218,39 @@ model QuantityBreak {
   @@index([categorySlug, minQty])
   @@map("quantity_breaks")
 }
+
+/// الحزمة — الفصل 7 §7.7
+/// «جوال + بطارية طاقة + واقي شاشة» بسعر أقل من مجموع مفرداتها.
+/// تُباع هنا جيداً لأن الزبون يشتري الجهاز مرة كل سنتين ويريد
+/// أن ينتهي من ملحقاته في الزيارة نفسها.
+model Bundle {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code          String    @unique @db.VarChar(32)
+  name          Json
+  description   Json?
+  /// سعر الحزمة كاملاً بسنتات الدولار — لا نسبة خصم:
+  /// الرقم المعلن أوضح للزبون من حسابٍ يُجريه في رأسه
+  priceUsdCents Int       @map("price_usd_cents")
+  startsAt      DateTime? @map("starts_at") @db.Timestamptz
+  endsAt        DateTime? @map("ends_at") @db.Timestamptz
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  items BundleItem[]
+
+  @@index([isActive, endsAt])
+  @@map("bundles")
+}
+
+model BundleItem {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bundleId   String @map("bundle_id") @db.Uuid
+  variantSku String @map("variant_sku") @db.VarChar(40)
+  qty        Int    @default(1)
+
+  bundle Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@unique([bundleId, variantSku])
+  @@map("bundle_items")
+}

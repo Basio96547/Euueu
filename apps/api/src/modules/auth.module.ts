@@ -7,6 +7,7 @@ import { publicId } from '../common/money.js';
 import { issue, verify } from '../common/jwt.js';
 import { checkPasswordStrength, hashPassword, verifyPassword } from '../common/password.js';
 import { Protect } from '../common/guards.js';
+import { kv } from '../common/kv.js';
 
 const OTP_LEN = Number(process.env.OTP_LENGTH ?? 6);
 const OTP_TTL = Number(process.env.OTP_TTL_SECONDS ?? 300);
@@ -29,8 +30,15 @@ interface Otp {
 
 @Injectable()
 export class AuthService {
-  /** في الإنتاج يُستبدل بـ Redis؛ البنية نفسها (مفتاح ← سجل بمهلة) */
-  private codes = new Map<string, Otp>();
+  /* الرموز في مخزن مشترك: رمزٌ يُولَّد في نسخة ويُتحقَّق منه في أخرى
+     يُرفض بلا سبب مفهوم للزبون — وهو أسوأ أعطال التوسّع لأنه صامت. */
+  private key(phone: string) { return `otp:${phone}`; }
+  private async load(phone: string) { return kv().get<Otp>(this.key(phone)); }
+  private async save(phone: string, rec: Otp) {
+    // المهلة تغطي عمر الرمز والقفل معاً: أطولهما هو ما يجب أن يبقى
+    const ttl = Math.max(60, Math.ceil((Math.max(rec.expiresAt, rec.lockedUntil) - Date.now()) / 1000));
+    await kv().set(this.key(phone), rec, ttl);
+  }
 
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
@@ -48,7 +56,7 @@ export class AuthService {
         'Phone must match +9639XXXXXXXX');
     }
     const now = Date.now();
-    const cur = this.codes.get(phone);
+    const cur = await this.load(phone);
     if (cur && cur.lockedUntil > now) {
       throw Errors.badRequest('ACCOUNT_TEMP_LOCKED',
         `الرقم مقفل مؤقتاً — أعد المحاولة بعد ${Math.ceil((cur.lockedUntil - now) / 60000)} دقيقة`,
@@ -61,7 +69,7 @@ export class AuthService {
     }
 
     const code = String(randomInt(0, 10 ** OTP_LEN)).padStart(OTP_LEN, '0');
-    this.codes.set(phone, {
+    await this.save(phone, {
       hash: this.hash(phone, code),
       expiresAt: now + OTP_TTL * 1000,
       attempts: 0, lockedUntil: 0, lastSentAt: now,
@@ -84,13 +92,13 @@ export class AuthService {
 
   async verifyCode(phone: string, code: string) {
     const now = Date.now();
-    const rec = this.codes.get(phone);
+    const rec = await this.load(phone);
     if (!rec) throw Errors.badRequest('OTP_INVALID', 'اطلب رمزاً جديداً', 'Request a new code');
     if (rec.lockedUntil > now) {
       throw Errors.badRequest('ACCOUNT_TEMP_LOCKED', 'الرقم مقفل مؤقتاً', 'Temporarily locked');
     }
     if (rec.expiresAt < now) {
-      this.codes.delete(phone);
+      await kv().del(this.key(phone));
       throw Errors.badRequest('OTP_EXPIRED', 'انتهت صلاحية الرمز', 'Code expired');
     }
 
@@ -98,14 +106,16 @@ export class AuthService {
     if (this.hash(phone, code) !== rec.hash) {
       if (rec.attempts >= MAX_VERIFY_ATTEMPTS) {
         rec.lockedUntil = now + LOCK_MINUTES * 60_000;
+        await this.save(phone, rec);
         throw Errors.badRequest('ACCOUNT_TEMP_LOCKED',
           `خمس محاولات خاطئة — قُفل الرقم ${LOCK_MINUTES} دقيقة`, 'Locked after 5 attempts');
       }
+      await this.save(phone, rec);
       throw Errors.badRequest('OTP_INVALID',
         `رمز غير صحيح — بقيت ${MAX_VERIFY_ATTEMPTS - rec.attempts} محاولات`, 'Invalid code');
     }
 
-    this.codes.delete(phone);
+    await kv().del(this.key(phone));
     const user = await this.prisma.user.upsert({
       where: { phoneE164: phone },
       update: { phoneVerifiedAt: new Date() },

@@ -179,6 +179,166 @@ export class CouponsService {
     return { deleted: true };
   }
 
+  /* ————— الحزم — الفصل 7 §7.7 ————— */
+
+  /**
+   * الحزم المنطبقة على سلة.
+   *
+   * الحزمة تُطبَّق حين تحتوي السلة كل مفرداتها بالكميات المطلوبة.
+   * ولا تُطبَّق مرتين على المفردات نفسها: زبونٌ اشترى جوالين وشاحناً
+   * واحداً يستحق حزمة واحدة لا اثنتين — وحسابُها بالقسمة على الحد
+   * الأدنى يعطي خصماً على بضاعة لم تُشترَ.
+   *
+   * والسعر معلن كاملاً لا نسبةً: «الحزمة بـ٢٩٩$» أوضح للزبون من
+   * «خصم ١٧٪» يحتاج آلة حاسبة ليعرف ماذا سيدفع.
+   */
+  async bundlesFor(lines: Array<{ sku: string; qty: number; unitPriceUsdCents: number }>) {
+    const now = new Date();
+    const active = await this.prisma.bundle.findMany({
+      where: {
+        isActive: true,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+        ],
+      },
+      include: { items: true },
+    });
+
+    const have = new Map(lines.map((l) => [l.sku, l]));
+    const applied: Array<{
+      code: string; name: unknown; times: number;
+      bundlePriceUsdCents: number; listPriceUsdCents: number; savedUsdCents: number;
+      items: Array<{ sku: string; qty: number }>;
+    }> = [];
+
+    for (const b of active) {
+      if (!b.items.length) continue;
+      // كم مرة تتكرر الحزمة كاملةً في السلة — الأقل بين مفرداتها
+      let times = Infinity;
+      for (const it of b.items) {
+        const line = have.get(it.variantSku);
+        if (!line) { times = 0; break; }
+        times = Math.min(times, Math.floor(line.qty / it.qty));
+      }
+      if (!Number.isFinite(times) || times < 1) continue;
+
+      const list = b.items.reduce(
+        (a, it) => a + (have.get(it.variantSku)!.unitPriceUsdCents * it.qty), 0,
+      );
+      // حزمة أغلى من مفرداتها ليست عرضاً — تُتجاهَل بلا ضجيج
+      if (b.priceUsdCents >= list) continue;
+
+      applied.push({
+        code: b.code, name: b.name, times,
+        bundlePriceUsdCents: b.priceUsdCents * times,
+        listPriceUsdCents: list * times,
+        savedUsdCents: (list - b.priceUsdCents) * times,
+        items: b.items.map((it) => ({ sku: it.variantSku, qty: it.qty * times })),
+      });
+    }
+
+    return applied;
+  }
+
+  async listBundles() {
+    const rows = await this.prisma.bundle.findMany({
+      orderBy: { createdAt: 'desc' }, include: { items: true }, take: 100,
+    });
+    const skus = [...new Set(rows.flatMap((b) => b.items.map((i) => i.variantSku)))];
+    const variants = await this.prisma.productVariant.findMany({
+      where: { sku: { in: skus } }, include: { product: true },
+    });
+    const byS = new Map(variants.map((v) => [v.sku, v]));
+
+    return rows.map((b) => {
+      const list = b.items.reduce(
+        (a, i) => a + Number(byS.get(i.variantSku)?.priceUsdCents ?? 0) * i.qty, 0,
+      );
+      return {
+        code: b.code, name: b.name,
+        priceUsdCents: b.priceUsdCents,
+        listPriceUsdCents: list,
+        savedUsdCents: Math.max(0, list - b.priceUsdCents),
+        isActive: b.isActive,
+        startsAt: b.startsAt, endsAt: b.endsAt,
+        items: b.items.map((i) => ({
+          sku: i.variantSku, qty: i.qty,
+          name: (byS.get(i.variantSku)?.product.name as any)?.ar ?? i.variantSku,
+          unitPriceUsdCents: Number(byS.get(i.variantSku)?.priceUsdCents ?? 0),
+        })),
+      };
+    });
+  }
+
+  async upsertBundle(b: any) {
+    if (!/^[A-Z0-9_-]{3,32}$/.test(b.code ?? '')) {
+      throw Errors.badRequest('BUNDLE_CODE_INVALID',
+        'رمز الحزمة: حروف لاتينية كبيرة وأرقام', 'Invalid bundle code');
+    }
+    if (!b.name?.ar?.trim()) {
+      throw Errors.badRequest('NAME_REQUIRED', 'اسم الحزمة بالعربية إلزامي', 'Arabic name required');
+    }
+    const items: Array<{ sku: string; qty: number }> = (b.items ?? [])
+      .map((i: any) => ({ sku: String(i.sku ?? '').toUpperCase(), qty: Number(i.qty) || 1 }))
+      .filter((i: any) => i.sku);
+    if (items.length < 2) {
+      throw Errors.badRequest('BUNDLE_NEEDS_TWO',
+        'الحزمة صنفان على الأقل — صنفٌ واحد سعرٌ لا حزمة',
+        'A bundle needs at least two items');
+    }
+    if (!Number.isInteger(b.priceUsdCents) || b.priceUsdCents <= 0) {
+      throw Errors.badRequest('PRICE_INVALID', 'سعر الحزمة عدد موجب بالسنتات', 'Invalid price');
+    }
+
+    const found = await this.prisma.productVariant.findMany({
+      where: { sku: { in: items.map((i) => i.sku) } },
+    });
+    if (found.length !== items.length) {
+      const missing = items.map((i) => i.sku).filter((s) => !found.some((v) => v.sku === s));
+      throw Errors.notFound(`المتغيّرات ${missing.join('، ')}`);
+    }
+
+    // حزمة أغلى من مفرداتها تُرفض عند الإنشاء لا تُتجاهَل بصمت:
+    // الخطأ في لوحة التحكم يُصحَّح، والتجاهل الصامت يُترك سنة
+    const list = items.reduce(
+      (a, i) => a + Number(found.find((v) => v.sku === i.sku)!.priceUsdCents) * i.qty, 0,
+    );
+    if (b.priceUsdCents >= list) {
+      throw Errors.badRequest('BUNDLE_NOT_CHEAPER',
+        `سعر الحزمة (${(b.priceUsdCents / 100).toFixed(2)}$) يجب أن يقلّ عن مجموع مفرداتها (${(list / 100).toFixed(2)}$)`,
+        'Bundle must be cheaper than its parts');
+    }
+
+    const data = {
+      name: b.name as any,
+      description: (b.description ?? null) as any,
+      priceUsdCents: b.priceUsdCents,
+      startsAt: b.startsAt ? new Date(b.startsAt) : null,
+      endsAt: b.endsAt ? new Date(b.endsAt) : null,
+      isActive: b.isActive ?? true,
+    };
+
+    const existing = await this.prisma.bundle.findUnique({ where: { code: b.code } });
+    const row = await this.prisma.$transaction(async (tx) => {
+      const bundle = existing
+        ? await tx.bundle.update({ where: { id: existing.id }, data })
+        : await tx.bundle.create({ data: { ...data, code: b.code } });
+      await tx.bundleItem.deleteMany({ where: { bundleId: bundle.id } });
+      await tx.bundleItem.createMany({
+        data: items.map((i) => ({ bundleId: bundle.id, variantSku: i.sku, qty: i.qty })),
+      });
+      return bundle;
+    });
+
+    return { code: row.code, savedUsdCents: list - row.priceUsdCents, created: !existing };
+  }
+
+  async toggleBundle(code: string, isActive: boolean) {
+    const row = await this.prisma.bundle.update({ where: { code }, data: { isActive } });
+    return { code: row.code, isActive: row.isActive };
+  }
+
   async list() {
     const rows = await this.prisma.coupon.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
     const now = new Date();
@@ -254,6 +414,23 @@ export class CouponsController {
         phone: b.phone,
       }),
     };
+  }
+
+  @Get('bundles')
+  async publicBundles() { return { data: await this.c.listBundles() }; }
+
+  @Get('admin/bundles')
+  @Protect('OPS_MANAGER', 'ADMIN')
+  async listBundles() { return { data: await this.c.listBundles() }; }
+
+  @Post('admin/bundles')
+  @Protect('ADMIN')
+  async upsertBundle(@Body() b: any) { return { data: await this.c.upsertBundle(b) }; }
+
+  @Post('admin/bundles/:code/toggle')
+  @Protect('ADMIN')
+  async toggleBundle(@Param('code') code: string, @Body() b: { isActive: boolean }) {
+    return { data: await this.c.toggleBundle(code, b.isActive) };
   }
 
   @Get('admin/quantity-breaks')

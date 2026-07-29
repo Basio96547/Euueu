@@ -7,6 +7,7 @@ import { CouponsService } from './coupons.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
 import { cashDue, orderNo, publicId } from '../common/money.js';
+import { kv } from '../common/kv.js';
 import type { Prisma } from '@prisma/client';
 
 /** الحجز الأوّلي ساعتان — عمر الحجز ليس عمر الطلب (الفصل 3) */
@@ -17,7 +18,9 @@ const RARE_THRESHOLD = 2;
 
 @Injectable()
 export class OrdersService {
-  private idem = new Map<string, string>();
+  /* مفتاح التفرّد في مخزن مشترك: نسختان بذاكرتين منفصلتين تعنيان
+     أن إعادة الإرسال بعد عودة الشبكة تُنشئ طلباً ثانياً. */
+  private idemKey(k: string) { return `idem:order:${k}`; }
 
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
@@ -28,8 +31,9 @@ export class OrdersService {
   ) {}
 
   async create(cartToken: string, address: any, idempotencyKey?: string, buyerPublicId?: string) {
-    if (idempotencyKey && this.idem.has(idempotencyKey)) {
-      return this.byNo(this.idem.get(idempotencyKey)!);
+    if (idempotencyKey) {
+      const prior = await kv().get<string>(this.idemKey(idempotencyKey));
+      if (prior) return this.byNo(prior);
     }
 
     /* الإعدادات تُفرض هنا لا في الواجهة: زرٌّ مخفيّ في المتصفح ليس
@@ -74,19 +78,41 @@ export class OrdersService {
     const cart = await this.cart.get(cartToken);
     if (!cart.items.length) throw Errors.badRequest('CART_EMPTY', 'السلة فارغة', 'Cart is empty');
 
-    const lines = cart.items.map((it) => ({
-      variantId: it.variantId, qty: it.qty,
-      unit: Number(it.variant.priceUsdCents),
-      total: Number(it.variant.priceUsdCents) * it.qty,
-      name: it.variant.product.name,
-      levelWarehouseId: it.variant.levels[0]?.warehouseId,
-      // «النادر» يُقاس بما في المستودع لا بما تبقّى بعد الحجوزات:
-      // المهلة القصيرة تخصّ آخر قطعتين حقيقتين، لا سلالاً معلّقة.
-      available: it.variant.levels.reduce((a, l) => a + l.onHand, 0),
+    /* شريحة الكمية تُطبَّق على السطر هنا كما تُطبَّق في السلة بالضبط.
+       حسابها في مكان واحد فقط يعني أن الزبون يرى رقماً ويدفع آخر —
+       وهو أسوأ من ألا يكون للشريحة وجود. */
+    const lines = await Promise.all(cart.items.map(async (it) => {
+      const unit = Number(it.variant.priceUsdCents);
+      const gross = unit * it.qty;
+      const brk = await this.coupons.quantityBreakFor(
+        it.variant.sku, it.variant.product.category?.slug ?? null, it.qty,
+      );
+      const off = brk ? Math.floor((gross * brk.discountBp) / 10_000) : 0;
+      return {
+        variantId: it.variantId, qty: it.qty,
+        unit,
+        total: gross - off,
+        name: it.variant.product.name,
+        levelWarehouseId: it.variant.levels[0]?.warehouseId,
+        // «النادر» يُقاس بما في المستودع لا بما تبقّى بعد الحجوزات:
+        // المهلة القصيرة تخصّ آخر قطعتين حقيقتين، لا سلالاً معلّقة.
+        available: it.variant.levels.reduce((a, l) => a + l.onHand, 0),
+      };
     }));
 
     let shipping = 200;
-    const subtotal = lines.reduce((a, l) => a + l.total, 0);
+    const grossSubtotal = lines.reduce((a, l) => a + l.total, 0);
+
+    /* الحزم تُعاد من الخدمة نفسها التي تحسبها في السلة: حسابان
+       منفصلان لخصم واحد يفترقان يوماً ما، والزبون يرى رقماً ويدفع آخر. */
+    const bundles = await this.coupons.bundlesFor(
+      cart.items.map((it) => ({
+        sku: it.variant.sku, qty: it.qty,
+        unitPriceUsdCents: Number(it.variant.priceUsdCents),
+      })),
+    );
+    const bundleOff = bundles.reduce((a, b) => a + b.savedUsdCents, 0);
+    const subtotal = Math.max(0, grossSubtotal - bundleOff);
 
     /* الخصم يُعاد تقييمه هنا من الرمز المحفوظ لا من رقم قادم مع الطلب.
        بين لحظة إدخال الرمز ولحظة الضغط على «أكّد» قد ينتهي الكوبون أو
@@ -138,8 +164,8 @@ export class OrdersService {
         data: {
           publicId: publicId(), orderNo: orderNo(seq, now),
           userId: addr.userId, shippingAddressId: addr.id,
-          subtotalUsdCents: BigInt(subtotal),
-          discountTotalUsdCents: BigInt(coupon?.freeShipping ? 0 : discount),
+          subtotalUsdCents: BigInt(grossSubtotal),
+          discountTotalUsdCents: BigInt((coupon?.freeShipping ? 0 : discount) + bundleOff),
           shippingTotalUsdCents: BigInt(shipping),
           couponCode: coupon?.code,
           totalUsdCents: BigInt(totals.totalUsdCents),
@@ -220,7 +246,8 @@ export class OrdersService {
       return created;
     });
 
-    if (idempotencyKey) this.idem.set(idempotencyKey, order.orderNo);
+    // 72 ساعة تكفي إعادة إرسال متأخرة من جهاز عاد إلى الشبكة (الفصل 17 §17.11)
+    if (idempotencyKey) await kv().set(this.idemKey(idempotencyKey), order.orderNo, 72 * 3600);
 
     // واتساب أولاً بزرَّي تأكيد وإلغاء؛ المكالمة تصعيد لا قاعدة (الفصل 8)
     await this.notify.send({

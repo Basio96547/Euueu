@@ -5,12 +5,13 @@ import { SettlementsService } from './settlements.module.js';
 import { Errors } from '../common/errors.js';
 import { roundCash } from '../common/money.js';
 import { Protect } from '../common/guards.js';
+import { kv } from '../common/kv.js';
 
 @Controller('courier')
 @Protect('COURIER', 'OPS_MANAGER', 'ADMIN')
 export class CourierController {
   /** مفاتيح التفرّد: الإرسال المكرر بعد عودة الشبكة لا يحصّل مرتين (الفصل 17 §17.11) */
-  private idem = new Map<string, unknown>();
+  private idemKey(k: string) { return `idem:collect:${k}`; }
 
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
@@ -79,7 +80,10 @@ export class CourierController {
     @Req() req: { user?: { sub: string } },
     @Headers('idempotency-key') key?: string,
   ) {
-    if (key && this.idem.has(key)) return { data: this.idem.get(key) };
+    if (key) {
+      const prior = await kv().get<unknown>(this.idemKey(key));
+      if (prior) return { data: prior };
+    }
 
     const o = await this.prisma.order.findUnique({ where: { orderNo: no }, include: { shippingAddress: true } });
     if (!o) throw Errors.notFound('الطلب');
@@ -204,7 +208,7 @@ export class CourierController {
       dueSyp: due, collectedSyp: b.amountSyp,
       occurredAt: occurredAt.toISOString(), receivedAt: new Date().toISOString(),
     };
-    if (key) this.idem.set(key, payload);
+    if (key) await kv().set(this.idemKey(key), payload, 72 * 3600);
     return { data: payload };
   }
 }

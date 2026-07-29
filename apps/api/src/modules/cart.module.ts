@@ -227,7 +227,16 @@ export class CartService {
         quantityBreak: brk ? { minQty: brk.minQty, discountPct: brk.discountBp / 100, savedUsdCents: off } : null,
       };
     }));
-    const subtotal = lines.reduce((a, l) => a + l.lineTotalUsdCents, 0);
+    /* الحزمة بعد شريحة الكمية وقبل الكوبون — ترتيب الفصل 7 §7.7.
+       خصمها يُطرح من المجموع لا من سطر بعينه: الحزمة تخصّ مجموعة
+       أصناف، ونسبُها إلى أحدها يجعل حذفَه يُلغي خصماً استحقّه غيره. */
+    const bundles = await this.coupons.bundlesFor(
+      lines.map((l) => ({ sku: l.sku, qty: l.qty, unitPriceUsdCents: l.unitPriceUsdCents })),
+    );
+    const bundleOff = bundles.reduce((a, b) => a + b.savedUsdCents, 0);
+
+    const grossSubtotal = lines.reduce((a, l) => a + l.lineTotalUsdCents, 0);
+    const subtotal = Math.max(0, grossSubtotal - bundleOff);
     let shipping = lines.length ? 200 : 0; // تعريفة دمشق الافتراضية
 
     const coupon = await this.couponFor(cart, subtotal, shipping, phone);
@@ -240,7 +249,11 @@ export class CartService {
     return {
       cartToken: cart.token, lines,
       shippingUsdCents: shipping,
-      subtotalUsdCents: subtotal,
+      subtotalUsdCents: grossSubtotal,
+      bundleDiscountUsdCents: bundleOff,
+      bundles: bundles.map((b) => ({
+        code: b.code, name: b.name, times: b.times, savedUsdCents: b.savedUsdCents,
+      })),
       discountUsdCents: coupon?.freeShipping ? 0 : discount,
       coupon: coupon && {
         code: coupon.code,

@@ -1,5 +1,6 @@
 import { Injectable, type NestMiddleware, HttpStatus } from '@nestjs/common';
 import { ApiError } from './errors.js';
+import { kv } from './kv.js';
 
 type Rule = { limit: number; windowSec: number; by: 'ip' | 'user' | 'phone' };
 
@@ -37,53 +38,51 @@ const FACTOR = process.env.NODE_ENV === 'production'
   ? 1
   : Math.max(1, Number(process.env.RATE_LIMIT_FACTOR ?? 1));
 
-const buckets = new Map<string, { count: number; resetAt: number }>();
+
 
 @Injectable()
 export class RateLimitMiddleware implements NestMiddleware {
-  use(req: any, res: any, next: () => void) {
+  /* العدّاد في KV لا في ذاكرة العملية: نسختان من الخادم بعدّادين
+     منفصلين تعنيان ضِعف الحدّ المكتوب — وهو حدٌّ لا يحمي شيئاً. */
+  async use(req: any, res: any, next: () => void) {
     const path: string = req.originalUrl?.split('?')[0] ?? req.url;
     const method: string = req.method;
     const matched = RULES.filter(([re, m]) => m === method && re.test(path)).map(([, , r]) => r);
     const rules = (matched.length ? matched : [DEFAULT])
       .map((r) => (FACTOR === 1 ? r : { ...r, limit: r.limit * FACTOR }));
 
-    const now = Date.now();
-    let strictest: { rule: Rule; bucket: { count: number; resetAt: number } } | null = null;
+    const store = kv();
+    let strictest: { rule: Rule; count: number } | null = null;
 
     for (const rule of rules) {
       const subject =
         rule.by === 'phone' ? String(req.body?.phone ?? 'anon')
         : rule.by === 'user' ? String(req.user?.sub ?? req.ip)
         : String(req.ip ?? req.socket?.remoteAddress ?? 'anon');
-      const key = `${method}:${path}:${rule.by}:${subject}:${rule.limit}`;
+      const key = `rl:${method}:${path}:${rule.by}:${subject}:${rule.limit}`;
 
-      let b = buckets.get(key);
-      if (!b || b.resetAt <= now) { b = { count: 0, resetAt: now + rule.windowSec * 1000 }; buckets.set(key, b); }
-      b.count++;
-      if (!strictest || rule.limit - b.count < strictest.rule.limit - strictest.bucket.count) {
-        strictest = { rule, bucket: b };
+      /* الزيادة ذرّية في المخزن: القراءة ثم الكتابة تسمحان لطلبين
+         متزامنين بقراءة العدّاد نفسه فيمرّان معاً فوق الحدّ. */
+      const count = await store.incr(key, rule.windowSec);
+      if (!strictest || rule.limit - count < strictest.rule.limit - strictest.count) {
+        strictest = { rule, count };
       }
     }
 
     if (strictest) {
-      const { rule, bucket } = strictest;
-      const remaining = Math.max(0, rule.limit - bucket.count);
+      const { rule, count } = strictest;
+      const remaining = Math.max(0, rule.limit - count);
       res.setHeader('RateLimit-Limit', rule.limit);
       res.setHeader('RateLimit-Remaining', remaining);
-      res.setHeader('RateLimit-Reset', Math.ceil((bucket.resetAt - now) / 1000));
-      if (bucket.count > rule.limit) {
-        res.setHeader('Retry-After', Math.ceil((bucket.resetAt - now) / 1000));
+      res.setHeader('RateLimit-Reset', rule.windowSec);
+      if (count > rule.limit) {
+        res.setHeader('Retry-After', rule.windowSec);
         throw new ApiError(HttpStatus.TOO_MANY_REQUESTS, 'RATE_LIMITED',
           { ar: 'محاولات كثيرة — انتظر قليلاً', en: 'Too many requests' },
-          { retryAfterSec: Math.ceil((bucket.resetAt - now) / 1000) });
+          { retryAfterSec: rule.windowSec });
       }
     }
 
-    // كنس دوري بسيط حتى لا تتضخم الذاكرة
-    if (buckets.size > 10_000) {
-      for (const [k, v] of buckets) if (v.resetAt <= now) buckets.delete(k);
-    }
     next();
   }
 }

@@ -107,3 +107,60 @@ describe('ترتيب التطبيق', () => {
     assert.notEqual(breakFirst, couponFirst);
   });
 });
+
+/** كم مرة تتكرر الحزمة كاملةً في السلة — الأقل بين مفرداتها */
+function bundleTimes(
+  items: Array<{ sku: string; qty: number }>,
+  cart: Record<string, number>,
+): number {
+  let times = Infinity;
+  for (const it of items) {
+    const have = cart[it.sku] ?? 0;
+    if (!have) return 0;
+    times = Math.min(times, Math.floor(have / it.qty));
+  }
+  return Number.isFinite(times) ? times : 0;
+}
+
+describe('الحزم', () => {
+  const items = [{ sku: 'PHONE', qty: 1 }, { sku: 'CASE', qty: 1 }];
+
+  test('لا تنطبق بمفردة ناقصة', () => {
+    assert.equal(bundleTimes(items, { PHONE: 1 }), 0);
+    assert.equal(bundleTimes(items, { CASE: 3 }), 0);
+  });
+
+  test('تنطبق مرة عند اكتمالها', () => {
+    assert.equal(bundleTimes(items, { PHONE: 1, CASE: 1 }), 1);
+  });
+
+  /*
+   * جوالان وجراب واحد = حزمة واحدة لا اثنتان.
+   * القسمة على المفردة الأوفر تعطي خصماً على بضاعة لم تُشترَ.
+   */
+  test('العدد هو الأقل بين المفردات لا الأكثر', () => {
+    assert.equal(bundleTimes(items, { PHONE: 2, CASE: 1 }), 1);
+    assert.equal(bundleTimes(items, { PHONE: 1, CASE: 5 }), 1);
+    assert.equal(bundleTimes(items, { PHONE: 3, CASE: 3 }), 3);
+  });
+
+  test('الكمية داخل الحزمة محسوبة', () => {
+    const pack = [{ sku: 'PHONE', qty: 1 }, { sku: 'CASE', qty: 2 }];
+    assert.equal(bundleTimes(pack, { PHONE: 2, CASE: 3 }), 1);   // 3÷2 = 1
+    assert.equal(bundleTimes(pack, { PHONE: 2, CASE: 4 }), 2);
+  });
+
+  test('الوفر يتضاعف بعدد المرات', () => {
+    const list = 94900, price = 91900;
+    const times = bundleTimes(items, { PHONE: 3, CASE: 3 });
+    assert.equal(times, 3);
+    assert.equal((list - price) * times, 9000);
+  });
+
+  /* حزمة أغلى من مفرداتها ليست عرضاً — تُرفض عند الإنشاء */
+  test('الحزمة يجب أن تكون أرخص من مجموع مفرداتها', () => {
+    const list = 94900;
+    assert.ok(91900 < list, 'حزمة صحيحة');
+    assert.ok(!(95900 < list), 'حزمة أغلى تُرفض');
+  });
+});

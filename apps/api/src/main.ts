@@ -5,11 +5,13 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { AppModule } from './app.module.js';
 import { assertNoPublishedDemoInProd } from './common/boot-guard.js';
 import { mediaPublicBase, mediaRoot, usesLocalDisk } from './modules/storage.js';
+import { initKv } from './common/kv.js';
 
 const PORT = Number(process.env.API_PORT ?? process.env.PORT ?? 4000);
 
 async function bootstrap() {
   await assertNoPublishedDemoInProd();
+  await initKv();
   const app = await NestFactory.create(AppModule, { cors: { origin: true, credentials: true } });
 
   /* الصور تصل كـ data URL داخل JSON، وحدّ Express الافتراضي 100 كيلوبايت
