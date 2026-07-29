@@ -83,6 +83,7 @@ class RedisKv implements Kv {
 }
 
 let instance: Kv | null = null;
+let warned = false;
 
 export async function initKv(): Promise<Kv> {
   if (instance) return instance;
@@ -96,9 +97,25 @@ export async function initKv(): Promise<Kv> {
   }
 
   try {
-    const client: RedisClientType = createClient({ url });
-    client.on('error', (e) => console.error('Redis:', e?.message ?? e));
-    await client.connect();
+    /* استراتيجية إعادة محاولة محدودة ومهلة اتصال صريحة.
+       الافتراضي في node-redis إعادةُ محاولة بلا نهاية، فـRedis مضبوط
+       لكنه متوقف يعلّق الإقلاع إلى الأبد — والمتجر يبقى مطفأً بانتظار
+       خدمة مساعدة. المتجر أهمّ من مخزنه المؤقّت. */
+    const client: RedisClientType = createClient({
+      url,
+      socket: {
+        connectTimeout: 3000,
+        reconnectStrategy: (retries) => (retries > 5 ? false : Math.min(retries * 200, 1000)),
+      },
+    });
+    // بلا مستمع للخطأ يرمي node-redis استثناءً غير ملتقَط يُسقط العملية
+    client.on('error', (e) => {
+      if (!warned) { console.error('Redis:', e?.message ?? e); warned = true; }
+    });
+    await Promise.race([
+      client.connect(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('مهلة الاتصال')), 4000)),
+    ]);
     instance = new RedisKv(client);
     console.log(`KV على Redis: ${url.replace(/:\/\/.*@/, '://***@')}`);
   } catch (e) {

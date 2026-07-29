@@ -55,7 +55,16 @@ export class SearchService {
           'part_code', 'dual_sim', 'condition', 'storage_gb', 'in_stock', 'is_demo'],
         sortableAttributes: ['price_usd_cents'],
         synonyms: buildSynonyms(),
-        typoTolerance: { enabled: true, minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 } },
+        /* العتبة تُقاس بالبايت لا بالحرف، والحرف العربي بايتان.
+           فـ«ايفون» خمسة أحرف تُحسب عشرة بايتات، فتنال تسامحاً مصمَّماً
+           لكلمة من عشرة أحرف — ولذلك كانت تطابق «إنفينكس».
+           12 بايت ≈ ستة أحرف عربية: الحد الذي يمنع هذا الخلط.
+
+           الثمن صريح: الاسم اللاتيني القصير يفقد تسامحه، فـ«Lightening»
+           لم تعد تجد «Lightning». وهذا مقبول هنا — الأسماء اللاتينية
+           تُنسخ أو تُختار من المرشّحات، والعربية تُكتب بالأصابع؛
+           والنتيجة الكاذبة تُفقد الثقة بالبحث كله لا بنتيجة واحدة. */
+        typoTolerance: { enabled: true, minWordSizeForTypos: { oneTypo: 12, twoTypos: 18 } },
       }),
     });
     await fetch(`${MEILI}/indexes/${INDEX}/documents`, { method: 'PUT', headers: h, body: JSON.stringify(docs) });
@@ -66,22 +75,38 @@ export class SearchService {
     const demo = (process.env.DEMO_MODE ?? 'true') === 'true';
 
     if (MEILI) {
-      const filter: string[] = [];
-      if (!demo) filter.push('is_demo = false');
-      if (f.origin) filter.push(`device_origin = "${f.origin}"`);
-      if (f.condition) filter.push(`condition = "${f.condition}"`);
-      if (f.maxUsd) filter.push(`price_usd_cents <= ${f.maxUsd}`);
+      const base: string[] = [];
+      if (!demo) base.push('is_demo = false');
+      if (f.origin) base.push(`device_origin = "${f.origin}"`);
+      if (f.condition) base.push(`condition = "${f.condition}"`);
+      if (f.maxUsd) base.push(`price_usd_cents <= ${f.maxUsd}`);
+
+      const hit = async (qText: string, extra: string[] = []) => {
+        const r = await fetch(`${MEILI}/indexes/${INDEX}/search`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${MEILI_KEY}` },
+          body: JSON.stringify({ q: qText, filter: [...base, ...extra], limit: 24 }),
+        });
+        return (await r.json()) as { hits: Array<{ id: string }>; estimatedTotalHits: number };
+      };
+
       const generic = categoriesForQuery(q);
-      // المصطلح العام يصير مرشّح فئة، ويُفرَّغ نص الاستعلام حتى لا يُقصي كل شيء
-      const qText = generic.length ? '' : q;
-      if (generic.length) filter.push(`category IN [${generic.map((c) => `"${c}"`).join(', ')}]`);
-      const r = await fetch(`${MEILI}/indexes/${INDEX}/search`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${MEILI_KEY}` },
-        body: JSON.stringify({ q: qText, filter, limit: 24 }),
-      });
-      const body = (await r.json()) as { hits: unknown[]; estimatedTotalHits: number };
-      return { engine: 'meilisearch', hits: body.hits, total: body.estimatedTotalHits };
+      if (!generic.length) {
+        const body = await hit(q);
+        return { engine: 'meilisearch', hits: body.hits, total: body.estimatedTotalHits };
+      }
+
+      /* المصطلح العام يفتح فئةً كاملة، لكن تفريغ نص الاستعلام يفقد
+         ما يحمل الكلمة في اسمه ويقع خارج تلك الفئة — «شاحن شمسي»
+         مصنَّف تحت الطاقة لا الشواحن، ومن يكتب «شاحن» يريده أيضاً.
+         فيُجمع المساران: الفئة ثم الاسم، بلا تكرار. */
+      const [byCat, byName] = await Promise.all([
+        hit('', [`category IN [${generic.map((c) => `"${c}"`).join(', ')}]`]),
+        hit(q),
+      ]);
+      const seen = new Set(byCat.hits.map((h) => h.id));
+      const merged = [...byCat.hits, ...byName.hits.filter((h) => !seen.has(h.id))];
+      return { engine: 'meilisearch', hits: merged.slice(0, 24), total: merged.length };
     }
 
     const terms = expandQuery(q);
