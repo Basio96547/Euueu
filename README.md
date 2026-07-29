@@ -154,7 +154,7 @@ pnpm test:e2e      # 45 فحصاً على واجهة تعمل وقاعدة حق�
 | `apps/site` — Astro: الرئيسية والفئة وصفحة المنتج | جاهز · 35 صفحة · صفر JavaScript · يُبنى من الواجهة الحية وإلا من البذرة |
 | `apps/app` — السلة وتعديل الكميات وإتمام الطلب والتتبع والحساب وطلباتي | جاهز |
 | `apps/admin` — المؤشرات والطلبات والكتالوج (تحويل التجريبي إلى حقيقي) وسعر الصرف والمندوب | جاهز |
-| النشر على Cloudflare | **منشور للمعاينة** — [talisham.young-quarter.workers.dev](https://talisham.young-quarter.workers.dev) · [دليل النشر](docs/DEPLOY.md) |
+| النشر على Cloudflare | **منشور فعلياً عبر GitHub Actions** — [talisham.basil0552106933.workers.dev](https://talisham.basil0552106933.workers.dev) · [دليل النشر](docs/DEPLOY.md) |
 | استضافة الواجهة البرمجية | **موثَّقة، بانتظار التنفيذ** — خيار مجاني جاهز (خادم Oracle Cloud Always Free خلف Cloudflare)، الخطوات كاملة في [دليل النشر](docs/DEPLOY.md#استضافة-الواجهة-البرمجية-مجاناً--خادم-oracle-cloud-always-free) |
 | المندوبون والمناطق واقتراح التعيين (الفصل 17) | جاهز |
 | عروض الكمية (الفصل 7 §7.7) | جاهز |
