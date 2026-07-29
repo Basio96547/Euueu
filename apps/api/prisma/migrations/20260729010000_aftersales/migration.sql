@@ -1,45 +1,84 @@
--- CreateEnum
-CREATE TYPE "CollectorType" AS ENUM ('COURIER', 'TRANSPORT_OFFICE');
+-- ما بعد البيع.
+-- الجُمل هنا محميّة بـ IF NOT EXISTS و DO/EXCEPTION لأن ترحيل الأساس
+-- أُعيد توليده لاحقاً لقطةً كاملة تحوي أكثر ما في هذا الملف: بلا هذه
+-- الحماية يفشل `prisma migrate deploy` على قاعدة جديدة عند الترحيل
+-- الثاني — وهو ما يقع عند أول نشر فعلي للواجهة البرمجية.
 
 -- CreateEnum
-CREATE TYPE "SettlementState" AS ENUM ('OPEN', 'RECONCILED', 'DISPUTED', 'SETTLED');
+DO $$ BEGIN
+    CREATE TYPE "CollectorType" AS ENUM ('COURIER', 'TRANSPORT_OFFICE');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "ReturnState" AS ENUM ('REQUESTED', 'APPROVED', 'REJECTED', 'PICKUP_SCHEDULED', 'RECEIVED', 'INSPECTED', 'COMPLETED', 'CANCELLED');
+DO $$ BEGIN
+    CREATE TYPE "SettlementState" AS ENUM ('OPEN', 'RECONCILED', 'DISPUTED', 'SETTLED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "ReturnReason" AS ENUM ('NOT_AS_DESCRIBED', 'DEFECTIVE', 'WRONG_ITEM', 'CHANGED_MIND', 'DAMAGED_IN_TRANSIT');
+DO $$ BEGIN
+    CREATE TYPE "ReturnState" AS ENUM ('REQUESTED', 'APPROVED', 'REJECTED', 'PICKUP_SCHEDULED', 'RECEIVED', 'INSPECTED', 'COMPLETED', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "RefundState" AS ENUM ('PENDING', 'APPROVED', 'DISBURSED', 'CANCELLED');
+DO $$ BEGIN
+    CREATE TYPE "ReturnReason" AS ENUM ('NOT_AS_DESCRIBED', 'DEFECTIVE', 'WRONG_ITEM', 'CHANGED_MIND', 'DAMAGED_IN_TRANSIT');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "ClaimState" AS ENUM ('OPENED', 'PICKUP_SCHEDULED', 'RECEIVED', 'DIAGNOSING', 'APPROVED', 'REPAIRING', 'READY', 'CLOSED', 'REJECTED');
+DO $$ BEGIN
+    CREATE TYPE "RefundState" AS ENUM ('PENDING', 'APPROVED', 'DISBURSED', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "TicketStatus" AS ENUM ('NEW', 'OPEN', 'PENDING_CUSTOMER', 'ESCALATED', 'RESOLVED', 'CLOSED');
+DO $$ BEGIN
+    CREATE TYPE "ClaimState" AS ENUM ('OPENED', 'PICKUP_SCHEDULED', 'RECEIVED', 'DIAGNOSING', 'APPROVED', 'REPAIRING', 'READY', 'CLOSED', 'REJECTED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "TicketPriority" AS ENUM ('LOW', 'NORMAL', 'HIGH', 'URGENT');
+DO $$ BEGIN
+    CREATE TYPE "TicketStatus" AS ENUM ('NEW', 'OPEN', 'PENDING_CUSTOMER', 'ESCALATED', 'RESOLVED', 'CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "TicketChannel" AS ENUM ('WHATSAPP', 'PHONE', 'WEB', 'EMAIL', 'ADMIN');
+DO $$ BEGIN
+    CREATE TYPE "TicketPriority" AS ENUM ('LOW', 'NORMAL', 'HIGH', 'URGENT');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "ModerationStatus" AS ENUM ('PENDING', 'PUBLISHED', 'REJECTED', 'HIDDEN');
+DO $$ BEGIN
+    CREATE TYPE "TicketChannel" AS ENUM ('WHATSAPP', 'PHONE', 'WEB', 'EMAIL', 'ADMIN');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "CouponType" AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT', 'FREE_SHIPPING');
+DO $$ BEGIN
+    CREATE TYPE "ModerationStatus" AS ENUM ('PENDING', 'PUBLISHED', 'REJECTED', 'HIDDEN');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- CreateEnum
+DO $$ BEGIN
+    CREATE TYPE "CouponType" AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT', 'FREE_SHIPPING');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AlterTable
-ALTER TABLE "orders" ADD COLUMN     "collector_type" "CollectorType",
-ADD COLUMN     "coupon_code" VARCHAR(32),
-ADD COLUMN     "delivered_at" TIMESTAMPTZ,
-ADD COLUMN     "replacement_of" UUID,
-ADD COLUMN     "settlement_id" UUID;
+ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "collector_type" "CollectorType",
+ADD COLUMN IF NOT EXISTS "coupon_code" VARCHAR(32),
+ADD COLUMN IF NOT EXISTS "delivered_at" TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS "replacement_of" UUID,
+ADD COLUMN IF NOT EXISTS "settlement_id" UUID;
 
 -- CreateTable
-CREATE TABLE "cash_settlements" (
+CREATE TABLE IF NOT EXISTS "cash_settlements" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "collector_type" "CollectorType" NOT NULL,
     "collector_id" UUID NOT NULL,
@@ -62,7 +101,7 @@ CREATE TABLE "cash_settlements" (
 );
 
 -- CreateTable
-CREATE TABLE "returns" (
+CREATE TABLE IF NOT EXISTS "returns" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "return_no" VARCHAR(16) NOT NULL,
     "order_id" UUID NOT NULL,
@@ -87,7 +126,7 @@ CREATE TABLE "returns" (
 );
 
 -- CreateTable
-CREATE TABLE "refunds" (
+CREATE TABLE IF NOT EXISTS "refunds" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "return_id" UUID NOT NULL,
     "amount_usd_cents" BIGINT NOT NULL,
@@ -105,7 +144,7 @@ CREATE TABLE "refunds" (
 );
 
 -- CreateTable
-CREATE TABLE "warranty_claims" (
+CREATE TABLE IF NOT EXISTS "warranty_claims" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "claim_no" VARCHAR(16) NOT NULL,
     "device_unit_id" UUID,
@@ -125,7 +164,7 @@ CREATE TABLE "warranty_claims" (
 );
 
 -- CreateTable
-CREATE TABLE "support_tickets" (
+CREATE TABLE IF NOT EXISTS "support_tickets" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "ticket_no" VARCHAR(16) NOT NULL,
     "user_id" UUID,
@@ -155,7 +194,7 @@ CREATE TABLE "support_tickets" (
 );
 
 -- CreateTable
-CREATE TABLE "ticket_messages" (
+CREATE TABLE IF NOT EXISTS "ticket_messages" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "ticket_id" UUID NOT NULL,
     "author_type" TEXT NOT NULL,
@@ -171,7 +210,7 @@ CREATE TABLE "ticket_messages" (
 );
 
 -- CreateTable
-CREATE TABLE "ticket_macros" (
+CREATE TABLE IF NOT EXISTS "ticket_macros" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "code" TEXT NOT NULL,
     "title" JSONB NOT NULL,
@@ -185,7 +224,7 @@ CREATE TABLE "ticket_macros" (
 );
 
 -- CreateTable
-CREATE TABLE "reviews" (
+CREATE TABLE IF NOT EXISTS "reviews" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "product_id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -208,7 +247,7 @@ CREATE TABLE "reviews" (
 );
 
 -- CreateTable
-CREATE TABLE "review_reports" (
+CREATE TABLE IF NOT EXISTS "review_reports" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "review_id" UUID NOT NULL,
     "reporter_id" UUID,
@@ -223,7 +262,7 @@ CREATE TABLE "review_reports" (
 );
 
 -- CreateTable
-CREATE TABLE "product_questions" (
+CREATE TABLE IF NOT EXISTS "product_questions" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "product_id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -242,7 +281,7 @@ CREATE TABLE "product_questions" (
 );
 
 -- CreateTable
-CREATE TABLE "coupons" (
+CREATE TABLE IF NOT EXISTS "coupons" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "code" VARCHAR(32) NOT NULL,
     "type" "CouponType" NOT NULL,
@@ -266,7 +305,7 @@ CREATE TABLE "coupons" (
 );
 
 -- CreateTable
-CREATE TABLE "coupon_redemptions" (
+CREATE TABLE IF NOT EXISTS "coupon_redemptions" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "coupon_id" UUID NOT NULL,
     "order_id" UUID NOT NULL,
@@ -278,7 +317,7 @@ CREATE TABLE "coupon_redemptions" (
 );
 
 -- CreateTable
-CREATE TABLE "price_alerts" (
+CREATE TABLE IF NOT EXISTS "price_alerts" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "variant_id" UUID NOT NULL,
@@ -293,7 +332,7 @@ CREATE TABLE "price_alerts" (
 );
 
 -- CreateTable
-CREATE TABLE "stock_alerts" (
+CREATE TABLE IF NOT EXISTS "stock_alerts" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID,
     "phone" VARCHAR(16) NOT NULL,
@@ -307,146 +346,212 @@ CREATE TABLE "stock_alerts" (
 );
 
 -- CreateIndex
-CREATE INDEX "cash_settlements_state_settlement_date_idx" ON "cash_settlements"("state", "settlement_date");
+CREATE INDEX IF NOT EXISTS "cash_settlements_state_settlement_date_idx" ON "cash_settlements"("state", "settlement_date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "cash_settlements_collector_type_collector_id_settlement_dat_key" ON "cash_settlements"("collector_type", "collector_id", "settlement_date");
+CREATE UNIQUE INDEX IF NOT EXISTS "cash_settlements_collector_type_collector_id_settlement_dat_key" ON "cash_settlements"("collector_type", "collector_id", "settlement_date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "returns_return_no_key" ON "returns"("return_no");
+CREATE UNIQUE INDEX IF NOT EXISTS "returns_return_no_key" ON "returns"("return_no");
 
 -- CreateIndex
-CREATE INDEX "returns_state_requested_at_idx" ON "returns"("state", "requested_at");
+CREATE INDEX IF NOT EXISTS "returns_state_requested_at_idx" ON "returns"("state", "requested_at");
 
 -- CreateIndex
-CREATE INDEX "returns_order_id_idx" ON "returns"("order_id");
+CREATE INDEX IF NOT EXISTS "returns_order_id_idx" ON "returns"("order_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "refunds_return_id_key" ON "refunds"("return_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "refunds_return_id_key" ON "refunds"("return_id");
 
 -- CreateIndex
-CREATE INDEX "refunds_state_idx" ON "refunds"("state");
+CREATE INDEX IF NOT EXISTS "refunds_state_idx" ON "refunds"("state");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "warranty_claims_claim_no_key" ON "warranty_claims"("claim_no");
+CREATE UNIQUE INDEX IF NOT EXISTS "warranty_claims_claim_no_key" ON "warranty_claims"("claim_no");
 
 -- CreateIndex
-CREATE INDEX "warranty_claims_state_opened_at_idx" ON "warranty_claims"("state", "opened_at");
+CREATE INDEX IF NOT EXISTS "warranty_claims_state_opened_at_idx" ON "warranty_claims"("state", "opened_at");
 
 -- CreateIndex
-CREATE INDEX "warranty_claims_phone_idx" ON "warranty_claims"("phone");
+CREATE INDEX IF NOT EXISTS "warranty_claims_phone_idx" ON "warranty_claims"("phone");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "support_tickets_ticket_no_key" ON "support_tickets"("ticket_no");
+CREATE UNIQUE INDEX IF NOT EXISTS "support_tickets_ticket_no_key" ON "support_tickets"("ticket_no");
 
 -- CreateIndex
-CREATE INDEX "support_tickets_status_priority_created_at_idx" ON "support_tickets"("status", "priority", "created_at");
+CREATE INDEX IF NOT EXISTS "support_tickets_status_priority_created_at_idx" ON "support_tickets"("status", "priority", "created_at");
 
 -- CreateIndex
-CREATE INDEX "support_tickets_phone_idx" ON "support_tickets"("phone");
+CREATE INDEX IF NOT EXISTS "support_tickets_phone_idx" ON "support_tickets"("phone");
 
 -- CreateIndex
-CREATE INDEX "support_tickets_order_id_idx" ON "support_tickets"("order_id");
+CREATE INDEX IF NOT EXISTS "support_tickets_order_id_idx" ON "support_tickets"("order_id");
 
 -- CreateIndex
-CREATE INDEX "ticket_messages_ticket_id_created_at_idx" ON "ticket_messages"("ticket_id", "created_at");
+CREATE INDEX IF NOT EXISTS "ticket_messages_ticket_id_created_at_idx" ON "ticket_messages"("ticket_id", "created_at");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ticket_macros_code_key" ON "ticket_macros"("code");
+CREATE UNIQUE INDEX IF NOT EXISTS "ticket_macros_code_key" ON "ticket_macros"("code");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "reviews_order_item_id_key" ON "reviews"("order_item_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "reviews_order_item_id_key" ON "reviews"("order_item_id");
 
 -- CreateIndex
-CREATE INDEX "reviews_product_id_status_idx" ON "reviews"("product_id", "status");
+CREATE INDEX IF NOT EXISTS "reviews_product_id_status_idx" ON "reviews"("product_id", "status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "review_reports_review_id_reporter_id_key" ON "review_reports"("review_id", "reporter_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "review_reports_review_id_reporter_id_key" ON "review_reports"("review_id", "reporter_id");
 
 -- CreateIndex
-CREATE INDEX "product_questions_product_id_status_idx" ON "product_questions"("product_id", "status");
+CREATE INDEX IF NOT EXISTS "product_questions_product_id_status_idx" ON "product_questions"("product_id", "status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "coupons_code_key" ON "coupons"("code");
+CREATE UNIQUE INDEX IF NOT EXISTS "coupons_code_key" ON "coupons"("code");
 
 -- CreateIndex
-CREATE INDEX "coupons_is_active_ends_at_idx" ON "coupons"("is_active", "ends_at");
+CREATE INDEX IF NOT EXISTS "coupons_is_active_ends_at_idx" ON "coupons"("is_active", "ends_at");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "coupon_redemptions_order_id_key" ON "coupon_redemptions"("order_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "coupon_redemptions_order_id_key" ON "coupon_redemptions"("order_id");
 
 -- CreateIndex
-CREATE INDEX "coupon_redemptions_coupon_id_phone_idx" ON "coupon_redemptions"("coupon_id", "phone");
+CREATE INDEX IF NOT EXISTS "coupon_redemptions_coupon_id_phone_idx" ON "coupon_redemptions"("coupon_id", "phone");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "price_alerts_user_id_variant_id_key" ON "price_alerts"("user_id", "variant_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "price_alerts_user_id_variant_id_key" ON "price_alerts"("user_id", "variant_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "stock_alerts_phone_variant_id_key" ON "stock_alerts"("phone", "variant_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "stock_alerts_phone_variant_id_key" ON "stock_alerts"("phone", "variant_id");
 
 -- AddForeignKey
-ALTER TABLE "orders" ADD CONSTRAINT "orders_settlement_id_fkey" FOREIGN KEY ("settlement_id") REFERENCES "cash_settlements"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "orders" ADD CONSTRAINT "orders_settlement_id_fkey" FOREIGN KEY ("settlement_id") REFERENCES "cash_settlements"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "cash_settlements" ADD CONSTRAINT "cash_settlements_collector_id_fkey" FOREIGN KEY ("collector_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "cash_settlements" ADD CONSTRAINT "cash_settlements_collector_id_fkey" FOREIGN KEY ("collector_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "returns" ADD CONSTRAINT "returns_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "returns" ADD CONSTRAINT "returns_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "refunds" ADD CONSTRAINT "refunds_return_id_fkey" FOREIGN KEY ("return_id") REFERENCES "returns"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "refunds" ADD CONSTRAINT "refunds_return_id_fkey" FOREIGN KEY ("return_id") REFERENCES "returns"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "warranty_claims" ADD CONSTRAINT "warranty_claims_device_unit_id_fkey" FOREIGN KEY ("device_unit_id") REFERENCES "device_units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "warranty_claims" ADD CONSTRAINT "warranty_claims_device_unit_id_fkey" FOREIGN KEY ("device_unit_id") REFERENCES "device_units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_assignee_id_fkey" FOREIGN KEY ("assignee_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_assignee_id_fkey" FOREIGN KEY ("assignee_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_warranty_claim_id_fkey" FOREIGN KEY ("warranty_claim_id") REFERENCES "warranty_claims"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "support_tickets" ADD CONSTRAINT "support_tickets_warranty_claim_id_fkey" FOREIGN KEY ("warranty_claim_id") REFERENCES "warranty_claims"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "support_tickets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "support_tickets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_macro_id_fkey" FOREIGN KEY ("macro_id") REFERENCES "ticket_macros"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_macro_id_fkey" FOREIGN KEY ("macro_id") REFERENCES "ticket_macros"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "reviews" ADD CONSTRAINT "reviews_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "reviews" ADD CONSTRAINT "reviews_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "reviews" ADD CONSTRAINT "reviews_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "reviews" ADD CONSTRAINT "reviews_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "review_reports" ADD CONSTRAINT "review_reports_review_id_fkey" FOREIGN KEY ("review_id") REFERENCES "reviews"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "review_reports" ADD CONSTRAINT "review_reports_review_id_fkey" FOREIGN KEY ("review_id") REFERENCES "reviews"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "product_questions" ADD CONSTRAINT "product_questions_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "product_questions" ADD CONSTRAINT "product_questions_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "product_questions" ADD CONSTRAINT "product_questions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "product_questions" ADD CONSTRAINT "product_questions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_coupon_id_fkey" FOREIGN KEY ("coupon_id") REFERENCES "coupons"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_coupon_id_fkey" FOREIGN KEY ("coupon_id") REFERENCES "coupons"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "price_alerts" ADD CONSTRAINT "price_alerts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "price_alerts" ADD CONSTRAINT "price_alerts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "price_alerts" ADD CONSTRAINT "price_alerts_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "product_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "price_alerts" ADD CONSTRAINT "price_alerts_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "product_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "stock_alerts" ADD CONSTRAINT "stock_alerts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "stock_alerts" ADD CONSTRAINT "stock_alerts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "stock_alerts" ADD CONSTRAINT "stock_alerts_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "product_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "stock_alerts" ADD CONSTRAINT "stock_alerts_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "product_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 

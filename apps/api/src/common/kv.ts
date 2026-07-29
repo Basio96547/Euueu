@@ -1,17 +1,16 @@
-import { createClient, type RedisClientType } from 'redis';
-
 /**
  * مخزن مفتاح ← قيمة بمهلة.
  *
- * سائقان بواجهة واحدة: الذاكرة حين لا يُضبط REDIS_URL، وRedis حين يُضبط.
+ * ثلاثة سائقين بواجهة واحدة: ذاكرة العملية، وRedis، وCloudflare KV.
  *
- * الذاكرة تكفي نسخة خادم واحدة وتكفي أغلب عمر هذا المتجر. لكنها تنكسر
- * بصمت لحظة تشغيل نسخة ثانية: رمز الدخول يُولَّد في نسخة ويُتحقَّق منه
- * في أخرى فيُرفض، ومفتاح التفرّد يُخزَّن هنا فيُحصَّل الطلب مرتين هناك،
- * وحدّ المعدل يصير ضِعف ما كُتب لأن لكل نسخة عدّادها.
+ * الذاكرة تكفي نسخة خادم واحدة. لكنها تنكسر بصمت لحظة تشغيل نسخة ثانية:
+ * رمز الدخول يُولَّد في نسخة ويُتحقَّق منه في أخرى فيُرفض، ومفتاح التفرّد
+ * يُخزَّن هنا فيُحصَّل الطلب مرتين هناك، وحدّ المعدل يصير ضِعف ما كُتب.
  *
- * ولأن العطل صامت لا صاخب، يُطبع تحذير عند الإقلاع بدل انتظار اكتشافه
- * يوم التوسّع — وهو اليوم الذي يكون فيه المتجر مشغولاً بما يكفي.
+ * وعلى Worker هذا ليس احتمالاً بل يقين: كل عزلة عالمها الخاص وتُنشأ
+ * وتُهدَم بلا إشعار. لذلك السائق هناك هو Cloudflare KV — واتساقه نهائي
+ * لا فوري، فحدّ المعدل قد يمرّر طلباً زائداً بين موقعين متباعدين.
+ * مقبولٌ لحاجزٍ يمنع الإساءة، وهو أفضل بكثير من عدّادٍ يُمحى مع العزلة.
  */
 export interface Kv {
   get<T>(key: string): Promise<T | null>;
@@ -19,7 +18,7 @@ export interface Kv {
   del(key: string): Promise<void>;
   /** زيادة ذرّية بمهلة تُضبط عند أول زيادة — لحدّ المعدل */
   incr(key: string, ttlSec: number): Promise<number>;
-  readonly driver: 'redis' | 'memory';
+  readonly driver: 'redis' | 'memory' | 'cf-kv';
 }
 
 class MemoryKv implements Kv {
@@ -58,9 +57,52 @@ class MemoryKv implements Kv {
   }
 }
 
+/** الشكل الأدنى من واجهة KVNamespace — بلا استيراد أنواع Cloudflare */
+export interface CfKvNamespace {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+class CloudflareKv implements Kv {
+  readonly driver = 'cf-kv' as const;
+  constructor(private ns: CfKvNamespace) {}
+
+  async get<T>(key: string): Promise<T | null> {
+    const raw = await this.ns.get(key);
+    if (raw === null) return null;
+    try { return JSON.parse(raw) as T; } catch { return raw as T; }
+  }
+
+  async set<T>(key: string, value: T, ttlSec: number) {
+    // أدنى مهلة يقبلها KV ستون ثانية، وما دونها يُرفض بخطأ
+    await this.ns.put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(ttlSec)) });
+  }
+
+  async del(key: string) { await this.ns.delete(key); }
+
+  async incr(key: string, ttlSec: number): Promise<number> {
+    /* KV لا يملك زيادةً ذرّية. القراءة ثم الكتابة تسمحان لطلبين متزامنين
+       بقراءة العدّاد نفسه فيمرّ واحدٌ زائد. الحدّ هنا حاجزُ إساءةٍ لا
+       قفلُ محاسبة، وثمن الدقّة الكاملة كائنٌ دائم لكل مفتاح. */
+    const cur = (await this.get<number>(key)) ?? 0;
+    const next = cur + 1;
+    await this.set(key, next, ttlSec);
+    return next;
+  }
+}
+
+interface RedisLike {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, opts: { EX: number }): Promise<unknown>;
+  del(key: string): Promise<unknown>;
+  incr(key: string): Promise<number>;
+  expire(key: string, sec: number): Promise<unknown>;
+}
+
 class RedisKv implements Kv {
   readonly driver = 'redis' as const;
-  constructor(private client: RedisClientType) {}
+  constructor(private client: RedisLike) {}
 
   async get<T>(key: string): Promise<T | null> {
     const raw = await this.client.get(key);
@@ -85,6 +127,16 @@ class RedisKv implements Kv {
 let instance: Kv | null = null;
 let warned = false;
 
+/** يُستدعى من الـWorker: الربط يأتي من بيئة الطلب لا من متغيّر عملية */
+export function useCloudflareKv(ns: CfKvNamespace | undefined): Kv {
+  if (!ns) {
+    if (!instance) instance = new MemoryKv();
+    return instance;
+  }
+  if (instance?.driver !== 'cf-kv') instance = new CloudflareKv(ns);
+  return instance;
+}
+
 export async function initKv(): Promise<Kv> {
   if (instance) return instance;
 
@@ -100,23 +152,27 @@ export async function initKv(): Promise<Kv> {
     /* استراتيجية إعادة محاولة محدودة ومهلة اتصال صريحة.
        الافتراضي في node-redis إعادةُ محاولة بلا نهاية، فـRedis مضبوط
        لكنه متوقف يعلّق الإقلاع إلى الأبد — والمتجر يبقى مطفأً بانتظار
-       خدمة مساعدة. المتجر أهمّ من مخزنه المؤقّت. */
-    const client: RedisClientType = createClient({
+       خدمة مساعدة. المتجر أهمّ من مخزنه المؤقّت.
+
+       والاستيراد كسول: حزمة redis لا مكان لها في حزمة الـWorker،
+       وربطها ساكناً يجرّها إلى بناءٍ لا يستعملها. */
+    const { createClient } = await import('redis');
+    const client = createClient({
       url,
       socket: {
         connectTimeout: 3000,
-        reconnectStrategy: (retries) => (retries > 5 ? false : Math.min(retries * 200, 1000)),
+        reconnectStrategy: (retries: number) => (retries > 5 ? false : Math.min(retries * 200, 1000)),
       },
     });
     // بلا مستمع للخطأ يرمي node-redis استثناءً غير ملتقَط يُسقط العملية
-    client.on('error', (e) => {
+    client.on('error', (e: any) => {
       if (!warned) { console.error('Redis:', e?.message ?? e); warned = true; }
     });
     await Promise.race([
       client.connect(),
       new Promise((_, rej) => setTimeout(() => rej(new Error('مهلة الاتصال')), 4000)),
     ]);
-    instance = new RedisKv(client);
+    instance = new RedisKv(client as unknown as RedisLike);
     console.log(`KV على Redis: ${url.replace(/:\/\/.*@/, '://***@')}`);
   } catch (e) {
     /* الفشل لا يُسقط الخادم: متجرٌ يعمل بذاكرة محلية أفضل من متجر

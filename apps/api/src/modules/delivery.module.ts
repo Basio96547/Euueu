@@ -1,11 +1,8 @@
-import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 import { normalizeAr } from '../common/arabic.js';
 
-const STAFF = ['OPS_MANAGER', 'ADMIN'] as const;
 
 /** سعة افتراضية بحسب المركبة — الدراجة هي الغالبة داخل دمشق */
 const CAPACITY: Record<string, number> = {
@@ -31,11 +28,10 @@ const ZONE_DEFAULTS: Record<string, { surcharge: number; sla: number }> = {
  * هذه الوحدة تحوّله من اجتهاد يومي إلى عملية بمعطيات: من يوصّل،
  * وإلى أي منطقة، وبأي سعة، وكم نقداً يحمل.
  */
-@Injectable()
 export class DeliveryService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
   ) {}
 
   /* ————— المندوبون ————— */
@@ -360,46 +356,3 @@ export class DeliveryService {
   }
 }
 
-@Controller('admin/delivery')
-@Protect(...STAFF)
-export class DeliveryController {
-  constructor(@Inject(DeliveryService) private d: DeliveryService) {}
-
-  @Get('couriers')
-  async couriers(@Query('status') status?: string) { return { data: await this.d.couriers(status) }; }
-
-  @Post('couriers')
-  async upsertCourier(@Body() b: any, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.d.upsertCourier(b, req.user!.sub) };
-  }
-
-  @Post('couriers/:code/status')
-  async status(
-    @Param('code') code: string,
-    @Body() b: { status: string; reason?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.d.setCourierStatus(code, b.status, b.reason, req.user!.sub) };
-  }
-
-  @Get('zones')
-  async zones(@Query('governorate') g?: string) { return { data: await this.d.zones(g) }; }
-
-  @Post('zones')
-  async upsertZone(@Body() b: any, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.d.upsertZone(b, req.user!.sub) };
-  }
-
-  @Post('zones/:code/couriers')
-  async assign(@Param('code') code: string, @Body() b: { courierCode: string; priority?: number }) {
-    return { data: await this.d.assignCourierToZone(code, b.courierCode, b.priority ?? 10) };
-  }
-
-  @Delete('zones/:code/couriers/:courierCode')
-  async unassign(@Param('code') code: string, @Param('courierCode') cc: string) {
-    return { data: await this.d.unassign(code, cc) };
-  }
-
-  @Get('orders/:orderNo/suggest')
-  async suggest(@Param('orderNo') no: string) { return { data: await this.d.suggestCourier(no) }; }
-}

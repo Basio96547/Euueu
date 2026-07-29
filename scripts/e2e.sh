@@ -10,8 +10,10 @@
 # الفحص يهيّئ بضاعته بنفسه بأرقام IMEI فريدة لكل تشغيل، فيعطي
 # النتيجة نفسها مهما تكرر — وفحصٌ يعتمد على ما خلّفه سابقه ليس فحصاً.
 #
-API=http://localhost:4000/api/v1
-PSQL="psql -h /tmp -U postgres -d talisham -t"
+# العنوان قابل للضبط: الفحص نفسه يُشغَّل على Node محلياً وعلى الـWorker
+#   API_BASE=http://127.0.0.1:8790/api/v1 bash scripts/e2e.sh
+API=${API_BASE:-http://localhost:4000/api/v1}
+PSQL=${PSQL_CMD:-"psql -h /tmp -U postgres -d talisham -t"}
 SKU=SMA35-128-NVY-GULF
 ok(){ printf '  \033[32m✓\033[0m %s\n' "$1"; }
 no(){ printf '  \033[31m✗\033[0m %s — %s\n' "$1" "$2"; }
@@ -23,15 +25,35 @@ tok(){ local r c
   curl -s -X POST $API/auth/otp/verify -H 'content-type: application/json' -d "{\"phone\":\"$1\",\"code\":\"$c\"}"|grep -o '"accessToken":"[^"]*"'|cut -d'"' -f4; }
 
 AT=$(tok "+963900000001"); AH="authorization: Bearer $AT"
+
+# دور المندوب يُمنح من اللوحة لا من سطر الأوامر: الفحص كان يفترض أن
+# أحداً منحه سابقاً، فيمرّ عند من فعل ويفشل على قاعدة نظيفة.
+# ومنحُ الدور يرفع نسخة الرمز فيُسقط الجلسة — فيُعاد الدخول بعده.
+CT=$(tok "+963955555555")
+CPID=$(curl -s "$API/auth/me" -H "authorization: Bearer $CT"|grep -o '"publicId":"[^"]*"'|cut -d'"' -f4)
+curl -s -X POST "$API/admin/users/$CPID/role" -H "$AH" -H 'content-type: application/json' \
+  -d '{"role":"COURIER","reason":"تهيئة الفحص من طرف إلى طرف"}' > /dev/null
 CT=$(tok "+963955555555"); CH="authorization: Bearer $CT"
-CUST="+963944332211"; UT=$(tok "$CUST"); UH="authorization: Bearer $UT"
+
+# زبونٌ جديد لكل تشغيل: سقف الطلبات المفتوحة قاعدةٌ حقيقية لا عائق
+# فحص، وإعادة استعمال رقمٍ واحد تجعل التشغيل الثالث يفشل بحقّ.
+CUST="+96394$(printf '%07d' $((RANDOM * RANDOM % 10000000)))"
+UT=$(tok "$CUST"); UH="authorization: Bearer $UT"
 
 # الفحص يهيّئ مخزونه: تشغيلٌ متكرر يستهلك البضاعة، وفحصٌ يعتمد
 # على ما خلّفه سابقه ليس فحصاً بل صدفة.
 N=6
 if true; then
+  # التحويل إلى منتج حقيقي أولاً: المنتج التجريبي لا يَستلم بضاعة ولا
+  # يُطلَب، وكان الفحص يفترض أن أحداً حوّله يدوياً قبله — فيمرّ عند من
+  # فعل ذلك ويفشل على قاعدة نظيفة. الفحص يهيّئ شرطه بنفسه.
+  curl -s -X POST "$API/admin/catalog/products/samsung-galaxy-a35/promote" -H "$AH" > /dev/null
+
+  # المورد كيانٌ له صفّه: أمر الشراء يشير إليه برمزه لا باسم نصّي
+  curl -s -X POST "$API/admin/procurement/suppliers" -H "$AH" -H 'content-type: application/json' \
+    -d '{"code":"E2E","name":"مورد تهيئة الفحص","leadTimeDays":7}' > /dev/null
   PO=$(curl -s -X POST "$API/admin/procurement/purchase-orders" -H "$AH" -H 'content-type: application/json' \
-    -d "{\"supplierName\":\"تهيئة الفحص\",\"lines\":[{\"sku\":\"$SKU\",\"qty\":$N,\"unitCostUsdCents\":21000}],\"extraUsdCents\":0}")
+    -d "{\"supplierCode\":\"E2E\",\"lines\":[{\"sku\":\"$SKU\",\"qty\":$N,\"unitCostUsdCents\":21000}],\"extraUsdCents\":0}")
   PN=$(echo "$PO"|grep -o '"poNo":"[^"]*"'|cut -d'"' -f4)
   IMEIS=$(python3 - "$N" "$RANDOM" <<'PYIN'
 import sys

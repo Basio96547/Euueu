@@ -1,8 +1,6 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post, Query } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 
 type ClaimState = 'OPENED' | 'RECEIVED' | 'DIAGNOSING' | 'DECISION' | 'IN_REPAIR' | 'TESTING' | 'READY' | 'CLOSED' | 'REJECTED';
 
@@ -24,11 +22,10 @@ const STATE_AR: Record<ClaimState, string> = {
   READY: 'جاهز للتسليم', CLOSED: 'مغلقة', REJECTED: 'مرفوضة',
 };
 
-@Injectable()
 export class WarrantyService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
   ) {}
 
   /**
@@ -199,37 +196,3 @@ export class WarrantyService {
   }
 }
 
-@Controller()
-export class WarrantyController {
-  constructor(@Inject(WarrantyService) private w: WarrantyService) {}
-
-  @Get('warranties/verify')
-  async verify(@Query('imei') imei: string) {
-    if (!imei) throw Errors.badRequest('IMEI_REQUIRED', 'أدخل رقم IMEI', 'IMEI required');
-    return { data: await this.w.verify(imei) };
-  }
-
-  @Post('warranties/activate/:orderNo')
-  async activate(@Param('orderNo') no: string) { return { data: await this.w.activateForOrder(no) }; }
-
-  @Post('me/warranty-claims')
-  async open(@Body() b: { imei: string; description: string; phone: string }) {
-    return { data: await this.w.openClaim(b.imei, b.description, b.phone) };
-  }
-
-  @Get('me/warranty-claims')
-  async mine(@Query('phone') phone: string) { return { data: await this.w.myClaims(phone) }; }
-
-  @Get('admin/warranty-claims')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async list(@Query('state') state?: string) { return { data: await this.w.listClaims(state) }; }
-
-  @Post('admin/warranty-claims/:claimNo/transition')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async transition(
-    @Param('claimNo') no: string,
-    @Body() b: { to: ClaimState; diagnosis?: string; resolution?: string; rejectReason?: string },
-  ) {
-    return { data: await this.w.transition(no, b.to, b) };
-  }
-}

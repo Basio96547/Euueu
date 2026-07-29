@@ -1,4 +1,3 @@
-import { Injectable, Logger } from '@nestjs/common';
 import { sendWhatsapp, sendSms, type SendResult } from './channels.js';
 
 type Level = 'P0' | 'P1' | 'P2' | 'P3';
@@ -9,9 +8,13 @@ type Channel = 'IN_APP' | 'WHATSAPP' | 'SMS' | 'WEB_PUSH' | 'EMAIL';
  * محلياً تُكتب الرسائل في السجل بدل إرسالها — لا مزوّد ولا تكلفة.
  * وقواعد التوجيه مطبَّقة كما هي: P0 على قناتين ويتجاوز نافذة عدم الإزعاج.
  */
-@Injectable()
 export class NotificationsService {
-  private readonly log = new Logger('Notify');
+  private readonly log = {
+    log: (m: string) => console.log(`[Notify] ${m}`),
+    debug: (m: string) => console.debug(`[Notify] ${m}`),
+    warn: (m: string) => console.warn(`[Notify] ${m}`),
+    error: (m: string) => console.error(`[Notify] ${m}`),
+  };
   private sent = new Map<string, number>();
 
   private quietHours(now = new Date()) {

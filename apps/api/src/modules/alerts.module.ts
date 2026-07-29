@@ -1,10 +1,8 @@
-import { Body, Controller, Inject, Injectable, Post, Req, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
 import { roundCash } from '../common/money.js';
 import { FxService } from './fx.module.js';
-import { MaybeAuth } from '../common/guards.js';
 
 /**
  * تنبيهات التوفر وانخفاض السعر — الفصل 14 §14.6
@@ -13,25 +11,14 @@ import { MaybeAuth } from '../common/guards.js';
  * «انخفض السعر!» عن سعر لم يتحرّك سنتاً واحداً — وأسرع طريق لأن يحظر
  * الزبون رسائل المتجر هي أن يكذب عليه رقمٌ مرتين.
  */
-@Injectable()
-export class AlertsService implements OnModuleInit, OnModuleDestroy {
-  private timer: NodeJS.Timeout | null = null;
+export class AlertsService {
   private running = false;
-  private readonly intervalMs = Number(process.env.ALERTS_INTERVAL_MS ?? 300_000);
 
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
-    @Inject(FxService) private fx: FxService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
+    private fx: FxService,
   ) {}
-
-  onModuleInit() {
-    if (process.env.ALERTS_DISABLED === '1') return;
-    this.timer = setInterval(() => { void this.scan(); }, this.intervalMs);
-    this.timer.unref?.();
-  }
-
-  onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
 
   async subscribeStock(b: { sku: string; phone: string; userPublicId?: string }) {
     if (!/^\+9639[0-9]{8}$/.test(b.phone)) {
@@ -156,24 +143,3 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-@Controller('alerts')
-export class AlertsController {
-  constructor(@Inject(AlertsService) private a: AlertsService) {}
-
-  /** التوفّر يعمل للضيف: من ينتظر جهازاً لا يُطالَب بحساب أولاً */
-  @Post('stock')
-  @MaybeAuth()
-  async stock(@Body() b: { sku: string; phone: string }, @Req() req: any) {
-    return { data: await this.a.subscribeStock({ ...b, userPublicId: req.user?.sub }) };
-  }
-
-  @Post('price')
-  @MaybeAuth()
-  async price(@Body() b: { sku: string; thresholdBp?: number }, @Req() req: any) {
-    if (!req.user?.sub) {
-      throw Errors.badRequest('AUTH_REQUIRED',
-        'تنبيه السعر يحتاج حساباً — سجّل دخولك برمز', 'Sign in required');
-    }
-    return { data: await this.a.subscribePrice(req.user.sub, b) };
-  }
-}

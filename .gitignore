@@ -1,10 +1,14 @@
 node_modules/
 dist/
+dist-worker/
 .astro/
 .turbo/
+.wrangler/
 .env
 .env.local
+.dev.vars
 *.log
 .DS_Store
 dist-preview/
 media/
+*.tsbuildinfo

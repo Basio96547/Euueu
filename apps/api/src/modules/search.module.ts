@@ -1,4 +1,3 @@
-import { Controller, Get, Inject, Injectable, Query } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { expandQuery, normalizeAr, buildSynonyms, categoriesForQuery } from '../common/arabic.js';
@@ -7,9 +6,8 @@ const MEILI = process.env.MEILI_HOST;
 const MEILI_KEY = process.env.MEILI_MASTER_KEY ?? '';
 const INDEX = 'products';
 
-@Injectable()
 export class SearchService {
-  constructor(@Inject(PrismaService) private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
   /** المستند يحمل السعر بالدولار حصراً — لا ليرة في الفهرس (الفصل 6) */
   private async documents() {
@@ -134,27 +132,3 @@ export class SearchService {
   }
 }
 
-@Controller('search')
-export class SearchController {
-  constructor(
-    @Inject(SearchService) private search: SearchService,
-    @Inject(FxService) private fx: FxService,
-  ) {}
-
-  @Get()
-  async query(
-    @Query('q') q = '',
-    @Query('origin') origin?: string,
-    @Query('condition') condition?: string,
-    @Query('maxUsd') maxUsd?: string,
-  ) {
-    const [res, fx] = await Promise.all([
-      this.search.search(q, { origin, condition, maxUsd: maxUsd ? Number(maxUsd) : undefined }),
-      this.fx.current(),
-    ]);
-    return { data: res.hits, meta: { engine: res.engine, total: res.total, fx, query: q, normalized: normalizeAr(q) } };
-  }
-
-  @Get('reindex')
-  async reindex() { return { data: await this.search.reindex() }; }
-}

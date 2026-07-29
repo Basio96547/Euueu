@@ -1,5 +1,3 @@
-import { Body, Controller, Get, Headers, Inject, Injectable, Param, Post, Req } from '@nestjs/common';
-import { MaybeAuth, Protect } from '../common/guards.js';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CartService } from './cart.module.js';
@@ -13,21 +11,19 @@ import type { Prisma } from '@prisma/client';
 /** الحجز الأوّلي ساعتان — عمر الحجز ليس عمر الطلب (الفصل 3) */
 const ORDER_HOLD_HOURS = 2;
 const CONFIRM_WINDOW_HOURS = 48;
-const ANY_ROLE = ['CUSTOMER', 'SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN'];
 const RARE_THRESHOLD = 2;
 
-@Injectable()
 export class OrdersService {
   /* مفتاح التفرّد في مخزن مشترك: نسختان بذاكرتين منفصلتين تعنيان
      أن إعادة الإرسال بعد عودة الشبكة تُنشئ طلباً ثانياً. */
   private idemKey(k: string) { return `idem:order:${k}`; }
 
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(FxService) private fx: FxService,
-    @Inject(CartService) private cart: CartService,
-    @Inject(CouponsService) private coupons: CouponsService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private fx: FxService,
+    private cart: CartService,
+    private coupons: CouponsService,
+    private notify: NotificationsService,
   ) {}
 
   async create(cartToken: string, address: any, idempotencyKey?: string, buyerPublicId?: string) {
@@ -342,34 +338,3 @@ export class OrdersService {
   }
 }
 
-@Controller('orders')
-export class OrdersController {
-  constructor(
-    @Inject(OrdersService) private orders: OrdersService,
-  ) {}
-
-  @Post()
-  @MaybeAuth()
-  async create(
-    @Body() b: { cartToken: string; address: any },
-    @Req() req: { user?: { sub: string } },
-    @Headers('idempotency-key') key?: string,
-  ) {
-    return { data: await this.orders.create(b.cartToken, b.address, key, req.user?.sub) };
-  }
-
-  // «طلباتي» قبل «:orderNo» — وإلا التقطه المسار المتغيّر كرقم طلب
-  @Get('mine')
-  @Protect(...ANY_ROLE)
-  async mine(@Req() req: { user?: { sub: string } }) {
-    return { data: await this.orders.mine(req.user!.sub) };
-  }
-
-  @Get(':orderNo')
-  async one(@Param('orderNo') no: string) { return { data: await this.orders.byNo(no) }; }
-
-  @Get(':orderNo/track/:tail')
-  async track(@Param('orderNo') no: string, @Param('tail') tail: string) {
-    return { data: await this.orders.track(no, tail) };
-  }
-}

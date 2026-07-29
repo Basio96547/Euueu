@@ -1,14 +1,12 @@
-import { Controller, Get, Inject, Injectable, Param, Query } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { Errors } from '../common/errors.js';
 
 const demoMode = () => (process.env.DEMO_MODE ?? 'true') === 'true';
 
-@Injectable()
 export class CatalogService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
+    private prisma: PrismaService,
   ) {}
 
   private where() {
@@ -64,25 +62,3 @@ const shape = (p: any) => ({
   })),
 });
 
-@Controller('catalog')
-export class CatalogController {
-  constructor(
-    @Inject(CatalogService) private catalog: CatalogService,
-    @Inject(FxService) private fx: FxService,
-  ) {}
-
-  @Get('products')
-  async list(@Query('category') category?: string, @Query('limit') limit?: string) {
-    const [items, fx] = await Promise.all([
-      this.catalog.list(category, limit ? Number(limit) : 24),
-      this.fx.current(),
-    ]);
-    return { data: items.map(shape), meta: { fx, count: items.length } };
-  }
-
-  @Get('products/:slug')
-  async one(@Param('slug') slug: string) {
-    const [p, fx] = await Promise.all([this.catalog.bySlug(slug), this.fx.current()]);
-    return { data: shape(p), meta: { fx } };
-  }
-}

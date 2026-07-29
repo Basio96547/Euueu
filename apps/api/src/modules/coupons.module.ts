@@ -1,7 +1,5 @@
-import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 import type { Prisma } from '@prisma/client';
 
 /**
@@ -12,9 +10,8 @@ import type { Prisma } from '@prisma/client';
  *
  * ولا يُحسب الخصم في العميل أبداً. الرقم القادم من المتصفح رأيٌ لا حقيقة.
  */
-@Injectable()
 export class CouponsService {
-  constructor(@Inject(PrismaService) private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
   /**
    * تقييم كوبون على سلة: يعيد الخصم بالسنتات أو يرمي سبباً مفهوماً.
@@ -400,62 +397,3 @@ export class CouponsService {
   }
 }
 
-@Controller()
-export class CouponsController {
-  constructor(@Inject(CouponsService) private c: CouponsService) {}
-
-  /** معاينة أثر الرمز على سلة قائمة قبل الطلب */
-  @Post('coupons/preview')
-  async preview(@Body() b: { code: string; subtotalUsdCents: number; shippingUsdCents?: number; phone?: string }) {
-    return {
-      data: await this.c.evaluate(b.code, {
-        subtotalUsdCents: b.subtotalUsdCents,
-        shippingUsdCents: b.shippingUsdCents ?? 0,
-        phone: b.phone,
-      }),
-    };
-  }
-
-  @Get('bundles')
-  async publicBundles() { return { data: await this.c.listBundles() }; }
-
-  @Get('admin/bundles')
-  @Protect('OPS_MANAGER', 'ADMIN')
-  async listBundles() { return { data: await this.c.listBundles() }; }
-
-  @Post('admin/bundles')
-  @Protect('ADMIN')
-  async upsertBundle(@Body() b: any) { return { data: await this.c.upsertBundle(b) }; }
-
-  @Post('admin/bundles/:code/toggle')
-  @Protect('ADMIN')
-  async toggleBundle(@Param('code') code: string, @Body() b: { isActive: boolean }) {
-    return { data: await this.c.toggleBundle(code, b.isActive) };
-  }
-
-  @Get('admin/quantity-breaks')
-  @Protect('OPS_MANAGER', 'ADMIN')
-  async listBreaks() { return { data: await this.c.listBreaks() }; }
-
-  @Post('admin/quantity-breaks')
-  @Protect('ADMIN')
-  async upsertBreak(@Body() b: any) { return { data: await this.c.upsertBreak(b) }; }
-
-  @Delete('admin/quantity-breaks/:id')
-  @Protect('ADMIN')
-  async deleteBreak(@Param('id') id: string) { return { data: await this.c.deleteBreak(id) }; }
-
-  @Get('admin/coupons')
-  @Protect('OPS_MANAGER', 'ADMIN')
-  async list() { return { data: await this.c.list() }; }
-
-  @Post('admin/coupons')
-  @Protect('ADMIN')
-  async upsert(@Body() b: any) { return { data: await this.c.upsert(b) }; }
-
-  @Post('admin/coupons/:code/toggle')
-  @Protect('ADMIN')
-  async toggle(@Param('code') code: string, @Body() b: { isActive: boolean }) {
-    return { data: await this.c.toggle(code, b.isActive) };
-  }
-}

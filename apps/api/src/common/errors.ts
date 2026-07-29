@@ -1,11 +1,29 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpStatus, type HttpStatusCode } from './http-status.js';
 
 type Msg = { ar: string; en: string };
 
-/** صيغة الخطأ الموحّدة (الفصل 4 §4.4) */
-export class ApiError extends HttpException {
-  constructor(status: HttpStatus, code: string, message: Msg, details?: unknown) {
-    super({ error: { code, message, details } }, status);
+/**
+ * صيغة الخطأ الموحّدة (الفصل 4 §4.4).
+ * كانت ترث `HttpException` من Nest؛ صارت خطأً عادياً يحمل حالته، فيعمل
+ * في Worker وفي Node بلا إطار — والجسم الذي يصل العميل لم يتغيّر حرفاً.
+ */
+export class ApiError extends Error {
+  readonly status: HttpStatusCode;
+  readonly code: string;
+  readonly msg: Msg;
+  readonly details?: unknown;
+
+  constructor(status: HttpStatusCode, code: string, message: Msg, details?: unknown) {
+    super(`${code}: ${message.en}`);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.msg = message;
+    this.details = details;
+  }
+
+  body() {
+    return { error: { code: this.code, message: this.msg, details: this.details } };
   }
 }
 

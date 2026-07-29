@@ -1,8 +1,6 @@
-import { Body, Controller, Get, Inject, Injectable, Post, Req } from '@nestjs/common';
 import { createSign } from 'node:crypto';
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
-import { MaybeAuth } from '../common/guards.js';
 
 /**
  * إشعارات المتصفح (Web Push) — الفصل 20
@@ -66,9 +64,8 @@ function derToJose(der: Buffer): Buffer {
   return Buffer.concat([pad(r), pad(sBuf)]);
 }
 
-@Injectable()
 export class PushService {
-  constructor(@Inject(PrismaService) private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
   publicKey() {
     if (!pushConfigured()) return null;
@@ -166,25 +163,3 @@ export class PushService {
   }
 }
 
-@Controller('push')
-export class PushController {
-  constructor(@Inject(PushService) private p: PushService) {}
-
-  /** المتصفح يحتاج المفتاح العام قبل أن يطلب الإذن */
-  @Get('key')
-  async key() {
-    const k = this.p.publicKey();
-    return { data: { publicKey: k, enabled: Boolean(k) } };
-  }
-
-  @Post('subscribe')
-  @MaybeAuth()
-  async subscribe(@Body() b: any, @Req() req: any) {
-    return { data: await this.p.subscribe({ ...b, userPublicId: req.user?.sub }) };
-  }
-
-  @Post('unsubscribe')
-  async unsubscribe(@Body() b: { endpoint: string }) {
-    return { data: await this.p.unsubscribe(b.endpoint) };
-  }
-}

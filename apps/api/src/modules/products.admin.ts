@@ -1,11 +1,8 @@
-import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 import { publicId } from '../common/money.js';
 import { deleteImage, putImage } from './storage.js';
 
-const STAFF = ['CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN'] as const;
 
 /** المتغيّر لا يُنشأ ناقصاً: هذه الحقول تصف الجهاز لمن يشتريه بلا أن يراه */
 interface VariantInput {
@@ -48,9 +45,8 @@ interface ProductInput {
  * المتجر بلا هذه الشاشة ليس متجراً: صاحبه لا يستطيع إدخال بضاعته
  * إلا بأن يفتح قاعدة البيانات بيده، وهو ما لن يفعله ولا يجب أن يُطلب منه.
  */
-@Injectable()
 export class ProductsAdminService {
-  constructor(@Inject(PrismaService) private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
   private slugOk(s: string) {
     return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) && s.length >= 3 && s.length <= 80;
@@ -363,61 +359,3 @@ export class ProductsAdminService {
   }
 }
 
-@Controller('admin/catalog')
-@Protect(...STAFF)
-export class ProductsAdminController {
-  constructor(@Inject(ProductsAdminService) private s: ProductsAdminService) {}
-
-  @Get('brands')
-  async brands() { return { data: await this.s.brands() }; }
-
-  @Get('categories')
-  async categories() { return { data: await this.s.categories() }; }
-
-  @Get('product/:slug')
-  async one(@Param('slug') slug: string) { return { data: await this.s.one(slug) }; }
-
-  @Post('product')
-  async upsert(@Body() b: ProductInput, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.s.upsert(b, req.user!.sub) };
-  }
-
-  @Post('product/:slug/status')
-  async status(
-    @Param('slug') slug: string,
-    @Body() b: { status: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.s.setStatus(slug, b.status, req.user!.sub) };
-  }
-
-  @Delete('product/:slug')
-  async remove(@Param('slug') slug: string, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.s.softDelete(slug, req.user!.sub) };
-  }
-
-  @Post('variant/:sku/price')
-  async price(
-    @Param('sku') sku: string,
-    @Body() b: { priceUsdCents: number },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.s.setPrice(sku, b.priceUsdCents, req.user!.sub) };
-  }
-
-  @Post('product/:slug/media')
-  async addMedia(
-    @Param('slug') slug: string,
-    @Body() b: { url?: string; dataUrl?: string; alt?: { ar: string }; colorCode?: string },
-  ) {
-    return { data: await this.s.addMedia(slug, b) };
-  }
-
-  @Delete('media/:id')
-  async removeMedia(@Param('id') id: string) { return { data: await this.s.removeMedia(id) }; }
-
-  @Post('product/:slug/media/order')
-  async reorder(@Param('slug') slug: string, @Body() b: { ids: string[] }) {
-    return { data: await this.s.reorderMedia(slug, b.ids) };
-  }
-}

@@ -1,4 +1,3 @@
-import { Body, Controller, Get, Inject, Injectable, Post, Req } from '@nestjs/common';
 import { createHash, randomInt } from 'node:crypto';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
@@ -6,7 +5,6 @@ import { Errors } from '../common/errors.js';
 import { publicId } from '../common/money.js';
 import { issue, verify } from '../common/jwt.js';
 import { checkPasswordStrength, hashPassword, verifyPassword } from '../common/password.js';
-import { Protect } from '../common/guards.js';
 import { kv } from '../common/kv.js';
 
 const OTP_LEN = Number(process.env.OTP_LENGTH ?? 6);
@@ -21,14 +19,12 @@ const MAX_PASSWORD_ATTEMPTS = 5;
 const PASSWORD_LOCK_MINUTES = 15;
 
 /** كل دور مسجَّل — للمسارات التي تلزمها هوية لا صلاحية بعينها */
-const ANY_ROLE = ['CUSTOMER', 'SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN'];
 
 interface Otp {
   hash: string; expiresAt: number; attempts: number;
   lockedUntil: number; lastSentAt: number;
 }
 
-@Injectable()
 export class AuthService {
   /* الرموز في مخزن مشترك: رمزٌ يُولَّد في نسخة ويُتحقَّق منه في أخرى
      يُرفض بلا سبب مفهوم للزبون — وهو أسوأ أعطال التوسّع لأنه صامت. */
@@ -41,8 +37,8 @@ export class AuthService {
   }
 
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
   ) {}
 
   private hash(phone: string, code: string) {
@@ -90,7 +86,7 @@ export class AuthService {
     };
   }
 
-  async verifyCode(phone: string, code: string) {
+  async verifyCode(phone: string, code: string, meta?: { userAgent?: string; ip?: string | null }) {
     const now = Date.now();
     const rec = await this.load(phone);
     if (!rec) throw Errors.badRequest('OTP_INVALID', 'اطلب رمزاً جديداً', 'Request a new code');
@@ -122,8 +118,26 @@ export class AuthService {
       create: { publicId: publicId(), phoneE164: phone, phoneVerifiedAt: new Date() },
     });
 
-    const tokens = issue(user.publicId, user.role, user.tokenVersion);
+    const sid = await this.openSession(user.id, meta);
+    const tokens = issue(user.publicId, user.role, user.tokenVersion, sid);
     return { ...tokens, user: { publicId: user.publicId, role: user.role, phone: user.phoneE164 } };
+  }
+
+
+  /**
+   * جلسة لكل تسجيل دخول.
+   * `token_version` سلاح ثقيل يُسقط كل الأجهزة دفعة واحدة؛ ومن ضاع
+   * هاتفه يريد إسقاط ذلك الجهاز وحده. فصار لكل دخول صفٌّ يُرى ويُبطَل.
+   */
+  private async openSession(userId: string, meta?: { userAgent?: string; ip?: string | null }) {
+    const session = await this.prisma.session.create({
+      data: {
+        userId,
+        userAgent: meta?.userAgent?.slice(0, 200) || null,
+        ip: meta?.ip ?? null,
+      },
+    });
+    return session.id;
   }
 
   async refresh(token: string) {
@@ -135,7 +149,16 @@ export class AuthService {
     if (!user || user.tokenVersion !== claims.tv) {
       throw Errors.badRequest('SESSION_REVOKED', 'أُبطلت الجلسة', 'Session revoked');
     }
-    return issue(user.publicId, user.role, user.tokenVersion);
+    /* جلسة مُبطَلة لا تُجدَّد: وإلا كان إسقاط الجهاز الضائع مهلةَ ربع
+       ساعة يستأنف بعدها من تلقاء نفسه. */
+    if (claims.sid) {
+      const session = await this.prisma.session.findUnique({ where: { id: claims.sid } });
+      if (!session || session.revokedAt) {
+        throw Errors.badRequest('SESSION_REVOKED', 'أُبطلت هذه الجلسة', 'Session revoked');
+      }
+      await this.prisma.session.update({ where: { id: claims.sid }, data: { lastSeenAt: new Date() } });
+    }
+    return issue(user.publicId, user.role, user.tokenVersion, claims.sid);
   }
 
   /**
@@ -145,7 +168,7 @@ export class AuthService {
    * أو كلمة خاطئة. تمييزُها يحوّل نموذج الدخول إلى أداة تعداد: يجرّب
    * المهاجم أرقاماً حتى يعرف أيّها موظّف، ثم يركّز عليه وحده.
    */
-  async loginWithPassword(phone: string, password: string) {
+  async loginWithPassword(phone: string, password: string, meta?: { userAgent?: string; ip?: string | null }) {
     const fail = () => Errors.badRequest('LOGIN_FAILED',
       'الرقم أو كلمة السرّ غير صحيحة', 'Invalid credentials');
 
@@ -185,7 +208,8 @@ export class AuthService {
       data: { failedLogins: 0, lockedUntil: null },
     });
 
-    const tokens = issue(user.publicId, user.role, user.tokenVersion);
+    const sid = await this.openSession(user.id, meta);
+    const tokens = issue(user.publicId, user.role, user.tokenVersion, sid);
     return { ...tokens, user: { publicId: user.publicId, role: user.role, phone: user.phoneE164 } };
   }
 
@@ -230,50 +254,12 @@ export class AuthService {
       where: { publicId: publicIdValue },
       data: { tokenVersion: { increment: 1 } },
     });
+    /* وصفوف الجلسات معها: رمزٌ أُبطل وجلسةٌ تبقى «نشطة» في قائمة
+       أجهزتي تكذب على صاحبها في أخطر شاشة يملكها. */
+    await this.prisma.session.updateMany({
+      where: { userId: u.id, revokedAt: null }, data: { revokedAt: new Date() },
+    });
     return { revoked: true, tokenVersion: u.tokenVersion };
   }
 }
 
-@Controller('auth')
-export class AuthController {
-  constructor(@Inject(AuthService) private auth: AuthService) {}
-
-  @Post('otp/request')
-  async request(@Body() b: { phone: string }) { return { data: await this.auth.request(b.phone) }; }
-
-  @Post('otp/verify')
-  async verify(@Body() b: { phone: string; code: string }) {
-    return { data: await this.auth.verifyCode(b.phone, b.code) };
-  }
-
-  /** دخول الموظّفين بكلمة سرّ — الزبون يدخل برمز واتساب */
-  @Post('password/login')
-  async passwordLogin(@Body() b: { phone: string; password: string }) {
-    return { data: await this.auth.loginWithPassword(b.phone, b.password) };
-  }
-
-  @Post('password/change')
-  @Protect(...ANY_ROLE)
-  async passwordChange(
-    @Body() b: { currentPassword: string; newPassword: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.auth.changePassword(req.user!.sub, b.currentPassword, b.newPassword) };
-  }
-
-  @Post('refresh')
-  async refresh(@Body() b: { refreshToken: string }) { return { data: await this.auth.refresh(b.refreshToken) }; }
-
-  @Get('me')
-  @Protect(...ANY_ROLE)
-  async me(@Req() req: { user?: { sub: string } }) {
-    return { data: await this.auth.me(req.user!.sub) };
-  }
-
-  // الهوية تُؤخذ من الرمز لا من الجسم — وإلا أبطل أحدهم جلسات غيره
-  @Post('sessions/revoke-all')
-  @Protect(...ANY_ROLE)
-  async revoke(@Req() req: { user?: { sub: string } }) {
-    return { data: await this.auth.revokeAll(req.user!.sub) };
-  }
-}

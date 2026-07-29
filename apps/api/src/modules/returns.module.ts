@@ -1,10 +1,8 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
 import { roundCash } from '../common/money.js';
-import { MaybeAuth, Protect } from '../common/guards.js';
 
 /** نافذة الإرجاع سبعة أيام من التسليم — الفصل 8 §8.10 */
 const WINDOW_DAYS = 7;
@@ -40,12 +38,11 @@ const NEXT: Record<string, string[]> = {
   CANCELLED: [],
 };
 
-@Injectable()
 export class ReturnsService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(FxService) private fx: FxService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private fx: FxService,
+    private notify: NotificationsService,
   ) {}
 
   private async nextNo() {
@@ -341,45 +338,3 @@ export class ReturnsService {
   }
 }
 
-@Controller()
-export class ReturnsController {
-  constructor(@Inject(ReturnsService) private r: ReturnsService) {}
-
-  /** فتح إرجاع: يعمل للضيف بآخر أربعة أرقام وللداخل بهويته */
-  @Post('returns')
-  @MaybeAuth()
-  async request(
-    @Body() b: { orderNo: string; reason: string; note?: string; imei?: string; phoneTail?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.request({ ...b, userPublicId: req.user?.sub }) };
-  }
-
-  @Get('returns/:returnNo')
-  async one(@Param('returnNo') n: string) { return { data: await this.r.byNo(n) }; }
-
-  @Get('admin/returns')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async list(@Query('state') state?: string) { return { data: await this.r.list(state) }; }
-
-  @Post('admin/returns/:returnNo/transition')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async transition(
-    @Param('returnNo') n: string,
-    @Body() b: { to: string; note?: string; rejectReason?: string; imei?: string; restock?: boolean },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.transition(n, b.to, req.user!.sub, b) };
-  }
-
-  // الصرف النقدي للمدير وحده: يد واحدة تُخرج المال ويد أخرى تراجعها
-  @Post('admin/returns/:returnNo/disburse')
-  @Protect('ADMIN')
-  async disburse(
-    @Param('returnNo') n: string,
-    @Body() b: { note?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.disburse(n, req.user!.sub, b.note) };
-  }
-}

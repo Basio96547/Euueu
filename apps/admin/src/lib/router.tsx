@@ -5,15 +5,27 @@ import { useEffect, useState } from 'react';
  * يُستبدل بـ TanStack Router عند توسّع المسارات وظهور حاجة إلى
  * تحميل مسبق ومسارات متداخلة — وهو ما لا يبرّر تكلفته الآن.
  */
+/**
+ * البادئة: اللوحة تُخدَم من ‎/admin‎ على النطاق الرئيسي ومن الجذر على
+ * ‎admin.talisham.com‎. المسارات في الشيفرة تبقى «‎/orders‎» في الحالتين،
+ * والبادئة تُضاف وتُنزع هنا — فلا تتكرّر في كل زرّ.
+ */
+const BASE = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+
+const strip = (p: string) => {
+  if (BASE && p.startsWith(BASE)) return p.slice(BASE.length) || '/';
+  return p || '/';
+};
+
 export function useRoute() {
-  const [path, setPath] = useState(() => window.location.pathname);
+  const [path, setPath] = useState(() => strip(window.location.pathname));
   useEffect(() => {
-    const on = () => setPath(window.location.pathname);
+    const on = () => setPath(strip(window.location.pathname));
     window.addEventListener('popstate', on);
     return () => window.removeEventListener('popstate', on);
   }, []);
   const nav = (to: string) => {
-    window.history.pushState({}, '', to);
+    window.history.pushState({}, '', `${BASE}${to === '/' ? '/' : to}`);
     setPath(to);
   };
   return { path, nav };

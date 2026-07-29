@@ -1,4 +1,3 @@
-import { Body, Controller, Delete, Get, Inject, Injectable, Param, Post } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CouponsService } from './coupons.module.js';
@@ -8,12 +7,11 @@ import { randomUUID } from 'node:crypto';
 
 const SOFT_HOLD_MINUTES = 15;
 
-@Injectable()
 export class CartService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(FxService) private fx: FxService,
-    @Inject(CouponsService) private coupons: CouponsService,
+    private prisma: PrismaService,
+    private fx: FxService,
+    private coupons: CouponsService,
   ) {}
 
   async create() {
@@ -271,45 +269,3 @@ export class CartService {
   }
 }
 
-@Controller('carts')
-export class CartController {
-  constructor(
-    @Inject(CartService) private cart: CartService,
-  ) {}
-
-  @Post()
-  async create() { const c = await this.cart.create(); return { data: { cartToken: c.token } }; }
-
-  @Get(':token')
-  async get(@Param('token') token: string) { return { data: await this.cart.summary(token) }; }
-
-  @Post(':token/items')
-  async add(@Param('token') token: string, @Body() b: { sku: string; qty?: number }) {
-    return { data: await this.cart.addItem(token, b.sku, b.qty ?? 1) };
-  }
-
-  /** ضبط الكمية صراحة — والصفر حذف */
-  @Post(':token/items/:sku')
-  async set(@Param('token') token: string, @Param('sku') sku: string, @Body() b: { qty: number }) {
-    return { data: await this.cart.setItem(token, sku, b.qty) };
-  }
-
-  @Delete(':token/items/:sku')
-  async remove(@Param('token') token: string, @Param('sku') sku: string) {
-    return { data: await this.cart.removeItem(token, sku) };
-  }
-
-  /** الرمز يُقيَّم على الخادم وحده — الرقم القادم من المتصفح رأيٌ لا حقيقة */
-  @Post(':token/coupons')
-  async applyCoupon(@Param('token') token: string, @Body() b: { code: string; phone?: string }) {
-    return { data: await this.cart.applyCoupon(token, b.code, b.phone) };
-  }
-
-  @Delete(':token/coupons')
-  async removeCoupon(@Param('token') token: string) {
-    return { data: await this.cart.removeCoupon(token) };
-  }
-
-  @Post(':token/validate')
-  async validate(@Param('token') token: string) { return { data: await this.cart.validate(token) }; }
-}

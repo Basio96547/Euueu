@@ -1,8 +1,6 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 import type { Prisma } from '@prisma/client';
 
 /**
@@ -15,11 +13,10 @@ import type { Prisma } from '@prisma/client';
  * صف واحد لكل (محصِّل، يوم)، والفرق يُخزَّن لا يُحسب عند العرض:
  * تقرير يُعيد الحساب في كل فتحة قد يُظهر رقماً غير الذي اتُّفق عليه.
  */
-@Injectable()
 export class SettlementsService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
   ) {}
 
   /** بداية اليوم بتوقيت دمشق (UTC+3) مُعبَّراً عنها كتاريخ */
@@ -293,32 +290,3 @@ export class SettlementsService {
   }
 }
 
-@Controller('admin/settlements')
-@Protect('OPS_MANAGER', 'ADMIN')
-export class SettlementsController {
-  constructor(@Inject(SettlementsService) private s: SettlementsService) {}
-
-  @Get()
-  async list(@Query('state') state?: string, @Query('date') date?: string) {
-    return { data: await this.s.list(state, date) };
-  }
-
-  @Get('report')
-  async report(@Query('days') days?: string) {
-    return { data: await this.s.report(days ? Number(days) : 7) };
-  }
-
-  @Get(':id')
-  async one(@Param('id') id: string) { return { data: await this.s.one(id) }; }
-
-  @Post(':id/reconcile')
-  async reconcile(@Param('id') id: string, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.s.reconcile(id, req.user!.sub) };
-  }
-
-  @Post(':id/settle')
-  @Protect('ADMIN')
-  async settle(@Param('id') id: string, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.s.settle(id, req.user!.sub) };
-  }
-}

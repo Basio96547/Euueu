@@ -10,6 +10,8 @@ export interface Claims {
   role: string;
   tv: number;           // نسخة الرمز — رفعها يُبطل كل الجلسات فوراً
   jti: string;
+  /// معرّف الجلسة: يسمح بإسقاط جهاز واحد بدل إخراج صاحبه من كل أجهزته
+  sid?: string;
   exp: number;
   typ: 'access' | 'refresh';
 }
@@ -21,11 +23,11 @@ function sign(payload: Claims) {
   return `${head}.${body}.${mac}`;
 }
 
-export function issue(sub: string, role: string, tv: number) {
+export function issue(sub: string, role: string, tv: number, sid?: string) {
   const now = Math.floor(Date.now() / 1000);
   return {
-    accessToken: sign({ sub, role, tv, jti: randomUUID(), exp: now + 15 * 60, typ: 'access' }),
-    refreshToken: sign({ sub, role, tv, jti: randomUUID(), exp: now + 30 * 86400, typ: 'refresh' }),
+    accessToken: sign({ sub, role, tv, sid, jti: randomUUID(), exp: now + 15 * 60, typ: 'access' }),
+    refreshToken: sign({ sub, role, tv, sid, jti: randomUUID(), exp: now + 30 * 86400, typ: 'refresh' }),
     expiresIn: 15 * 60,
   };
 }

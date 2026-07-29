@@ -1,11 +1,8 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 
 /** لا مراجعة قبل ثلاثة أيام من التسليم — الفصل 14 §14.5 */
 const COOLDOWN_DAYS = 3;
-const ANY_ROLE = ['CUSTOMER', 'SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN'];
 
 /**
  * كلمات ترفع الراية ولا ترفض تلقائياً.
@@ -16,9 +13,8 @@ const FLAG_TERMS = [
   'واتساب', 'تلغرام', 'اتصل بي', 'رقمي',
 ];
 
-@Injectable()
 export class ReviewsService {
-  constructor(@Inject(PrismaService) private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
   private flag(text: string) {
     const t = text.toLowerCase();
@@ -251,78 +247,3 @@ export class ReviewsService {
   }
 }
 
-@Controller()
-export class ReviewsController {
-  constructor(@Inject(ReviewsService) private r: ReviewsService) {}
-
-  @Get('catalog/products/:slug/reviews')
-  async forProduct(@Param('slug') slug: string) { return { data: await this.r.forProduct(slug) }; }
-
-  @Get('catalog/products/:slug/questions')
-  async questions(@Param('slug') slug: string) { return { data: await this.r.questions(slug) }; }
-
-  @Post('reviews')
-  @Protect(...ANY_ROLE)
-  async create(
-    @Body() b: { orderNo: string; sku: string; rating: number; title?: string; body?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.create(req.user!.sub, b) };
-  }
-
-  @Post('reviews/:id/report')
-  @Protect(...ANY_ROLE)
-  async report(
-    @Param('id') id: string,
-    @Body() b: { reason: string; note?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.report(id, req.user?.sub, b.reason, b.note) };
-  }
-
-  @Post('catalog/products/:slug/questions')
-  @Protect(...ANY_ROLE)
-  async ask(
-    @Param('slug') slug: string,
-    @Body() b: { body: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.ask(req.user!.sub, slug, b.body) };
-  }
-
-  /* ————— الإشراف ————— */
-
-  @Get('admin/moderation/reviews')
-  @Protect('SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN')
-  async queue(@Query('status') status?: string) { return { data: await this.r.queue(status) }; }
-
-  @Post('admin/moderation/reviews/:id')
-  @Protect('SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN')
-  async moderate(
-    @Param('id') id: string,
-    @Body() b: { to: 'PUBLISHED' | 'REJECTED'; rejectReason?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.moderate(id, b.to, req.user!.sub, b.rejectReason) };
-  }
-
-  @Post('admin/moderation/reviews/:id/reply')
-  @Protect('SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN')
-  async reply(@Param('id') id: string, @Body() b: { body: string }) {
-    return { data: await this.r.reply(id, b.body) };
-  }
-
-  @Get('admin/moderation/questions')
-  @Protect('SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN')
-  async questionQueue() { return { data: await this.r.questionQueue() }; }
-
-  @Post('admin/moderation/questions/:id/answer')
-  @Protect('SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'ADMIN')
-  async answer(
-    @Param('id') id: string,
-    @Body() b: { answerBody: string; publish?: boolean },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.r.answer(id, req.user!.sub, b.answerBody, b.publish) };
-  }
-}

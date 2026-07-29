@@ -1,10 +1,7 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
-import { MaybeAuth, Protect } from '../common/guards.js';
 
-const ANY_ROLE = ['CUSTOMER', 'SUPPORT', 'CATALOG_ADMIN', 'OPS_MANAGER', 'WAREHOUSE', 'COURIER', 'ADMIN'];
 
 /** مهل أول رد والحل بالدقائق ضمن ساعات العمل — الفصل 14 §14.7 */
 const SLA: Record<string, { first: number; resolve: number }> = {
@@ -22,11 +19,10 @@ const STATUS_AR: Record<string, string> = {
 /** الحالات التي يتجمّد عندها عدّاد المهلة */
 const FROZEN = new Set(['PENDING_CUSTOMER', 'RESOLVED', 'CLOSED']);
 
-@Injectable()
 export class TicketsService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
   ) {}
 
   /**
@@ -340,77 +336,3 @@ export class TicketsService {
   }
 }
 
-@Controller()
-export class TicketsController {
-  constructor(@Inject(TicketsService) private t: TicketsService) {}
-
-  @Post('support/tickets')
-  @MaybeAuth()
-  async open(@Body() b: any, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.t.open({ ...b, userPublicId: req.user?.sub }) };
-  }
-
-  @Get('support/tickets/mine')
-  @Protect(...ANY_ROLE)
-  async mine(@Req() req: { user?: { sub: string } }) {
-    return { data: await this.t.mine(req.user!.sub) };
-  }
-
-  @Get('support/tickets/:ticketNo')
-  @Protect(...ANY_ROLE)
-  async one(@Param('ticketNo') n: string, @Req() req: { user?: { sub: string } }) {
-    return { data: await this.t.byNo(n, req.user?.sub) };
-  }
-
-  @Post('support/tickets/:ticketNo/reply')
-  @Protect(...ANY_ROLE)
-  async customerReply(
-    @Param('ticketNo') n: string,
-    @Body() b: { body: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.t.customerReply(n, req.user!.sub, b.body) };
-  }
-
-  @Post('support/tickets/:ticketNo/csat')
-  @MaybeAuth()
-  async csat(@Param('ticketNo') n: string, @Body() b: { score: number; comment?: string }) {
-    return { data: await this.t.csat(n, b.score, b.comment) };
-  }
-
-  /* ————— الوكلاء ————— */
-
-  @Get('admin/tickets')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async list(@Query('status') status?: string) { return { data: await this.t.list(status) }; }
-
-  @Get('admin/tickets/metrics')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async metrics(@Query('days') days?: string) {
-    return { data: await this.t.metrics(days ? Number(days) : 30) };
-  }
-
-  @Get('admin/tickets/macros')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async macros() { return { data: await this.t.macros() }; }
-
-  @Post('admin/tickets/:ticketNo/reply')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async reply(
-    @Param('ticketNo') n: string,
-    @Body() b: { body: string; internal?: boolean; macroCode?: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.t.reply(n, req.user!.sub, b) };
-  }
-
-  @Post('admin/tickets/:ticketNo/transition')
-  @Protect('SUPPORT', 'OPS_MANAGER', 'ADMIN')
-  async transition(
-    @Param('ticketNo') n: string,
-    @Body() b: { to: string },
-    @Req() req: { user?: { sub: string } },
-  ) {
-    return { data: await this.t.transition(n, b.to, req.user!.sub) };
-  }
-}

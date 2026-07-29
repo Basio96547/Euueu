@@ -4,6 +4,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // محرك WebAssembly ومحوّل السائق: شرط تشغيل Prisma داخل Cloudflare Worker،
+  // فالمحرك الثنائي الأصلي لا مكان له هناك. الاستعلامات والمخطَّط لا يتغيّران.
+  previewFeatures = ["driverAdapters", "queryCompiler"]
+  output = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -159,6 +163,10 @@ model User {
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
 
+  /// تفضيلات الإشعار: {"orders":true,"promos":false,...} — حقل واحد بدل
+  /// جدول لصفٍّ واحد لكل مستخدم لا يُستعلَم عليه إلا مع صاحبه
+  notifyPrefs     Json      @default("{}") @map("notify_prefs")
+
   addresses       Address[]
   orders          Order[]
   carts           Cart[]
@@ -171,6 +179,11 @@ model User {
   settlements     CashSettlement[]   @relation("SettlementCollector")
   pushSubs        PushSubscription[]
   courier         Courier?
+  sessions        Session[]
+  wishlist        WishlistItem[]
+  deletionRequests AccountDeletionRequest[]
+  readinessChecked ReadinessCheck[]
+  routineRuns      OpsRoutineRun[]
 
   @@map("users")
 }
@@ -301,6 +314,8 @@ model ProductVariant {
   cartItems    CartItem[]
   priceAlerts  PriceAlert[]
   stockAlerts  StockAlert[]
+  poLines      PurchaseOrderLine[]
+  wishlistedBy WishlistItem[]
 
   @@unique([productId, storageGb, ramGb, colorCode, deviceOrigin, partCode])
   @@index([productId])
@@ -1253,4 +1268,221 @@ model BundleItem {
 
   @@unique([bundleId, variantSku])
   @@map("bundle_items")
+}
+
+// ——————————————————— المشتريات والموردون (الفصل 16) ———————————————————
+
+enum PurchaseOrderState {
+  DRAFT
+  CONFIRMED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+/// المورد جدولٌ لا اسمٌ نصّي في أمر الشراء.
+/// تقييم المورد الشهري (الالتزام، العيوب، فارق السعر) يحتاج كياناً يُجمَع
+/// عليه تاريخُه، واسمٌ مكتوب بأربع صيغ في أربعة أوامر شراء لا يُجمَع عليه شيء.
+model Supplier {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String    @unique @db.VarChar(24)
+  name         String    @db.VarChar(120)
+  contactName  String?   @map("contact_name") @db.VarChar(96)
+  contactPhone String?   @map("contact_phone") @db.VarChar(16)
+  country      String?   @db.Char(2)
+  /// مهلة التوريد المتوقَّعة بالأيام — أساس احتساب نقطة إعادة الطلب
+  leadTimeDays Int       @default(14) @map("lead_time_days")
+  notes        String?
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+/// أمر الشراء — كان يُخزَّن في `audit_logs` وهو العيب نفسه الذي أُصلح في
+/// مطالبات الكفالة: حالةٌ تُستنتج من سطور سجل، ولا استعلام عليها، وتضيع
+/// لو نُظّف السجل. السجل للتدقيق، والحالة للجداول.
+model PurchaseOrder {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  poNo            String             @unique @map("po_no") @db.VarChar(16)
+  supplierId      String             @map("supplier_id") @db.Uuid
+  state           PurchaseOrderState @default(CONFIRMED)
+  /// قيمة البضاعة وحدها بسنتات الدولار
+  goodsUsdCents   BigInt             @map("goods_usd_cents")
+  /// شحن وجمارك ورسوم — تُوزَّع على الوحدات بالقيمة لا بالعدد
+  extraUsdCents   BigInt             @default(0) @map("extra_usd_cents")
+  totalUsdCents   BigInt             @map("total_usd_cents")
+  /// معامل التحميل بأجزاء المليون: 139276 = 13.9276%
+  landedFactorPpm Int                @default(0) @map("landed_factor_ppm")
+  expectedAt      DateTime?          @map("expected_at") @db.Timestamptz
+  receivedAt      DateTime?          @map("received_at") @db.Timestamptz
+  createdById     String?            @map("created_by_id") @db.Uuid
+  note            String?
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  lines    PurchaseOrderLine[]
+
+  @@index([state, createdAt])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id                     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  poId                   String @map("po_id") @db.Uuid
+  variantId              String @map("variant_id") @db.Uuid
+  qty                    Int
+  qtyReceived            Int    @default(0) @map("qty_received")
+  unitCostUsdCents       BigInt @map("unit_cost_usd_cents")
+  /// التكلفة الشاملة بعد توزيع الإضافات — وهي أساس هامش الربح الحقيقي
+  landedUnitCostUsdCents BigInt @map("landed_unit_cost_usd_cents")
+
+  po      PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([poId, variantId])
+  @@index([variantId])
+  @@map("purchase_order_lines")
+}
+
+// ——————————————————— قائمة الرغبات (الفصل 14) ———————————————————
+
+model WishlistItem {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  variantId String   @map("variant_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([userId, variantId])
+  @@index([userId])
+  @@map("wishlist_items")
+}
+
+// ——————————————————— الجلسات وحذف الحساب (الفصل 9) ———————————————————
+
+/// جلسة لكل تسجيل دخول.
+/// `token_version` يُبطل كل الجلسات دفعةً واحدة، وهو سلاح ثقيل: من ضاع
+/// هاتفه يريد إسقاط ذلك الجهاز وحده لا إخراج نفسه من كل أجهزته.
+model Session {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  /// يُحمل في مطالبة `sid` داخل الرمزين معاً
+  userAgent  String?   @map("user_agent") @db.VarChar(200)
+  ip         String?   @db.VarChar(45)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("sessions")
+}
+
+enum DeletionRequestState {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+/// طلب حذف الحساب — بند الجاهزية 25.
+/// الحذف لا يكون فورياً ولا صامتاً: مهلةٌ معلنة، وسجلٌ لما حُذف وما بقي،
+/// لأن فاتورةً صدرت لا تُمحى وكفالةً سارية لا تسقط بحذف الحساب.
+model AccountDeletionRequest {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String               @map("user_id") @db.Uuid
+  state       DeletionRequestState @default(PENDING)
+  reason      String?
+  requestedAt DateTime             @default(now()) @map("requested_at") @db.Timestamptz
+  /// يُنفَّذ بعدها ما لم يُلغَ الطلب — ثلاثون يوماً كما في سياسة الخصوصية
+  dueAt       DateTime             @map("due_at") @db.Timestamptz
+  completedAt DateTime?            @map("completed_at") @db.Timestamptz
+  note        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([state, dueAt])
+  @@map("account_deletion_requests")
+}
+
+// ——————————————————— الجاهزية والمهام الدورية (الفصل 19 §19.5) ———————————————————
+
+enum ReadinessCategory {
+  TECH
+  CONTENT
+  OPS
+  LEGAL
+  FINANCE
+}
+
+enum ReadinessStatus {
+  PENDING
+  PASSED
+  FAILED
+  WAIVED
+}
+
+/// بنود الجاهزية صفوفٌ في قاعدة البيانات لا وثيقة خارجية:
+/// وثيقةٌ في ملف تُقرأ مرة وتُنسى، وصفٌّ بحالةٍ يمنع الإطلاق حتى يُحسم.
+model ReadinessCheck {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String            @unique @db.VarChar(48)
+  category     ReadinessCategory
+  title        Json
+  isBlocking   Boolean           @default(true) @map("is_blocking")
+  ownerRole    String            @map("owner_role") @db.VarChar(32)
+  evidenceUrl  String?           @map("evidence_url")
+  status       ReadinessStatus   @default(PENDING)
+  checkedById  String?           @map("checked_by_id") @db.Uuid
+  checkedAt    DateTime?         @map("checked_at") @db.Timestamptz
+  /// إلزامي عند WAIVED: تجاوزُ بندٍ بلا سبب مكتوب هو إخفاؤه لا حسمه
+  waiverReason String?           @map("waiver_reason")
+  sortOrder    Int               @default(0) @map("sort_order")
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  checkedBy User? @relation(fields: [checkedById], references: [id])
+
+  @@index([category, sortOrder])
+  @@map("readiness_checks")
+}
+
+enum RoutineCadence {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum RoutineRunStatus {
+  DONE
+  SKIPPED
+  FAILED
+}
+
+/// تنفيذ المهام الدورية في 19.2 — القيد الفريد يمنع ازدواج التنفيذ
+model OpsRoutineRun {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routineCode   String           @map("routine_code") @db.VarChar(48)
+  cadence       RoutineCadence
+  /// 2026-07-28 أو 2026-W31 أو 2026-07
+  periodKey     String           @map("period_key") @db.VarChar(12)
+  performedById String?          @map("performed_by_id") @db.Uuid
+  isAutomated   Boolean          @default(false) @map("is_automated")
+  status        RoutineRunStatus @default(DONE)
+  notes         String?
+  completedAt   DateTime         @default(now()) @map("completed_at") @db.Timestamptz
+
+  performedBy User? @relation(fields: [performedById], references: [id])
+
+  @@unique([routineCode, periodKey])
+  @@index([cadence, periodKey])
+  @@map("ops_routine_runs")
 }

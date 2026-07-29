@@ -1,0 +1,46 @@
+{
+  // تالي شام — Worker واحد يخدم الموقع والتطبيق واللوحة والواجهة البرمجية.
+  //
+  // كانت أربعة Workers: الموقع وحده كان له نطاق، والتطبيق واللوحة بلا
+  // مسار (فـ‎/app/cart‎ ترجع 404 على النطاق الحيّ)، والواجهة البرمجية بلا
+  // استضافة أصلاً. أصلٌ واحد يُنهي ذلك كله ويُلغي الحاجة إلى CORS.
+  //
+  // النشر: pnpm run build:worker && npx wrangler deploy
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "talisham",
+  "main": "apps/api/dist/worker.js",
+  "compatibility_date": "2026-07-01",
+  // Prisma ومحوّل pg يحتاجان واجهات Node داخل الـWorker
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "./dist-worker",
+    "binding": "ASSETS",
+    // الاحتياط للتطبيقين يُدار في الشيفرة: لكلٍّ صفحته لا صفحة واحدة للكل
+    "not_found_handling": "404-page"
+  },
+
+  "observability": { "enabled": true },
+
+  "vars": {
+    "PUBLIC_SITE_URL": "https://talisham.com",
+    "NODE_ENV": "production"
+  },
+
+  // الكنس كل دقيقة: الحجز المرن يموت بعد ربع ساعة، والموت تاريخٌ في صفّ
+  // لا حدثٌ يقع من تلقائه — وبلا كنس يقول المتجر «نفدت» ورفّه ممتلئ.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  "routes": [
+    { "pattern": "talisham.com", "custom_domain": true },
+    { "pattern": "www.talisham.com", "custom_domain": true },
+    { "pattern": "api.talisham.com", "custom_domain": true }
+  ]
+
+  // الأسرار تُضبط خارج الملف ولا تُكتب فيه أبداً:
+  //   npx wrangler secret put DATABASE_URL
+  //   npx wrangler secret put JWT_SECRET
+  //   npx wrangler secret put WHATSAPP_PROVIDER_TOKEN
+}

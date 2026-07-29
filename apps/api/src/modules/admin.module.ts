@@ -1,10 +1,8 @@
-import { Inject, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { OrdersService } from './orders.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { ReservationSweeper } from './reservations.sweeper.js';
 import { Errors } from '../common/errors.js';
-import { Protect } from '../common/guards.js';
 
 type Outcome = 'CONFIRMED' | 'NO_ANSWER' | 'RESCHEDULE' | 'ADDRESS_FIXED' | 'CANCELLED';
 
@@ -13,18 +11,14 @@ const EXT_HOURS = 48;
 const RARE_EXT_HOURS = 12;
 const RARE_THRESHOLD = 2;
 
-@Controller('admin')
-@Protect('OPS_MANAGER', 'ADMIN')
-export class AdminController {
+export class AdminService {
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(OrdersService) private orders: OrdersService,
-    @Inject(NotificationsService) private notify: NotificationsService,
-    @Inject(ReservationSweeper) private sweeper: ReservationSweeper,
+    private prisma: PrismaService,
+    private orders: OrdersService,
+    private notify: NotificationsService,
+    private sweeper: ReservationSweeper,
   ) {}
-
-  @Get('orders')
-  async list(@Query('status') status?: string) {
+  async list(status?: string) {
     const rows = await this.prisma.order.findMany({
       where: status ? { status: status as any } : {},
       orderBy: { placedAt: 'desc' }, take: 50,
@@ -49,8 +43,7 @@ export class AdminController {
   }
 
   /** انتقال PENDING_CONFIRMATION → PROCESSING بعد تأكيد العميل (الفصل 8 §8.4) */
-  @Post('orders/:orderNo/confirm')
-  async confirm(@Param('orderNo') no: string, @Body() b: { outcome: Outcome; notes?: string }) {
+  async confirm(no: string, b: { outcome: Outcome; notes?: string }) {
     const order = await this.prisma.order.findUnique({
       where: { orderNo: no },
       include: { items: { include: { variant: { include: { levels: true } } } }, shippingAddress: true },
@@ -130,8 +123,7 @@ export class AdminController {
   }
 
   /** اعتماد سعر صرف جديد — صف جديد دائماً، لا تعديل على قديم */
-  @Post('fx')
-  async setFx(@Body() b: { rate: number; validHours?: number; note?: string }) {
+  async setFx(b: { rate: number; validHours?: number; note?: string }) {
     const now = new Date();
     const row = await this.prisma.fxRate.create({
       data: {
@@ -147,8 +139,7 @@ export class AdminController {
   }
 
   /** قائمة المنتجات للوحة — تشمل التجريبية التي يخفيها المتجر العام */
-  @Get('catalog/products')
-  async products(@Query('demo') demo?: string) {
+  async products(demo?: string) {
     const rows = await this.prisma.product.findMany({
       where: {
         deletedAt: null,
@@ -180,8 +171,7 @@ export class AdminController {
    * (count(units) ≠ on_hand). لذلك التحويل يصفّر الكمية بالضرورة:
    * المنتج يصير حقيقياً بمخزون صفر، والبضاعة تدخل من بوابة المشتريات وحدها.
    */
-  @Post('catalog/products/:slug/promote')
-  async promote(@Param('slug') slug: string) {
+  async promote(slug: string) {
     // كنس أولاً: حجز ميت لا يجوز أن يقف في وجه التحويل
     await this.sweeper.sweep();
 
@@ -229,7 +219,6 @@ export class AdminController {
   }
 
   /** كنس يدوي — الدوري يعمل كل دقيقة، وهذا لمن أراد التحقق فوراً */
-  @Post('inventory/sweep')
   async sweep() { return { data: await this.sweeper.sweep() }; }
 
   /**
@@ -237,15 +226,11 @@ export class AdminController {
    * ما يتغيّر بلا نشر كود: السقوف والمحافظات المخدومة وإيقاف المتجر.
    * غيابها يعني أن تعطيل الطلبات ساعةَ أزمة يحتاج مبرمجاً ونشراً.
    */
-  @Get('settings')
   async settings() {
     const rows = await this.prisma.storeSetting.findMany({ orderBy: { key: 'asc' } });
     return { data: rows.map((r) => ({ key: r.key, value: r.value, updatedAt: r.updatedAt })) };
   }
-
-  @Post('settings')
-  @Protect('ADMIN')
-  async setSetting(@Body() b: { key: string; value: unknown }, @Req() req: { user?: { sub: string } }) {
+  async setSetting(b: { key: string; value: unknown }, req: { user?: { sub: string } }) {
     const KNOWN: Record<string, 'number' | 'boolean' | 'array'> = {
       cod_max_order_usd_cents: 'number',
       open_orders_per_phone_max: 'number',
@@ -292,8 +277,6 @@ export class AdminController {
     });
     return { data: { key: row.key, value: row.value } };
   }
-
-  @Get('dashboard')
   async dashboard() {
     const [pending, processing, delivered, lowStock, staleOrders] = await Promise.all([
       this.prisma.order.count({ where: { status: 'PENDING_CONFIRMATION' } }),

@@ -1,25 +1,19 @@
-import { Inject, Body, Controller, Get, Headers, Param, Post, Req } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { SettlementsService } from './settlements.module.js';
 import { Errors } from '../common/errors.js';
 import { roundCash } from '../common/money.js';
-import { Protect } from '../common/guards.js';
 import { kv } from '../common/kv.js';
 
-@Controller('courier')
-@Protect('COURIER', 'OPS_MANAGER', 'ADMIN')
-export class CourierController {
+export class CourierService {
   /** مفاتيح التفرّد: الإرسال المكرر بعد عودة الشبكة لا يحصّل مرتين (الفصل 17 §17.11) */
   private idemKey(k: string) { return `idem:collect:${k}`; }
 
   constructor(
-    @Inject(PrismaService) private prisma: PrismaService,
-    @Inject(NotificationsService) private notify: NotificationsService,
-    @Inject(SettlementsService) private settlements: SettlementsService,
+    private prisma: PrismaService,
+    private notify: NotificationsService,
+    private settlements: SettlementsService,
   ) {}
-
-  @Get('tasks')
   async tasks() {
     const rows = await this.prisma.order.findMany({
       where: { status: { in: ['PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] } },
@@ -42,9 +36,7 @@ export class CourierController {
       })),
     };
   }
-
-  @Post('orders/:orderNo/status')
-  async status(@Param('orderNo') no: string, @Body() b: { to: 'SHIPPED' | 'OUT_FOR_DELIVERY' | 'DELIVERY_FAILED' }) {
+  async status(no: string, b: { to: 'SHIPPED' | 'OUT_FOR_DELIVERY' | 'DELIVERY_FAILED' }) {
     const o = await this.prisma.order.findUnique({ where: { orderNo: no }, include: { shippingAddress: true } });
     if (!o) throw Errors.notFound('الطلب');
 
@@ -73,12 +65,11 @@ export class CourierController {
   }
 
   /** تسجيل التحصيل النقدي — occurred_at من جهاز المندوب، received_at من الخادم */
-  @Post('orders/:orderNo/collect')
   async collect(
-    @Param('orderNo') no: string,
-    @Body() b: { amountSyp: number; occurredAt?: string; deviceId?: string; reasonCode?: string },
-    @Req() req: { user?: { sub: string } },
-    @Headers('idempotency-key') key?: string,
+    no: string,
+    b: { amountSyp: number; occurredAt?: string; deviceId?: string; reasonCode?: string },
+    req: { user?: { sub: string } },
+    key?: string,
   ) {
     if (key) {
       const prior = await kv().get<unknown>(this.idemKey(key));

@@ -1,4 +1,3 @@
-import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service.js';
 
 /**
@@ -13,27 +12,14 @@ import { PrismaService } from '../common/prisma.service.js';
  * كل حجز يُحرَّر في معاملة واحدة مع خصمه من العدّاد وسطر في دفتر الحركات،
  * فلا تُخصم كمية بلا أثر ولا يُكتب أثر بلا خصم.
  */
-@Injectable()
-export class ReservationSweeper implements OnModuleInit, OnModuleDestroy {
-  private timer: NodeJS.Timeout | null = null;
+export class ReservationSweeper {
   private running = false;
 
-  /** كل دقيقة: أدقّ بكثير من أقصر مهلة (خمس عشرة دقيقة) وأرخص من كل طلب */
-  private readonly intervalMs = Number(process.env.SWEEP_INTERVAL_MS ?? 60_000);
+  /* يُستدعى من مهمة Worker المجدوَلة كل دقيقة، ومن اللوحة يدوياً.
+     كان مؤقّتاً داخل العملية، ولا عملية دائمة في Worker تحمله. */
   private readonly batch = 200;
 
-  constructor(@Inject(PrismaService) private prisma: PrismaService) {}
-
-  onModuleInit() {
-    if (process.env.SWEEP_DISABLED === '1') return;
-    this.timer = setInterval(() => { void this.sweep(); }, this.intervalMs);
-    this.timer.unref?.();                     // لا يمنع الخروج النظيف
-    void this.sweep();                        // مرة عند الإقلاع: قد يكون الخادم غاب طويلاً
-  }
-
-  onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
-  }
+  constructor(private prisma: PrismaService) {}
 
   /** يُستدعى دورياً ومن لوحة التحكم يدوياً */
   async sweep(now = new Date()) {
