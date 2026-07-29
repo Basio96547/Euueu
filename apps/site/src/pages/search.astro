@@ -1,0 +1,183 @@
+---
+/**
+ * البحث (الفصل 6).
+ *
+ * الفهرس يُبنى وقت البناء ويُدرَج في الصفحة نفسها: كل بطاقة تحمل نصّها
+ * المطبَّع موسَّعاً بمرادفاته، فالبحث في المتصفح مطابقةُ نصٍّ لا استدعاء
+ * شبكة — يعمل على 3G بطيء وبلا انتظار الواجهة البرمجية.
+ *
+ * بلا JavaScript: الصفحة تبقى فهرساً كاملاً للكتالوج مرتَّباً بالفئات
+ * والعلامات، ولا يُخفى منها شيء — الترشيح تحسينٌ لا شرط.
+ */
+import Base from '../layouts/Base.astro';
+import Header from '../components/Header.astro';
+import ProductCard from '../components/ProductCard.astro';
+import { products, categories, brandList, CONDITION_AR } from '../lib/catalog';
+import { expandText } from '../lib/arabic';
+
+const catName = new Map(categories.map((c) => [c.slug, c.name.ar]));
+
+const indexed = products.map((p) => {
+  const v = p.variants[0]!;
+  const parts = [
+    p.name.ar, p.name.en ?? '', p.brandName.ar, p.brandName.en ?? '',
+    catName.get(p.category) ?? '', p.slug,
+    CONDITION_AR[v.condition],
+    ...p.variants.map((x) => `${x.sku} ${x.partCode ?? ''} ${x.storageGb ?? ''}`),
+  ];
+  return { product: p, key: expandText(parts.join(' ')) };
+});
+
+const popular = ['ايفون', 'سامسونج', 'شاحن', 'سماعات', 'مستعمل'];
+---
+
+<Base
+  title="البحث"
+  description="ابحث في كل هواتف وملحقات تالي شام — بالعربية والإنجليزية، مع تسامح إملائي"
+  active="search"
+>
+  <Header title="البحث" back="/" />
+
+  <div class="wrap">
+    <form class="searchbar glass" action="/search" method="get" role="search">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+        ><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5" /></svg
+      >
+      <label class="sr-only" for="q">ابحث عن جهاز أو ملحق</label>
+      <input id="q" name="q" type="search" autocomplete="off" enterkeyhint="search"
+        placeholder="ايفون، شاحن، سماعات…" />
+    </form>
+
+    <div class="chips" aria-label="بحوث شائعة">
+      {popular.map((t) => <button class="chip" type="button" data-term={t}>{t}</button>)}
+    </div>
+
+    <p class="count" data-count>{products.length} منتجاً في الكتالوج</p>
+    <p class="empty" data-empty hidden>
+      لا نتيجة مطابقة. جرّب كلمة أقصر، أو تصفّح الفئات في الأسفل.
+    </p>
+
+    <div class="grid2" data-results>
+      {indexed.map(({ product, key }) => (
+        <div data-k={key}><ProductCard product={product} /></div>
+      ))}
+    </div>
+
+    <nav class="dirs" aria-label="تصفّح">
+      <section>
+        <h2>الفئات</h2>
+        <div class="links">
+          {categories.map((c) => <a href={`/c/${c.slug}/`}>{c.name.ar}</a>)}
+        </div>
+      </section>
+      <section>
+        <h2>العلامات</h2>
+        <div class="links">
+          {brandList.map((b) => <a href={`/b/${b.slug}/`}>{b.name.ar}</a>)}
+        </div>
+      </section>
+    </nav>
+  </div>
+
+  <script is:inline>
+    (function () {
+      var input = document.getElementById('q');
+      var cards = Array.prototype.slice.call(document.querySelectorAll('[data-k]'));
+      var count = document.querySelector('[data-count]');
+      var empty = document.querySelector('[data-empty]');
+      if (!input || !cards.length) return;
+
+      function norm(s) {
+        return s
+          .replace(/[ؐ-ًؚ-ٰٟۖ-ۭ]/g, '')
+          .replace(/ـ/g, '')
+          .replace(/[أإآٱ]/g, 'ا')
+          .replace(/ى/g, 'ي')
+          .replace(/ة/g, 'ه')
+          .replace(/ؤ/g, 'و')
+          .replace(/ئ/g, 'ي')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+      }
+
+      function apply(q) {
+        var terms = norm(q).split(' ').filter(Boolean);
+        var hits = 0;
+        cards.forEach(function (el) {
+          var key = el.getAttribute('data-k');
+          var ok = terms.every(function (t) { return key.indexOf(t) !== -1; });
+          el.hidden = !ok;
+          if (ok) hits++;
+        });
+        count.textContent = terms.length
+          ? hits + ' نتيجة لـ «' + q.trim() + '»'
+          : cards.length + ' منتجاً في الكتالوج';
+        empty.hidden = hits !== 0;
+      }
+
+      var t;
+      input.addEventListener('input', function () {
+        clearTimeout(t);
+        t = setTimeout(function () { apply(input.value); }, 120);
+      });
+
+      document.querySelectorAll('[data-term]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          input.value = b.getAttribute('data-term');
+          apply(input.value);
+          input.focus();
+        });
+      });
+
+      // ‏?q= يجعل نتيجة البحث قابلة للمشاركة برابط، وهو مقصد صفحة ساكنة
+      var q = new URLSearchParams(location.search).get('q');
+      if (q) { input.value = q; apply(q); }
+
+      // الإرسال يبقى داخل الصفحة: لا رحلة شبكة لصفحة نملك بياناتها أصلاً
+      input.form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        history.replaceState(null, '', input.value ? '/search?q=' + encodeURIComponent(input.value) : '/search');
+        apply(input.value);
+        input.blur();
+      });
+    })();
+  </script>
+</Base>
+
+<style>
+  .wrap { padding: 4px 12px 96px; display: grid; gap: 12px; }
+  .searchbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: var(--r-l);
+  }
+  .searchbar .icon { width: 20px; height: 20px; color: var(--ink-3); flex: none; }
+  .searchbar input {
+    flex: 1; font: inherit; font-size: var(--step-0);
+    background: transparent; border: 0; color: var(--ink); min-height: 28px;
+  }
+  .searchbar input:focus { outline: none; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font: inherit; font-size: var(--step--1); font-weight: 700;
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+    border-radius: 999px; padding: 7px 14px; min-height: 36px; cursor: pointer;
+  }
+  .count { font-size: var(--step--1); color: var(--ink-3); font-weight: 700; }
+  .empty { padding: 24px 0; text-align: center; color: var(--ink-3); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid2 > [hidden] { display: none; }
+  .dirs { display: grid; gap: 14px; margin-block-start: 8px; }
+  .dirs h2 { font-size: var(--step--1); color: var(--ink-3); font-weight: 800; margin-block-end: 8px; }
+  .links { display: flex; gap: 6px; flex-wrap: wrap; }
+  .links a {
+    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px; text-decoration: none;
+  }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  @media (min-width: 640px) { .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+</style>

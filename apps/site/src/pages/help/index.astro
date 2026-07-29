@@ -2,6 +2,7 @@
 import Base from '../../layouts/Base.astro';
 import Header from '../../components/Header.astro';
 import { ARTICLES } from '../../lib/help';
+import { LEGAL } from '../../lib/legal';
 ---
 
 <Base title="مركز المساعدة" description="كيف تطلب، وكيف يُحسب السعر، وسياسة الإرجاع والكفالة — تالي شام">
@@ -20,6 +21,10 @@ import { ARTICLES } from '../../lib/help';
         </a>
       ))}
     </div>
+
+    <nav class="links" aria-label="السياسات">
+      {LEGAL.map((d) => <a href={`/legal/${d.slug}/`}>{d.title}</a>)}
+    </nav>
 
     <div class="contact glass">
       <b>لم تجد جوابك؟</b>
@@ -42,5 +47,11 @@ import { ARTICLES } from '../../lib/help';
   .contact { padding: 14px; border-radius: var(--r-l); display: grid; gap: 8px; }
   .contact p { color: var(--ink-2); line-height: 1.7; font-size: var(--step--1); }
   .row { display: flex; gap: 8px; }
+  .links { display: flex; gap: 6px; flex-wrap: wrap; }
+  .links a {
+    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px; text-decoration: none;
+  }
   @media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }
 </style>

@@ -1,0 +1,208 @@
+---
+/**
+ * المقارنة (الفصل 6 §6.6).
+ *
+ * حتى أربعة أجهزة في جدول فروق. البيانات مُدرَجة وقت البناء في الصفحة
+ * (جدول صغير لكل منتج، لا صور ولا مراجعات)، والاختيار يُقرأ من `?p=` —
+ * فالمقارنة تُشارَك برابط وتفتح عند غيرك كما تركتها أنت.
+ *
+ * الصفوف المتطابقة تُطوى افتراضياً: غاية الجدول إظهار الفرق، وعرض عشرين
+ * صفاً متساوياً يخفي الثلاثة التي تهمّ.
+ */
+import Base from '../layouts/Base.astro';
+import Header from '../components/Header.astro';
+import {
+  products, categories, CONDITION_AR, ORIGIN_AR, WARRANTY_AR,
+} from '../lib/catalog';
+
+const catName = new Map(categories.map((c) => [c.slug, c.name.ar]));
+
+const data = products.map((p) => {
+  const v = p.variants[0]!;
+  const s = p.spec ?? {};
+  return {
+    slug: p.slug,
+    name: p.name.ar,
+    brand: p.brandName.ar,
+    category: catName.get(p.category) ?? p.category,
+    usd: v.priceUsdCents,
+    rows: {
+      'الفئة': catName.get(p.category) ?? p.category,
+      'العلامة': p.brandName.ar,
+      'الحالة': CONDITION_AR[v.condition],
+      'التخزين': v.storageGb ? `${v.storageGb} جيجابايت` : '—',
+      'الذاكرة العشوائية': v.ramGb ? `${v.ramGb} جيجابايت` : '—',
+      'الشاشة': s.screen_size_in ? `${s.screen_size_in} إنش` : '—',
+      'المعالج': (s.chipset as string) ?? '—',
+      'الكاميرا': s.camera_main_mp ? `${s.camera_main_mp} ميجابكسل` : '—',
+      'البطارية': s.battery_mah
+        ? `${s.battery_mah} م.أ`
+        : s.capacity_mah ? `${s.capacity_mah} م.أ` : '—',
+      'صحة البطارية': v.batteryHealthPct ? `${v.batteryHealthPct}٪` : '—',
+      'الشبكة': v.networkGen ?? (s.network_gen as string) ?? '—',
+      'شريحتان': v.esimOnly ? 'إلكترونية فقط' : v.dualSim ? 'نعم' : 'لا',
+      'المنشأ': ORIGIN_AR[v.deviceOrigin],
+      'رمز النسخة': v.partCode ?? '—',
+      'الكفالة': `${WARRANTY_AR[v.warrantyType]}${v.warrantyMonths ? ` · ${v.warrantyMonths} شهراً` : ''}`,
+      'التوفّر': v.stock > 0 ? `متوفر (${v.stock})` : 'نفد',
+    },
+  };
+});
+
+const ROWS = Object.keys(data[0]?.rows ?? {});
+---
+
+<Base title="المقارنة" description="قارن حتى أربعة أجهزة في جدول فروق واحد — تالي شام" active="search">
+  <Header title="المقارنة" back="/" />
+
+  <div class="wrap">
+    <p class="lead" data-lead>
+      اختر حتى أربعة أجهزة لمقارنتها. تُحفظ المقارنة في متصفحك، ورابط الصفحة
+      يحملها معك إن أردت مشاركتها.
+    </p>
+
+    <div class="picker glass">
+      <label for="pick">أضف جهازاً</label>
+      <select id="pick">
+        <option value="">— اختر —</option>
+        {data.map((d) => <option value={d.slug}>{d.name} · {d.brand}</option>)}
+      </select>
+      <button class="btn btn--ghost" type="button" data-clear>تفريغ</button>
+    </div>
+
+    <label class="diffonly">
+      <input type="checkbox" data-diff checked />
+      أظهر الفروق فقط
+    </label>
+
+    <div class="tablewrap" data-out hidden></div>
+
+    <p class="empty" data-empty>لم تختر شيئاً بعد.</p>
+
+    <noscript>
+      <p class="empty">
+        المقارنة تحتاج جافاسكربت. كل الأرقام موجودة كاملةً في صفحة كل منتج،
+        وتستطيع فتح صفحتين جنباً إلى جنب: <a href="/c/smartphones/">تصفّح الهواتف</a>.
+      </p>
+    </noscript>
+  </div>
+
+  <script is:inline define:vars={{ DATA: data, ROWS }}>
+    (function () {
+      var out = document.querySelector('[data-out]');
+      var empty = document.querySelector('[data-empty]');
+      var pick = document.getElementById('pick');
+      var diff = document.querySelector('[data-diff]');
+      var byslug = {};
+      DATA.forEach(function (d) { byslug[d.slug] = d; });
+
+      var fx = window.__FX__ || { rate: 0 };
+      function money(c) {
+        var pref = localStorage.getItem('currency_pref') || 'SYP';
+        if (pref === 'USD') return (c / 100).toFixed(2) + ' $';
+        return (Math.round((c * fx.rate) / 100 / 1000) * 1000).toLocaleString('en-US') + ' ل.س';
+      }
+
+      function read() {
+        var q = new URLSearchParams(location.search).get('p');
+        var list = q ? q.split(',') : JSON.parse(localStorage.getItem('compare') || '[]');
+        return list.filter(function (s) { return byslug[s]; }).slice(0, 4);
+      }
+
+      function write(list) {
+        localStorage.setItem('compare', JSON.stringify(list));
+        var url = list.length ? '/compare?p=' + list.join(',') : '/compare';
+        history.replaceState(null, '', url);
+        render();
+      }
+
+      function render() {
+        var list = read();
+        empty.hidden = list.length > 0;
+        out.hidden = list.length === 0;
+        if (!list.length) { out.innerHTML = ''; return; }
+
+        var items = list.map(function (s) { return byslug[s]; });
+        var html = '<table class="cmp"><thead><tr><th></th>';
+        items.forEach(function (d) {
+          html += '<th><a href="/p/' + d.slug + '/">' + d.name + '</a>'
+            + '<button type="button" data-rm="' + d.slug + '" aria-label="أزل">×</button></th>';
+        });
+        html += '</tr></thead><tbody>';
+
+        html += '<tr class="price"><th>السعر</th>';
+        items.forEach(function (d) { html += '<td>' + money(d.usd) + '</td>'; });
+        html += '</tr>';
+
+        ROWS.forEach(function (k) {
+          var vals = items.map(function (d) { return d.rows[k]; });
+          var same = vals.every(function (v) { return v === vals[0]; });
+          if (diff.checked && same && items.length > 1) return;
+          html += '<tr' + (same ? ' class="same"' : '') + '><th>' + k + '</th>';
+          vals.forEach(function (v) { html += '<td>' + v + '</td>'; });
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        out.innerHTML = html;
+
+        out.querySelectorAll('[data-rm]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            write(read().filter(function (s) { return s !== b.getAttribute('data-rm'); }));
+          });
+        });
+      }
+
+      pick.addEventListener('change', function () {
+        var v = pick.value;
+        pick.value = '';
+        if (!v) return;
+        var list = read();
+        if (list.indexOf(v) !== -1) return;
+        if (list.length >= 4) { alert('أربعة أجهزة كحدّ أقصى — أزل واحداً أولاً.'); return; }
+        write(list.concat([v]));
+      });
+
+      document.querySelector('[data-clear]').addEventListener('click', function () { write([]); });
+      diff.addEventListener('change', render);
+      document.addEventListener('click', function (e) {
+        if (e.target.closest('[data-cur-btn]')) setTimeout(render, 0);
+      });
+
+      // رابط فيه ?p= يُثبَّت في التخزين حتى تبقى المقارنة بعد الإغلاق
+      var q = new URLSearchParams(location.search).get('p');
+      if (q) localStorage.setItem('compare', JSON.stringify(read()));
+      render();
+    })();
+  </script>
+</Base>
+
+<style>
+  .wrap { padding: 4px 12px 96px; display: grid; gap: 12px; }
+  .lead { color: var(--ink-2); line-height: 1.8; font-size: var(--step--1); }
+  .picker { display: flex; gap: 8px; align-items: center; padding: 12px; border-radius: var(--r-l); flex-wrap: wrap; }
+  .picker label { font-weight: 700; font-size: var(--step--1); }
+  .picker select {
+    flex: 1; min-width: 160px; min-height: 40px; font: inherit;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--r-s); padding: 0 10px;
+  }
+  .diffonly { display: flex; gap: 8px; align-items: center; font-size: var(--step--1); color: var(--ink-2); }
+  .tablewrap { overflow-x: auto; }
+  .empty { padding: 32px 0; text-align: center; color: var(--ink-3); }
+
+  .wrap :global(.cmp) { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+  .wrap :global(.cmp th),
+  .wrap :global(.cmp td) {
+    border: 1px solid var(--line); padding: 9px 10px; text-align: start; vertical-align: top;
+  }
+  .wrap :global(.cmp thead th) { background: var(--surface); font-weight: 800; min-width: 120px; }
+  .wrap :global(.cmp thead a) { color: inherit; text-decoration: none; }
+  .wrap :global(.cmp thead button) {
+    margin-inline-start: 6px; background: transparent; border: 0; color: var(--ink-3);
+    font: inherit; font-size: 1rem; cursor: pointer; min-width: 24px; min-height: 24px;
+  }
+  .wrap :global(.cmp tbody th) { color: var(--ink-3); font-weight: 700; }
+  .wrap :global(.cmp tr.price td) { color: var(--brass); font-weight: 800; }
+  .wrap :global(.cmp tr.same td) { color: var(--ink-3); }
+</style>

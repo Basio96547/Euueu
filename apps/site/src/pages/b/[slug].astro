@@ -1,0 +1,86 @@
+---
+/**
+ * صفحة العلامة التجارية (الفصل 12 §12.1).
+ * «ايفون في سوريا» و«سامسونج دمشق» استعلامات تصفّحية لها صفحة تستحقها،
+ * وبلا هذه الصفحة تتنافس صفحات المنتجات على الكلمة نفسها وتخسرها جميعاً.
+ */
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import { brandList, productsOfBrand, categories } from '../../lib/catalog';
+
+export function getStaticPaths() {
+  return brandList.map((b) => ({ params: { slug: b.slug }, props: { brand: b } }));
+}
+
+const { brand } = Astro.props;
+const items = productsOfBrand(brand.slug);
+const catName = new Map(categories.map((c) => [c.slug, c.name.ar]));
+
+const inCats = [...new Set(items.map((p) => p.category))];
+const cheapest = items.length
+  ? Math.min(...items.map((p) => Math.min(...p.variants.map((v) => v.priceUsdCents))))
+  : 0;
+
+const ld = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: `${brand.name.ar} في سوريا`,
+  about: { '@type': 'Brand', name: brand.name.en ?? brand.name.ar },
+  numberOfItems: items.length,
+};
+---
+
+<Base
+  title={`${brand.name.ar} في سوريا`}
+  description={`أجهزة وملحقات ${brand.name.ar} بأسعار محدَّثة ودفع عند الاستلام — تالي شام`}
+  active="search"
+>
+  <Header title={brand.name.ar} back="/" />
+
+  <div class="wrap">
+    <section class="hero glass">
+      <h2>{brand.name.ar}{brand.name.en ? ` · ${brand.name.en}` : ''}</h2>
+      <p>
+        {items.length} منتجاً من {brand.name.ar} متوفر الآن، دفعٌ عند الاستلام بعد
+        معاينة الجهاز، وكفالةٌ مكتوبة على كل قطعة.
+      </p>
+      {cheapest > 0 && (
+        <p class="from">
+          يبدأ من <b data-usd={cheapest} class="tnum"></b>
+        </p>
+      )}
+    </section>
+
+    {items.length === 0 ? (
+      <p class="empty">لا منتجات من هذه العلامة حالياً.</p>
+    ) : (
+      <div class="grid2">{items.map((p) => <ProductCard product={p} />)}</div>
+    )}
+
+    {inCats.length > 0 && (
+      <nav class="links" aria-label="فئات ذات صلة">
+        {inCats.map((c) => <a href={`/c/${c}/`}>{catName.get(c) ?? c}</a>)}
+      </nav>
+    )}
+  </div>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(ld)} />
+</Base>
+
+<style>
+  .wrap { padding: 4px 12px 96px; display: grid; gap: 12px; }
+  .hero { padding: 14px; border-radius: var(--r-l); display: grid; gap: 6px; }
+  .hero h2 { font-size: var(--step-1); font-weight: 800; }
+  .hero p { color: var(--ink-2); line-height: 1.8; font-size: var(--step--1); }
+  .from b { color: var(--brass); font-weight: 800; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .empty { padding: 40px 0; text-align: center; color: var(--ink-3); }
+  .links { display: flex; gap: 6px; flex-wrap: wrap; }
+  .links a {
+    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px; text-decoration: none;
+  }
+  @media (min-width: 640px) { .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+</style>

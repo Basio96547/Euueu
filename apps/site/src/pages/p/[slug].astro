@@ -126,6 +126,13 @@ const jsonLd = {
       الدفع نقداً عند الاستلام — تفحص الجهاز قبل أن تدفع
     </div>
 
+    <div class="cmpbar">
+      <button class="btn btn--ghost" type="button" data-cmp={product.slug} aria-pressed="false">
+        أضف إلى المقارنة
+      </button>
+      <a class="cmplink" href="/compare/" hidden data-cmp-link>افتح المقارنة (<span data-cmp-n>0</span>)</a>
+    </div>
+
     {reviews.count > 0 && (
       <section class="also">
         <h2>آراء من اشتروه</h2>
@@ -218,6 +225,38 @@ const jsonLd = {
         });
       });
     })();
+
+    // المقارنة: قائمة في تخزين المتصفح تقرأها /compare — بلا حساب ولا شبكة
+    (function () {
+      var btn = document.querySelector('[data-cmp]');
+      var link = document.querySelector('[data-cmp-link]');
+      var n = document.querySelector('[data-cmp-n]');
+      if (!btn) return;
+      var slug = btn.getAttribute('data-cmp');
+
+      function list() {
+        try { return JSON.parse(localStorage.getItem('compare') || '[]'); } catch (e) { return []; }
+      }
+      function render() {
+        var l = list();
+        var on = l.indexOf(slug) !== -1;
+        btn.setAttribute('aria-pressed', String(on));
+        btn.textContent = on ? 'في المقارنة ✓' : 'أضف إلى المقارنة';
+        link.hidden = l.length === 0;
+        link.href = '/compare?p=' + l.join(',');
+        n.textContent = String(l.length);
+      }
+      btn.addEventListener('click', function () {
+        var l = list();
+        var i = l.indexOf(slug);
+        if (i !== -1) l.splice(i, 1);
+        else if (l.length >= 4) { alert('أربعة أجهزة كحدّ أقصى في المقارنة.'); return; }
+        else l.push(slug);
+        localStorage.setItem('compare', JSON.stringify(l));
+        render();
+      });
+      render();
+    })();
   </script>
 </Base>
 
@@ -236,6 +275,9 @@ const jsonLd = {
   :global(body) { padding-block-end: 152px; }
   .pdp h1 { font-size: var(--step-2); font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .cmpbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .cmplink { font-size: var(--step--1); font-weight: 700; color: var(--brass); text-decoration: none; }
 
   .verify {
     display: flex; gap: 10px; align-items: flex-start; padding: 11px; border-radius: var(--r-m);

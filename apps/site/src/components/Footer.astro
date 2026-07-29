@@ -1,0 +1,73 @@
+---
+/**
+ * تذييل الموقع.
+ * وجوده شرط جاهزية لا زينة: بندا 24 و25 يطلبان أن تكون سياسة الإرجاع
+ * وشروط الاستخدام والخصوصية **منشورة وقابلة للوصول من كل صفحة** —
+ * سياسةٌ لا يجدها الزبون كأنها غير منشورة.
+ */
+const groups: Array<{ h: string; links: Array<[string, string]> }> = [
+  {
+    h: 'المتجر',
+    links: [
+      ['/c/smartphones/', 'هواتف ذكية'],
+      ['/c/used-refurbished/', 'مستعمل ومجدَّد'],
+      ['/c/power/', 'بطاريات وشواحن'],
+      ['/compare/', 'المقارنة'],
+    ],
+  },
+  {
+    h: 'المساعدة',
+    links: [
+      ['/help/', 'مركز المساعدة'],
+      ['/help/how-to-order/', 'كيف أطلب'],
+      ['/help/check-imei/', 'التحقق من IMEI'],
+      ['/blog/', 'المدونة'],
+    ],
+  },
+  {
+    h: 'السياسات',
+    links: [
+      ['/legal/return-policy/', 'الإرجاع والاستبدال'],
+      ['/legal/warranty-policy/', 'شروط الكفالة'],
+      ['/legal/terms/', 'شروط الاستخدام'],
+      ['/legal/privacy/', 'الخصوصية'],
+      ['/legal/account-deletion/', 'حذف الحساب'],
+    ],
+  },
+];
+---
+
+<footer class="foot">
+  <div class="cols">
+    {groups.map((g) => (
+      <nav aria-label={g.h}>
+        <h2>{g.h}</h2>
+        <ul>
+          {g.links.map(([href, label]) => (
+            <li><a href={href}>{label}</a></li>
+          ))}
+        </ul>
+      </nav>
+    ))}
+  </div>
+
+  <p class="note">
+    الدفع نقداً عند الاستلام حصراً — لا نطلب أي دفعة مقدَّمة بأي وسيلة.
+  </p>
+  <p class="note muted">تالي شام · دمشق، سوريا</p>
+</footer>
+
+<style>
+  .foot {
+    margin: 28px 12px 0; padding: 16px 0 96px;
+    border-block-start: 1px solid var(--line);
+    display: grid; gap: 14px;
+  }
+  .cols { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  .foot h2 { font-size: var(--step--1); font-weight: 800; margin-block-end: 8px; }
+  .foot ul { list-style: none; display: grid; gap: 7px; }
+  .foot a { font-size: var(--step--1); color: var(--ink-2); text-decoration: none; }
+  .note { font-size: var(--step--1); color: var(--ink-2); line-height: 1.7; }
+  .note.muted { color: var(--ink-3); }
+  @media (min-width: 640px) { .cols { grid-template-columns: repeat(3, 1fr); } }
+</style>

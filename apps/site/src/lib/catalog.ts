@@ -44,6 +44,8 @@ export interface Product {
 
 const brands = new Map<string, Loc>(seed.brands.map((b: any) => [b.slug, b.name]));
 
+export const brandList = seed.brands as Array<{ slug: string; name: Loc }>;
+
 export const categories = seed.categories as Array<{
   slug: string; path: string; depth: number; name: Loc; sort_order: number;
 }>;
@@ -117,6 +119,9 @@ export function productsInCategory(slug: string): Product[] {
   );
   return products.filter((p) => descendants.has(p.category));
 }
+
+export const productsOfBrand = (brandSlug: string): Product[] =>
+  products.filter((p) => p.brand === brandSlug);
 
 export const compatibleAccessories = (phoneSlug: string): Product[] =>
   (seed.product_compatibility ?? [])

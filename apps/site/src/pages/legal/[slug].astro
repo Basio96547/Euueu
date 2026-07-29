@@ -1,0 +1,47 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import { LEGAL } from '../../lib/legal';
+
+export function getStaticPaths() {
+  return LEGAL.map((d) => ({ params: { slug: d.slug }, props: { doc: d } }));
+}
+
+const { doc } = Astro.props;
+const others = LEGAL.filter((d) => d.slug !== doc.slug);
+---
+
+<Base title={doc.title} description={doc.summary}>
+  <Header title={doc.title} back="/help/" />
+
+  <article class="wrap">
+    <p class="lead">{doc.summary}</p>
+    <p class="updated">آخر تحديث: {doc.updated}</p>
+
+    {doc.sections.map((s) => (
+      <section class="sec glass">
+        <h2>{s.h}</h2>
+        {s.p.map((t) => <p>{t}</p>)}
+      </section>
+    ))}
+
+    <nav class="links" aria-label="وثائق أخرى">
+      {others.map((d) => <a href={`/legal/${d.slug}/`}>{d.title}</a>)}
+    </nav>
+  </article>
+</Base>
+
+<style>
+  .wrap { padding: 12px 12px 96px; display: grid; gap: 12px; }
+  .lead { color: var(--ink-2); line-height: 1.8; }
+  .updated { font-size: var(--step--1); color: var(--ink-3); }
+  .sec { padding: 14px; border-radius: var(--r-l); display: grid; gap: 8px; }
+  .sec h2 { font-size: var(--step-0); font-weight: 800; }
+  .sec p { color: var(--ink-2); line-height: 1.85; font-size: var(--step--1); }
+  .links { display: flex; gap: 6px; flex-wrap: wrap; }
+  .links a {
+    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px; text-decoration: none;
+  }
+</style>

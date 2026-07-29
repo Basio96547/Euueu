@@ -3,6 +3,7 @@ import '@talisham/ui/tokens.css';
 import '@talisham/ui/base.css';
 import { currentFx, isDemoMode, catalogSource } from '../lib/catalog';
 import BottomNav from '../components/BottomNav.astro';
+import Footer from '../components/Footer.astro';
 
 interface Props {
   title: string;
@@ -47,6 +48,7 @@ const full = `${title} | تالي شام`;
 
     <slot />
 
+    <Footer />
     <BottomNav active={active} />
 
     <!--

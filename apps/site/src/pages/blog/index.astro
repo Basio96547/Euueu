@@ -1,0 +1,42 @@
+---
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/Header.astro';
+import { POSTS } from '../../lib/blog';
+
+const sorted = [...POSTS].sort((a, b) => b.published.localeCompare(a.published));
+---
+
+<Base
+  title="المدونة"
+  description="أدلّة شراء الهواتف في سوريا: كشف المقلَّد، فروق النسخ، المستعمل، والبطارية"
+>
+  <Header title="المدونة" back="/" />
+
+  <div class="wrap">
+    <p class="lead">
+      أدلّة مكتوبة لمن يشتري في سوريا: ما يُفحص قبل الدفع، وما يفرّق بين نسخة
+      وأخرى، وما يطيل عمر الجهاز. لا مقالات مدفوعة ولا مراجعات مجاملة.
+    </p>
+
+    <div class="cards">
+      {sorted.map((p) => (
+        <a class="card glass" href={`/blog/${p.slug}/`}>
+          <b>{p.title}</b>
+          <small>{p.summary}</small>
+          <span class="meta tnum">{p.published} · {p.readMinutes} دقائق قراءة</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</Base>
+
+<style>
+  .wrap { padding: 12px 12px 96px; display: grid; gap: 14px; }
+  .lead { color: var(--ink-2); line-height: 1.8; }
+  .cards { display: grid; gap: 9px; }
+  .card { display: grid; gap: 4px; padding: 14px; border-radius: var(--r-l); color: inherit; text-decoration: none; }
+  .card b { font-size: var(--step-0); font-weight: 800; line-height: 1.5; }
+  .card small { color: var(--ink-3); line-height: 1.6; }
+  .meta { font-size: var(--step--1); color: var(--ink-3); }
+  @media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }
+</style>
