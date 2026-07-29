@@ -154,7 +154,7 @@ pnpm test:e2e      # 45 فحصاً على واجهة تعمل وقاعدة حق�
 | `apps/site` — Astro: الرئيسية والفئة وصفحة المنتج | جاهز · 35 صفحة · صفر JavaScript · يُبنى من الواجهة الحية وإلا من البذرة |
 | `apps/app` — السلة وتعديل الكميات وإتمام الطلب والتتبع والحساب وطلباتي | جاهز |
 | `apps/admin` — المؤشرات والطلبات والكتالوج (تحويل التجريبي إلى حقيقي) وسعر الصرف والمندوب | جاهز |
-| النشر على Cloudflare | **منشور للمعاينة** — [talisham.vigorous-nannyberry.workers.dev](https://talisham.vigorous-nannyberry.workers.dev) · [دليل النشر](docs/DEPLOY.md) |
+| النشر على Cloudflare | **منشور للمعاينة** — [talisham.young-quarter.workers.dev](https://talisham.young-quarter.workers.dev) · [دليل النشر](docs/DEPLOY.md) |
 | استضافة الواجهة البرمجية | **لم تبدأ** — NestJS + PostgreSQL لا يعملان على Workers |
 | المندوبون ومناطق التوصيل والتعيين (الفصل 17) | لم يبدأ |
 | الحزم وعروض الكمية (الفصل 7 §7.7) | لم يبدأ |
