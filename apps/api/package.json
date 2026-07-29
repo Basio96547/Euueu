@@ -14,13 +14,19 @@
   "dependencies": {
     "@prisma/client": "^6.2.1",
     "@talisham/types": "workspace:*",
-    "@talisham/ui": "workspace:*"
+    "@talisham/ui": "workspace:*",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-express": "^11.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "prisma": "^6.2.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "@nestjs/cli": "^11.0.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
