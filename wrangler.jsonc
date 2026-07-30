@@ -56,13 +56,20 @@
   // لا حدثٌ يقع من تلقائه — وبلا كنس يقول المتجر «نفدت» ورفّه ممتلئ.
   "triggers": {
     "crons": ["* * * * *"]
-  },
+  }
 
-  "routes": [
-    { "pattern": "talisham.com", "custom_domain": true },
-    { "pattern": "www.talisham.com", "custom_domain": true },
-    { "pattern": "api.talisham.com", "custom_domain": true }
-  ]
+  // النطاقات الثلاثة مربوطة أصلاً من لوحة Cloudflare، وإعادة تأكيدها هنا
+  // تستدعي ‎/zones/…/workers/routes‎ التي يفتقر مفتاح النشر إلى صلاحيتها
+  // (`code: 10000`). والنتيجة كانت أن كل نشرة تُرفع بنجاح ثم تُعلَن فاشلة
+  // على خطوةٍ لا تُغيّر شيئاً — فيصير الأحمر في السجل بلا معنى، ولا يُميَّز
+  // عطلٌ حقيقي حين يقع.
+  //
+  // يُعاد هذا القسم يوم ينال المفتاح صلاحية Workers Routes: Edit:
+  // "routes": [
+  //   { "pattern": "talisham.com", "custom_domain": true },
+  //   { "pattern": "www.talisham.com", "custom_domain": true },
+  //   { "pattern": "api.talisham.com", "custom_domain": true }
+  // ]
 
   // الأسرار تُضبط خارج الملف ولا تُكتب فيه أبداً:
   //   npx wrangler secret put JWT_SECRET
