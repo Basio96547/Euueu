@@ -11,6 +11,7 @@
  */
 import Base from '../layouts/Base.astro';
 import Header from '../components/Header.astro';
+import { jsonForScript } from '../lib/seo';
 import {
   products, categories, CONDITION_AR, ORIGIN_AR, WARRANTY_AR,
 } from '../lib/catalog';
@@ -96,8 +97,30 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
     </noscript>
   </main>
 
-  <script is:inline define:vars={{ DATA: data, ROWS }}>
+  {/*
+    البيانات في وسمٍ بياناتٍ لا في نصٍّ برمجيّ — ولا تُمرَّر بـ`define:vars`.
+
+    `define:vars` يهرّب `</script>` بتعبيرٍ نظاميّ حسّاسٍ لحالة الأحرف
+    ومُقيَّدٍ بـ`>` بعدها مباشرة. والمحلّل في المتصفّح لا يبالي بالحالة
+    ويقبل مسافةً أو شرطةً بعد الاسم، فـ`</SCRIPT>` تُنهي الوسم ولا يمسّها
+    ذلك التهريب. واسمُ المنتج يكتبه مدير كتالوج — وهو دورٌ دون الإدارة —
+    فيُدرَج في صفحةٍ عامّة ويسرق رمز صاحب المتجر حين يفتحها.
+
+    و`esc()` أدناه لا يُنقذ منه: الانفلات يقع وقت تحليل HTML قبل أن تعمل
+    أيّ جافاسكربت.
+
+    و`application/json` ليس سياق نصٍّ برمجيّ: ما فيه بياناتٌ تُقرأ بـ
+    `JSON.parse` ولا تُنفَّذ. يبقى أن `</script>` تُنهيه، وذلك ما يسدّه
+    `jsonForScript` بتهريب `<` — وهو المسلسل نفسه المستعمَل في البيانات
+    المنظَّمة.
+  */}
+  <script type="application/json" id="cmp-data" is:inline
+    set:html={jsonForScript({ DATA: data, ROWS })} />
+
+  <script is:inline>
     (function () {
+      var BOOT = JSON.parse(document.getElementById('cmp-data').textContent);
+      var DATA = BOOT.DATA, ROWS = BOOT.ROWS;
       var out = document.querySelector('[data-out]');
       var empty = document.querySelector('[data-empty]');
       var pick = document.getElementById('pick');

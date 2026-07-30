@@ -2,7 +2,6 @@ import { buildDeps, createApp, type Deps } from './http/app.js';
 import { useCloudflareKv, type CfKvNamespace } from './common/kv.js';
 import type { D1Binding } from './common/prisma.service.js';
 import type { R2Binding } from './modules/storage.js';
-import { BootstrapService } from './modules/bootstrap.module.js';
 import { usingDefaultSecret, setSecret } from './common/jwt.js';
 
 /**
@@ -250,10 +249,14 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         متجرٍ يعمل وهو مفتوح: العطل الظاهر يُصلَح، والمفتوح لا يُكتشف
         إلا يوم يُستغلّ. والرسالة تقول الأمر الذي يُغلقه بالضبط.
       */
-      /* الصحّة والتهيئة تمرّان: أوّلهما ما يُسأل عنه حين يتعطّل شيء،
-         وثانيتهما ما يُصلح قاعدةً فارغة — وكلتاهما بلا رمز أصلاً. */
-      const openPaths = path === '/api/v1/health' || path === '/api/v1/ready'
-        || path.startsWith('/api/v1/bootstrap');
+      /* الصحّة وحدها تمرّ: هي ما يُسأل عنه حين يتعطّل شيء، وهي بلا بيانات.
+         وكان معها `/api/v1/bootstrap` — وحُذف. كان يضبط أول كلمة سرّ لحساب
+         إدارةٍ بلا كلمة سرّ، بلا رمز ولا مصادقة، وحارسُه الوحيد أن الحقل
+         فارغ. وذلك سباقٌ لا إذن: البذرة تُنشئ حساب الإدارة بلا كلمة سرّ
+         ورقمُه مكتوبٌ في المستودع، فمن سبق صاحبَ المتجر إليه ملك لوحته.
+         وضبطُ كلمة السرّ صار بـ`scripts/set-admin-password.sh`: يمرّ بمفتاح
+         Cloudflare، وهو الحدّ الصحيح للثقة. */
+      const openPaths = path === '/api/v1/health' || path === '/api/v1/ready';
 
       /* لا توقيع بمفتاحٍ منشور. والرفض هنا آخر الحيل لا أوّلها: يقع فقط
          إن غاب السرّ وغاب KV معاً — أي إن تعذّر حتى توليد بديل. */
@@ -283,33 +286,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
           },
         }, { status: 503 });
       }
-      /* التهيئة تسبق كل شيء: تعمل والقاعدة بلا جداول، فلا تمرّ بطبقة
-         الخدمات التي تفترض وجودها. وتُرفض على قاعدة مهيّأة. */
-      /* كلمة السرّ الأولى: تُضبط مرة واحدة على حساب إدارة بلا كلمة سرّ.
-         بدونها لا يدخل صاحب المتجر لوحته ما دام الواتساب بالمحاكاة. */
-      if (path === '/api/v1/bootstrap/admin-password' && request.method === 'POST') {
-        const boot = new BootstrapService(env.DB);
-        try {
-          const b: any = await request.json();
-          return Response.json({ data: await boot.setInitialAdminPassword(b.phone, b.password) });
-        } catch (e: any) {
-          return Response.json(e?.body?.() ?? { error: { code: 'BOOTSTRAP_FAILED' } },
-            { status: e?.status ?? 500 });
-        }
-      }
-
-      if (path === '/api/v1/bootstrap') {
-        const boot = new BootstrapService(env.DB);
-        if (request.method === 'GET') return Response.json({ data: await boot.status() });
-        if (request.method === 'POST') {
-          try {
-            return Response.json({ data: await boot.run() });
-          } catch (e: any) {
-            return Response.json(e?.body?.() ?? { error: { code: 'BOOTSTRAP_FAILED' } }, { status: e?.status ?? 500 });
-          }
-        }
-      }
-
       useCloudflareKv(env.KV);
       const { app } = api(env);
       return app.fetch(request, env, ctx);

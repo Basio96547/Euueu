@@ -30,9 +30,6 @@ VITE_API_URL="/api/v1" pnpm --filter @talisham/admin run build
 echo "▸ توليد عميل Prisma…"
 pnpm --filter @talisham/api run generate
 
-echo "▸ حزم المخطَّط والبذرة…"
-node scripts/bundle-sql.mjs
-
 echo "▸ ترجمة الواجهة البرمجية…"
 pnpm --filter @talisham/api run build
 
