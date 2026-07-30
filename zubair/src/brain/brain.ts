@@ -271,6 +271,9 @@ export class Zubair {
   see(frame: RawFrame, at: number = Date.now()): { salience: number; motion: number; dark: boolean; recognized: Recognition | null } {
     const percept = this.visualCortex.see(transduceVision(frame));
     this.lastVision = { percept, at };
+    /* شحن الخلية النبضية بمعدّل العين لا بمعدّل الكلام: هنا يتراكم البروز
+     * الخافت المُلحّ حتى يعبر، وهنا يتسرّب البروز الخافت العابر فلا يعبر. */
+    this.thalamus.excite('vision', percept.salience, at);
     const recognized = this.inferotemporal.recognize(percept.features);
     return { salience: percept.salience, motion: percept.motion, dark: percept.dark, recognized };
   }
@@ -279,6 +282,7 @@ export class Zubair {
   listen(audio: RawAudio, at: number = Date.now()): { kind: AuditoryPercept['kind']; loudness: number; pitchHz: number | null; familiarity: number } {
     const percept = this.auditoryCortex.listen(transduceAudio(audio));
     this.lastHearing = { percept, at };
+    this.thalamus.excite('hearing', percept.salience, at);
     return {
       kind: percept.kind,
       loudness: percept.loudness,
@@ -296,6 +300,7 @@ export class Zubair {
   feel(touch: RawTouch | null, body: RawBody | null, at: number = Date.now()): { kind: SomaticPercept['kind']; intensity: number; valence: number } {
     const percept = this.somatosensory.feel(transduceBody(touch, body));
     this.lastBody = { percept, at };
+    this.thalamus.excite('body', percept.salience, at);
     /* الطريق القصير: يشعر قبل أن يفهم. المشاعر تُستدعى في كل إحساس لا عند
      * الشديد وحده، لأنها هي التي تُميّز المباغت من المستمرّ — وذاك فرق الخوف من
      * الاشمئزاز، ولا يُعرَف إلا بمقارنة الإحساس بما قبله. */
@@ -417,10 +422,13 @@ export class Zubair {
       hearing: hearing ? hearing.salience : null,
       body: somatic ? somatic.salience : null,
       text: percept.tokens.length > 0 ? 1 : 0,
-    }, intero, vitals.arousal));
+    }, intero, vitals.arousal, at));
     trace.push({
       lobe: this.thalamus.name, ar: this.thalamus.ar,
-      note: relay.reasonAr, where: 'none', ms: 0,
+      note: relay.focus === 'none'
+        ? relay.reasonAr
+        : `${relay.reasonAr} — نبض ${relay.rates[relay.focus].toFixed(1)} هرتز`,
+      where: 'none', ms: 0,
     });
 
     /* ٤٫٦ ما يراه الآن: تُستدعى القشرة تحت الصدغية إن مرّ مجرى البصر فقط.

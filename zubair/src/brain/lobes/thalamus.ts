@@ -11,6 +11,7 @@
  */
 
 import { Dense, type DenseState } from '../core/net.js';
+import { LifLayer, type LifState } from '../core/spiking.js';
 import { Rng, clamp, vec, type Vec } from '../core/tensor.js';
 import { DIMS, type ComputePort, type Interoception, type Lobe } from '../core/types.js';
 import type { Percept } from '../core/text.js';
@@ -66,15 +67,29 @@ export interface StreamSalience {
 export type Modality = 'vision' | 'hearing' | 'body' | 'text';
 
 export interface RelayDecision {
-  /** أي مجرى مرّ إلى القشرة وأي مجرى أُغلق */
+  /** أي مجرى مرّ إلى القشرة وأي مجرى أُغلق — وهو خرج الخلايا النبضية نفسه */
   passed: Record<Modality, boolean>;
   /** وزنه بعد الترشيح: به تُرجَّح إسهاماته فيما بعد */
   weights: Record<Modality, number>;
+  /** تردّد نبض كل مجرى بالهرتز: قوّة الإشارة في ترميز التردّد لا مجرّد عبورها */
+  rates: Record<Modality, number>;
   /** المجرى الأبرز — إليه يتوجّه انتباهه الآن */
   focus: Modality | 'none';
   /** سبب عربي يُعرض للأب في أثر النبضة */
   reasonAr: string;
 }
+
+/** ترتيب الخلايا النبضية في الطبقة. معلن وثابت لأن حالتها تُحفظ بهذا الترتيب. */
+export const MODALITIES: readonly Modality[] = ['vision', 'hearing', 'body', 'text'];
+
+/**
+ * نافذة قراءة النبض: نبضةٌ خلال خمس ثوانٍ تعني «هذا المجرى واصلٌ الآن».
+ *
+ * وهي نافذة طزاجة الإدراك نفسها في `brain.ts` بقصد: ما تجاوزها ليس «ما يراه
+ * الآن» فلا يُبنى عليه جواب. ولولا التوحيد لصار المهاد يقول «مرّ» عن منظرٍ
+ * أسقطته القشرة لقِدَمه.
+ */
+const SPIKE_WINDOW_MS = 5000;
 
 /** دون هذا البروز لا يُمرَّر المجرى: معالجة منظر فارغ على جوال إهدارٌ محض. */
 const RELAY_FLOOR = 0.08;
@@ -87,6 +102,8 @@ export interface ThalamusState {
   /** بُعد دخل البوابة وقت الحفظ — به تُرفض أوزان بُنيت على أبعاد أخرى */
   inDim: number;
   gate: DenseState;
+  /** جهود الخلايا النبضية وسجلّ إطلاقها، بترتيب MODALITIES */
+  cells?: LifState[];
 }
 
 /** قيمة حالة داخلية خارج [0,1] أو غير منتهية تُفسد البوابة كلها فتُقصَر بصمت. */
@@ -117,6 +134,13 @@ export class Thalamus implements Lobe<ThalamusState> {
   private lastInputs: Vec[] = [];
   private lastWeights: number[] = [];
 
+  /* الخلايا النبضية: واحدة لكل مجرى حاسّة.
+   *
+   * وهي الموضع الوحيد في الدماغ الذي يجري فيه الزمن فعلاً. بقية الفصوص تعمل
+   * بالنبضة المنطقية (كلمةٌ من الأب = خطوة)، وهذه تعمل بالميلي ثانية الحقيقية،
+   * لأن الفرق بين مؤثّرٍ خافت يُلحّ ومؤثّرٍ خافت يمرّ مرّة لا يُقاس إلا بالزمن. */
+  private readonly relayCells = new LifLayer(MODALITIES.length);
+
   /** البذرة تُحقَن كي تكون تهيئة البوابة قابلة للإعادة، فيُثبَت التعلّم برقم. */
   constructor(rng?: Rng) {
     this.net = new Dense(GATE_IN, 1, 'sigmoid', rng ?? new Rng(0x7a1a));
@@ -130,26 +154,61 @@ export class Thalamus implements Lobe<ThalamusState> {
    * وحده. وهذا ما يفعله المهاد في النوم فعلاً — يُغلق الحواسّ عن القشرة، ولذلك
    * لا يوقظك ضوءٌ خفيف ويوقظك اسمك.
    */
-  relay(streams: StreamSalience, intero: Interoception, arousal: number): RelayDecision {
+  /**
+   * وصولُ حاسّةٍ في لحظتها: تُشحن بها خليتها النبضية، وتُعاد نبضتُها إن أطلقت.
+   *
+   * تُستدعى بمعدّل الحاسّة نفسها لا بمعدّل الكلام — العين ثلاثون مرة في الثانية.
+   * وهنا يقع التكامل الزمني كلُّه: البروز الواصل شحنةٌ تُضاف إلى ما بقي من
+   * سابقتها بعد تسريبه. فمنظرٌ خافت يدوم يتراكم حتى يعبر، ومنظرٌ خافت يومض مرّة
+   * يتسرّب فلا يعبر. وهذا فرقٌ لم يكن الدماغ يملكه قبل هذه الخلايا: كان يقارن
+   * البروز بعتبةٍ لحظةً بلحظة، فيستوي عنده المُلحّ والعابر.
+   */
+  excite(modality: Modality, salience: number, at: number): boolean {
+    const index = MODALITIES.indexOf(modality);
+    if (index < 0) return false;
+    return this.relayCells.charge(index, unitValue(salience), at);
+  }
+
+  relay(streams: StreamSalience, intero: Interoception, arousal: number, at = 0): RelayDecision {
     const alertness = unitValue(arousal) * 0.7 + unitValue(intero.arousal) * 0.3;
     // النعاس يرفع العتبة: عند يقظة تامة تمرّ المجاري الضعيفة، وعند نصفها لا
     const floor = RELAY_FLOOR + (1 - alertness) * 0.35;
+
+    /* العتبة تُضبَط من فوق قبل القراءة، وهذا هو الكبح في هذا الدماغ: لا شحنة
+     * سالبة من تحت بل عتبةٌ أعلى من فوق — وهو ما يفعله المهاد في النوم حرفياً.
+     * وضبطُها هنا يسري على ما يأتي من شحنات حتى النبضة التالية، لأن الانتباه
+     * حالةٌ تدوم لا حكمٌ يُتّخذ لكل إطار. */
+    this.relayCells.setThresholds(MODALITIES.map(
+      (modality) => (modality === 'text' ? floor * 0.5 : floor),
+    ));
 
     const passed: Record<Modality, boolean> = {
       vision: false, hearing: false, body: false, text: false,
     };
     const weights: Record<Modality, number> = { vision: 0, hearing: 0, body: 0, text: 0 };
+    const rates: Record<Modality, number> = { vision: 0, hearing: 0, body: 0, text: 0 };
 
     let focus: Modality | 'none' = 'none';
     let strongest = -Infinity;
 
     const consider = (modality: Modality, salience: number | null): void => {
       if (salience === null) return; // حاسّة غائبة لا مغلقة: فرقٌ يجب ألّا يُطمس
+      const index = MODALITIES.indexOf(modality);
+      const cell = this.relayCells.cell(index);
+      if (!cell) return;
+
       const value = unitValue(salience);
       const privileged = modality === 'text';
       const effective = privileged ? Math.max(value, TEXT_PRIVILEGE) : value;
-      if (effective < floor) return;
-      passed[modality] = true;
+
+      /* الكلام يُشحن هنا لأنه لا يصل إلا في النبضة: ليس له معدّلٌ خاص به كما
+       * للعين والأذن والجلد، فلحظة وصوله هي لحظة النبضة نفسها. */
+      if (privileged) cell.charge(effective, at);
+
+      passed[modality] = cell.firedWithin(at, SPIKE_WINDOW_MS);
+      if (!passed[modality]) return;
+
+      rates[modality] = cell.rateHz(at, SPIKE_WINDOW_MS);
       weights[modality] = clamp(effective * (privileged ? 1 : alertness), 0, 1);
       if (weights[modality] > strongest) {
         strongest = weights[modality];
@@ -162,7 +221,7 @@ export class Thalamus implements Lobe<ThalamusState> {
     consider('hearing', streams.hearing);
     consider('body', streams.body);
 
-    return { passed, weights, focus, reasonAr: this.explain(focus, floor, alertness) };
+    return { passed, weights, rates, focus, reasonAr: this.explain(focus, floor, alertness) };
   }
 
   private explain(focus: Modality | 'none', floor: number, alertness: number): string {
@@ -280,7 +339,7 @@ export class Thalamus implements Lobe<ThalamusState> {
   }
 
   save(): ThalamusState {
-    return { inDim: GATE_IN, gate: this.net.save() };
+    return { inDim: GATE_IN, gate: this.net.save(), cells: this.relayCells.save() };
   }
 
   load(state: ThalamusState): void {
@@ -295,6 +354,9 @@ export class Thalamus implements Lobe<ThalamusState> {
       if (!finiteArray(gate.mB, 1) || !finiteArray(gate.vB, 1)) return;
       if (!Number.isFinite(gate.steps)) return;
       this.net.load(gate);
+      // الخلايا تُستعاد بعد البوابة وباستقلال عنها: جهدٌ محفوظ عطب لا يُسقط
+      // الانتباه المتعلَّم، وأسوأ ما فيه أن تبدأ الخلايا من راحتها
+      if (state.cells) this.relayCells.load(state.cells);
     } catch {
       // حالة معطوبة بشكل لم نتوقّعه: تُترك البوابة كما وُلدت، ولا يُرمى استثناء
     }
