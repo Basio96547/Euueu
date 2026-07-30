@@ -43,6 +43,7 @@ export function Growth(props: {
           <Stat value={m.stage.name} label="مرحلته" />
           <Stat value={m.vocab} label="كلمة يعرفها" />
           <Stat value={m.facts} label="حقيقة تعلّمها" />
+          <Stat value={m.objectsSeen} label="شيئاً يعرفه بعينه" />
           <Stat value={m.lessons} label="درساً أعطيته" />
           <Stat value={m.questionsAsked} label="مرة سألك" />
           <Stat value={m.episodes} label="ذكرى يحملها" />

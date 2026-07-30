@@ -198,6 +198,8 @@ export interface GrowthMetrics {
   vocab: number;
   /** كم حقيقة استخلص وثبّتها */
   facts: number;
+  /** كم شيئاً يعرفه بعينه — لا بالكتابة */
+  objectsSeen: number;
   /** كم ذكرى يحمل */
   episodes: number;
   /** كم مرة سألك هو */

@@ -76,6 +76,8 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     vocab: number;
     /** كم كلمة في كلام أبيه لم يسمعها قط — مقياس جهله الحاضر */
     unknownCount: number;
+    /** ثقته في الحقيقة التي يملكها الآن — بها يُعرف أإقرارُه بالجهل صدقٌ أم عجز */
+    factConfidence: number;
   }): Strategy[] {
     const allowed: Strategy[] = [];
     const lastTwo = ctx.lastStrategies.slice(-2);
@@ -110,6 +112,10 @@ export class Prefrontal implements Lobe<PrefrontalState> {
         case 'BABBLE':
           // من تعلّم كلمات لا يعود يثغثغ: هذا هو النمو محسوساً
           if (ctx.vocab >= firstStageVocab) continue;
+          /* ووليدٌ يملك الجواب لا يُثغثغ به: الثغثغة عجزٌ عن الكلام لا اختيارٌ
+           * له. أُضيف بعد قياس: سُئل «شو هذا؟» وهو يرى تفاحةً سمّاها له أبوه
+           * قبل لحظة، فقال «شو؟» — يعرف ولا ينطق. */
+          if (ctx.hasFact && answering) continue;
           break;
         case 'ACKNOWLEDGE':
           // الإقرار بالتلقّي لا معنى له إلا بعد تعليم أو حكم
@@ -119,6 +125,11 @@ export class Prefrontal implements Lobe<PrefrontalState> {
           if (ctx.intent !== 'GREET') continue;
           break;
         case 'ADMIT':
+          /* «لا أعرف» مع اليقين ليس صدقاً بل عجزٌ عن النطق بما يعرف. أُضيف بعد
+           * قياس: أُريَ تفاحةً وسمّاها له أبوه، ثم سُئل «شو هذا؟» فقال «ما بعرف»
+           * وهو يراها ويعرف اسمها. والإقرار بالجهل يبقى مباحاً حين تكون ثقته
+           * ضعيفة فعلاً — فذاك صدقٌ لا عجز. */
+          if (ctx.hasFact && answering && ctx.factConfidence >= 0.5) continue;
           break;
       }
       // تكرار العَرَض يُكبَح، وتكرار الكفاءة لا — انظر RUT_PRONE أعلاه

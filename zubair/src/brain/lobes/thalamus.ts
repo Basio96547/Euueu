@@ -43,6 +43,46 @@ const GATE_EPS = 1e-8;
 const SATURATED_LOW = 0.02;
 const SATURATED_HIGH = 0.98;
 
+/* ————— برج التوزيع: ترشيح مجاري الحواسّ —————
+ *
+ * المهاد تشريحياً ليس بوابةَ كلماتٍ بل **محطّة كل الحواسّ**: كل ما يصل من العين
+ * والأذن والجلد يمرّ به أولاً، فيفرز المهمّ ويوجّه كل نوع إلى قشرته المختصّة.
+ * (والشمّ وحده يستثنى فيصل القشرة مباشرة — ولا شمّ في جوال أصلاً.)
+ *
+ * وهو يفرز بالبروز لا بالمحتوى: لا يعرف ما في الصورة ولا ما في الصوت، بل يعرف
+ * «هذا المجرى فيه شيء يستحقّ» فيمرّره. ولذلك يأخذ هنا أرقام بروز مجرّدة لا
+ * إدراكات — فيبقى مستقلاً عن القشور التي تُغذّيه، كما هو في الدماغ.
+ */
+
+/** بروز كل مجرى في هذه اللحظة. null تعني أن الحاسّة غائبة لا ساكنة. */
+export interface StreamSalience {
+  vision: number | null;
+  hearing: number | null;
+  body: number | null;
+  /** بروز الحرف المكتوب: حضورُ كلامٍ من الأب */
+  text: number | null;
+}
+
+export type Modality = 'vision' | 'hearing' | 'body' | 'text';
+
+export interface RelayDecision {
+  /** أي مجرى مرّ إلى القشرة وأي مجرى أُغلق */
+  passed: Record<Modality, boolean>;
+  /** وزنه بعد الترشيح: به تُرجَّح إسهاماته فيما بعد */
+  weights: Record<Modality, number>;
+  /** المجرى الأبرز — إليه يتوجّه انتباهه الآن */
+  focus: Modality | 'none';
+  /** سبب عربي يُعرض للأب في أثر النبضة */
+  reasonAr: string;
+}
+
+/** دون هذا البروز لا يُمرَّر المجرى: معالجة منظر فارغ على جوال إهدارٌ محض. */
+const RELAY_FLOOR = 0.08;
+
+/** كلام الأب يمرّ دائماً ولو كان بروزه ضعيفاً: هو خطابٌ موجَّه لا محفّز عابر،
+ *  كما يخترق نداء اسمك ضجيج غرفة مزدحمة. */
+const TEXT_PRIVILEGE = 0.55;
+
 export interface ThalamusState {
   /** بُعد دخل البوابة وقت الحفظ — به تُرفض أوزان بُنيت على أبعاد أخرى */
   inDim: number;
@@ -67,7 +107,7 @@ function finiteArray(value: unknown, length: number): boolean {
 export class Thalamus implements Lobe<ThalamusState> {
   readonly name = 'thalamus';
   readonly ar = 'المهاد';
-  readonly role = 'بوابة الانتباه: يوزن كل كلمة من كلامك ويقرّر أيّها يستحقّ أن يصل القشرة';
+  readonly role = 'برج التوزيع: يفرز ما يصل من العين والأذن والجلد وكلامك، ويوجّه كل نوع إلى قشرته';
 
   private readonly net: Dense;
   /** مخزن مدخل البوابة، يُعاد استخدامه لكل كلمة كي لا تُخصَّص ذاكرة في كل نبضة */
@@ -81,6 +121,60 @@ export class Thalamus implements Lobe<ThalamusState> {
   constructor(rng?: Rng) {
     this.net = new Dense(GATE_IN, 1, 'sigmoid', rng ?? new Rng(0x7a1a));
     this.net.b[0] = OPEN_AT_BIRTH;
+  }
+
+  /**
+   * الترشيح والتوزيع: أي حاسّة تصل قشرتها الآن وأيّها تُغلق.
+   *
+   * اليقظة تحدّد السعة الكلية لا كل مجرى على حدة: طفلٌ نصف نائم يصله الأبرز
+   * وحده. وهذا ما يفعله المهاد في النوم فعلاً — يُغلق الحواسّ عن القشرة، ولذلك
+   * لا يوقظك ضوءٌ خفيف ويوقظك اسمك.
+   */
+  relay(streams: StreamSalience, intero: Interoception, arousal: number): RelayDecision {
+    const alertness = unitValue(arousal) * 0.7 + unitValue(intero.arousal) * 0.3;
+    // النعاس يرفع العتبة: عند يقظة تامة تمرّ المجاري الضعيفة، وعند نصفها لا
+    const floor = RELAY_FLOOR + (1 - alertness) * 0.35;
+
+    const passed: Record<Modality, boolean> = {
+      vision: false, hearing: false, body: false, text: false,
+    };
+    const weights: Record<Modality, number> = { vision: 0, hearing: 0, body: 0, text: 0 };
+
+    let focus: Modality | 'none' = 'none';
+    let strongest = -Infinity;
+
+    const consider = (modality: Modality, salience: number | null): void => {
+      if (salience === null) return; // حاسّة غائبة لا مغلقة: فرقٌ يجب ألّا يُطمس
+      const value = unitValue(salience);
+      const privileged = modality === 'text';
+      const effective = privileged ? Math.max(value, TEXT_PRIVILEGE) : value;
+      if (effective < floor) return;
+      passed[modality] = true;
+      weights[modality] = clamp(effective * (privileged ? 1 : alertness), 0, 1);
+      if (weights[modality] > strongest) {
+        strongest = weights[modality];
+        focus = modality;
+      }
+    };
+
+    consider('text', streams.text);
+    consider('vision', streams.vision);
+    consider('hearing', streams.hearing);
+    consider('body', streams.body);
+
+    return { passed, weights, focus, reasonAr: this.explain(focus, floor, alertness) };
+  }
+
+  private explain(focus: Modality | 'none', floor: number, alertness: number): string {
+    const where = {
+      vision: 'ما يراه', hearing: 'ما يسمعه', body: 'ما يحسّه بجسده', text: 'كلامك',
+    } as const;
+    if (focus === 'none') {
+      return alertness < 0.5
+        ? `أغلق حواسّه: يقظته ${Math.round(alertness * 100)}٪ ولا شيء يبلغ عتبته`
+        : 'لا شيء بارز في حواسّه الآن';
+    }
+    return `وجّه انتباهه إلى ${where[focus]} (عتبته ${floor.toFixed(2)})`;
   }
 
   gate(percept: Percept, intero: Interoception, compute: ComputePort): { weights: number[]; bag: Vec } {

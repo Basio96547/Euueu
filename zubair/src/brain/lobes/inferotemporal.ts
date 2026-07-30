@@ -192,8 +192,14 @@ export class Inferotemporal implements Lobe<InferotemporalState> {
     if (secondSimilarity > -Infinity && bestSimilarity - secondSimilarity < RECOGNIZE_MARGIN) return null;
 
     /* الثقة ليست التشابه: نموذجٌ أُكِّد عشر مرات أوثق من نموذج رآه مرة، وشيءٌ
-     * صُحّح فيه مراراً أقلّ ثقةً مهما تشابه المنظر. */
-    const grounding = clamp(bestHits / 5, 0.4, 1);
+     * صُحّح فيه مراراً أقلّ ثقةً مهما تشابه المنظر.
+     *
+     * والأرضية مرتفعة (٠٫٦) بقصد، وقد صُحّحت بعد قياس: كانت ٠٫٤ فأعطت العرضة
+     * الواحدة ثقةً ٠٫٤٠ رغم تشابهٍ ٠٫٩٩٨، فكان زبير يقول «ما بعرف» عن تفاحةٍ
+     * يراها وسمّاها له أبوه قبل لحظة. والخطأ في التعليل لا في الرقم: الشكّ من
+     * العرضة الواحدة شكٌّ في أن الاسم **يعمّم** على زوايا أخرى، لا في مطابقة
+     * هذا المنظر بعينه — والطفل الذي سمع الاسم قبل لحظة واثقٌ بحقّ. */
+    const grounding = clamp(0.6 + bestHits / 10, 0.6, 1);
     const doubt = clamp(best.corrected / (best.taught + best.corrected + 1), 0, 0.5);
     const confidence = clamp(bestSimilarity * grounding * (1 - doubt), 0, 1);
 

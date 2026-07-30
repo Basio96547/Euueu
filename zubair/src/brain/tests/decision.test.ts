@@ -160,6 +160,7 @@ const inhibitCtx = {
   recallScore: 0,
   vocab: 80,
   unknownCount: 1,
+  factConfidence: 0.8,
 };
 
 test('لا يجيب من ذاكرة لا يملكها ولا يعمّم بلا تعميم', () => {
@@ -218,6 +219,20 @@ test('يكبح تكرار العَرَض لا تكرار الكفاءة', () => 
     lastStrategies: ['ASK_QUESTION', 'ASK_QUESTION'],
   });
   assert.ok(!repeating.includes('ASK_QUESTION'), 'وسؤال أعاده ثلاثاً يُنفّر أباه');
+});
+
+test('الإقرار بالجهل مع اليقين عجزٌ يُكبَح، ومع الشكّ صدقٌ يُباح', () => {
+  const prefrontal = new Prefrontal();
+  const certain = prefrontal.inhibit(STRATEGIES, {
+    ...inhibitCtx, hasFact: true, unknownCount: 0, factConfidence: 0.8,
+  });
+  assert.ok(!certain.includes('ADMIT'), 'من يعرف لا يقول «ما بعرف»');
+  assert.ok(certain.includes('ANSWER_MEMORY'), 'بل يجيب');
+
+  const unsure = prefrontal.inhibit(STRATEGIES, {
+    ...inhibitCtx, hasFact: true, unknownCount: 0, factConfidence: 0.2,
+  });
+  assert.ok(unsure.includes('ADMIT'), 'ومن ثقته ضعيفة يبقى له أن يُقرّ بجهله');
 });
 
 test('من يملك الجواب لا يسأل: السؤال في موضع المعرفة تهرّب', () => {

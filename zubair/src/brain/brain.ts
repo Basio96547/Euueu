@@ -28,6 +28,14 @@ import { Amygdala, Cingulate, Hypothalamus, Insula } from './lobes/limbic.js';
 import { BasalGanglia } from './lobes/basalGanglia.js';
 import { Cerebellum, Prefrontal } from './lobes/prefrontal.js';
 import { Broca } from './lobes/broca.js';
+import { VisualCortex, type VisualPercept } from './lobes/visualCortex.js';
+import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js';
+import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
+import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
+import {
+  transduceAudio, transduceBody, transduceVision,
+  type RawAudio, type RawBody, type RawFrame, type RawTouch,
+} from './core/senses.js';
 
 /** ما بقي من النبضة الأخيرة لأن حكم الأب يأتي بعدها لا معها. */
 interface PendingJudgement {
@@ -40,6 +48,10 @@ interface PendingJudgement {
   intent: Intent;
   subject: string | null;
   object: string | null;
+  /** وصف ما كان يراه إن كان جوابه عن منظر — لازم لتصحيح تسميته البصرية */
+  sawFeatures: Vec | null;
+  /** الاسم الذي أعطاه لما رآه، إن سُئل عن منظر */
+  namedFromSight: string | null;
   assertedObject: string | null;
 }
 
@@ -91,6 +103,18 @@ export class Zubair {
   private readonly prefrontal = new Prefrontal();
   private readonly cerebellum = new Cerebellum();
   private readonly broca: Broca;
+  private readonly visualCortex = new VisualCortex();
+  private readonly auditoryCortex = new AuditoryCortex();
+  private readonly somatosensory = new Somatosensory();
+  private readonly inferotemporal = new Inferotemporal();
+
+  /* آخر ما وصل من الحواسّ، ولحظة وصوله.
+   *
+   * اللحظة ليست تفصيلاً: إدراكٌ عمره دقيقة ليس «ما يراه الآن»، واستعماله يجعل
+   * زبير يسمّي شيئاً رُفع عن الكاميرا. فما تجاوز نافذة الطزاجة يُعدّ غائباً. */
+  private lastVision: { percept: VisualPercept; at: number } | null = null;
+  private lastHearing: { percept: AuditoryPercept; at: number } | null = null;
+  private lastBody: { percept: SomaticPercept; at: number } | null = null;
 
   /* حالة الدماغ العامة */
   private bornAt = 0;
@@ -145,6 +169,7 @@ export class Zubair {
       lessons: this.lessons,
       vocab,
       facts: this.parietal.facts.length,
+      objectsSeen: this.inferotemporal.knownCount,
       episodes: this.hippocampus.count,
       questionsAsked: this.questionsAsked,
       recentAccuracy: recent,
@@ -159,6 +184,64 @@ export class Zubair {
     return { unit: this.accel.unit, describeAr: this.accel.describeAr, details: this.accel.details };
   }
 
+  /* ————— الحواسّ: ما يصل قبل أن يُقال شيء —————
+   *
+   * تُستدعى هذه من التطبيق مع كل إطار كاميرا أو مقطع صوت أو لمسة، وهي أسرع من
+   * النبضة بكثير: العين ترى ثلاثين مرة في الثانية والكلام يأتي مرة في دقيقة.
+   * فلا تُشغّل دورة الدماغ كلها، بل تُحدّث ما يراه ويسمعه ويحسّه فحسب. */
+
+  /** يرى: إطار كاميرا واحد. يعيد ما رآه وما عرفه فيه إن عرف. */
+  see(frame: RawFrame, at: number = Date.now()): { salience: number; motion: number; dark: boolean; recognized: Recognition | null } {
+    const percept = this.visualCortex.see(transduceVision(frame));
+    this.lastVision = { percept, at };
+    const recognized = this.inferotemporal.recognize(percept.features);
+    return { salience: percept.salience, motion: percept.motion, dark: percept.dark, recognized };
+  }
+
+  /** يسمع: مقطع صوت واحد. لا يفهم حروفاً — يعرف نوع الصوت ونبرته. */
+  listen(audio: RawAudio, at: number = Date.now()): { kind: AuditoryPercept['kind']; loudness: number; pitchHz: number | null; familiarity: number } {
+    const percept = this.auditoryCortex.listen(transduceAudio(audio));
+    this.lastHearing = { percept, at };
+    return {
+      kind: percept.kind,
+      loudness: percept.loudness,
+      pitchHz: percept.pitchHz,
+      familiarity: this.auditoryCortex.familiarity(percept.pitchHz),
+    };
+  }
+
+  /**
+   * يحسّ: لمسة أو حركة جهاز.
+   *
+   * والإحساس يمرّ على اللوزة فوراً لا في النبضة التالية: الهزّ العنيف يُوسَم
+   * سلباً ساعتَه كما يفعل الألم، ولا ينتظر أن يُكلَّم زبير حتى يتأذّى.
+   */
+  feel(touch: RawTouch | null, body: RawBody | null, at: number = Date.now()): { kind: SomaticPercept['kind']; intensity: number; valence: number } {
+    const percept = this.somatosensory.feel(transduceBody(touch, body));
+    this.lastBody = { percept, at };
+    if (Math.abs(percept.innateValence) > 0.25) {
+      // الوسم على متجه الإحساس نفسه: تجربةٌ جسدية تُقترن بحالتها لا بكلام
+      const meaning = this.embedBody(percept);
+      this.amygdala.condition(meaning, percept.innateValence, 0.03);
+    }
+    return { kind: percept.kind, intensity: percept.intensity, valence: percept.innateValence };
+  }
+
+  /** يُسقِط الإحساس الجسدي في فضاء المعنى كي تفهمه اللوزة كما تفهم الكلام. */
+  private embedBody(percept: SomaticPercept): Vec {
+    const meaning = new Float32Array(DIMS.meaning);
+    for (let i = 0; i < percept.features.length && i < meaning.length; i++) {
+      meaning[i] = percept.features[i] ?? 0;
+    }
+    return meaning;
+  }
+
+  /** أما زال ما رآه طازجاً؟ خمس ثوانٍ: أطول من ذلك ليس «الآن». */
+  private fresh<T>(slot: { percept: T; at: number } | null, now: number): T | null {
+    if (!slot) return null;
+    return now - slot.at <= 5000 ? slot.percept : null;
+  }
+
   /** لهجته كما تعلّمها منك: شامية أم فصحى. تُعرض في سجل نموّه. */
   get dialectAr(): string {
     return this.broca.dialectAr;
@@ -170,6 +253,7 @@ export class Zubair {
       this.brainstem, this.lexicon, this.thalamus, this.temporal, this.hippocampus,
       this.parietal, this.amygdala, this.hypothalamus, this.insula, this.cingulate,
       this.basalGanglia, this.prefrontal, this.cerebellum, this.broca,
+      this.visualCortex, this.auditoryCortex, this.somatosensory, this.inferotemporal,
     ];
     return all.map((lobe) => ({ name: lobe.name, ar: lobe.ar, role: lobe.role }));
   }
@@ -203,15 +287,52 @@ export class Zubair {
     /* ٣. الردود الفطرية: تخمين ما تريده مني قبل أن تتعلّم قشرتي */
     const reflex = timed(this.brainstem, 'غريزة: قصدك المبدئي', 'cpu', () => this.brainstem.reflexIntent(percept));
 
-    /* ٤. الوطاء: الدوافع تتبدّل بما سمع */
+    /* ٤. الوطاء: الدوافع تتبدّل بما سمع.
+     *
+     * والجهل يُقاس بكلمات المعنى وحدها: أدوات الاستفهام وأسماء الإشارة وحروف
+     * الوصل ليست أشياءً يُسأل عنها. الطفل لا يقول «ما معنى هذا؟» عن كلمة «هذا»،
+     * ولو عُدَّت جهلاً لصار زبير يردّ سؤالك بسؤالٍ عن أداة سؤالك. */
+    const unknownContent = percept.unknown.filter(
+      (word) => !QUESTION_WORDS.has(word) && !STOP_WORDS.has(word) && !DEMONSTRATIVE_KEYS.has(word),
+    );
     const repeated = this.prefrontal.recent.at(-1)?.said === percept.raw;
     const intero = timed(this.hypothalamus, 'حدّث دوافعه', 'cpu', () => this.hypothalamus.update({
-      unknownCount: percept.unknown.length,
+      unknownCount: unknownContent.length,
       repeatedInput: repeated,
       awayMs: vitals.awayMs,
       lessonsSinceSleep: this.lessonsSinceSleep,
       knownVocab: this.lexicon.size,
     }));
+
+    /* ٤٫٥ المهاد كبرج توزيع: أي حاسّة تصل قشرتها الآن.
+     * يُستدعى قبل بوابة الكلمات لأن ترتيبه التشريحي كذلك: كل الحواسّ تمرّ به
+     * أولاً، ثم يُفصّل داخل كل مجرى. */
+    const vision = this.fresh(this.lastVision, at);
+    const hearing = this.fresh(this.lastHearing, at);
+    const somatic = this.fresh(this.lastBody, at);
+    const relay = timed(this.thalamus, 'وزّع حواسّه', 'cpu', () => this.thalamus.relay({
+      vision: vision ? vision.salience : null,
+      hearing: hearing ? hearing.salience : null,
+      body: somatic ? somatic.salience : null,
+      text: percept.tokens.length > 0 ? 1 : 0,
+    }, intero, vitals.arousal));
+    trace.push({
+      lobe: this.thalamus.name, ar: this.thalamus.ar,
+      note: relay.reasonAr, where: 'none', ms: 0,
+    });
+
+    /* ٤٫٦ ما يراه الآن: تُستدعى القشرة تحت الصدغية إن مرّ مجرى البصر فقط.
+     * والشرط ليس تحسيناً للأداء بل معنى: ما لم يمرّ المهاد لم يصل الوعي. */
+    let recognized: Recognition | null = null;
+    if (vision && relay.passed.vision && !vision.dark) {
+      const started = now();
+      recognized = this.inferotemporal.recognize(vision.features);
+      trace.push({
+        lobe: this.inferotemporal.name, ar: this.inferotemporal.ar,
+        note: recognized ? `عرف ما يراه: ${recognized.name} (${Math.round(recognized.confidence * 100)}٪)` : 'يرى شيئاً لا يعرفه',
+        where: 'cpu', ms: round2(now() - started),
+      });
+    }
 
     /* ٥. المهاد: أي كلماتك تستحقّ الانتباه */
     const gated = timed(this.thalamus, 'وزّع انتباهه على كلماتك', this.compute_.unit,
@@ -257,9 +378,47 @@ export class Zubair {
       });
     }
 
+    /* ٨٫٥ الوصل بين حاسّتين: ما تراه العين وما يقوله الأب.
+     *
+     * «هذه تفاحة» والكاميرا على تفاحة: يُقرن الشكل بالاسم فيعرفها بعينه بعدها.
+     * وهذا أصل تعلّم الأسماء عند الطفل — يُشار له إلى الشيء ويُسمّى، لا يُلقَّن.
+     *
+     * والاسم يُحفظ بإملاء الأب لا بالصورة المطبَّعة: هو ما سيُعرَض عليه لاحقاً. */
+    let namedWhatHeSees: string | null = null;
+    if (vision && relay.passed.vision && !vision.dark && teaching && bound.object) {
+      const pointing = bound.subject !== null && DEMONSTRATIVE_KEYS.has(bound.subject);
+      // إشارةٌ صريحة («هذه») أو تعليمُ كلمة والكاميرا مفتوحة: كلاهما تسمية لما يُرى
+      if (pointing || understanding.intent === 'TEACH_WORD') {
+        namedWhatHeSees = this.lexicon.pretty(bound.object);
+        this.inferotemporal.teach(namedWhatHeSees, vision.features, this.ticks);
+        trace.push({
+          lobe: this.inferotemporal.name, ar: this.inferotemporal.ar,
+          note: `ربط ما يراه بالاسم: ${namedWhatHeSees}`, where: 'cpu', ms: 0,
+        });
+      }
+    }
+
     /* موضوع السؤال: عمّا يسألني أبي؟ أعلى كلمة انتباهاً ليست أداة استفهام. */
     const topic = bound.subject ?? this.salientTopic(percept, gated.weights);
-    const fact = topic ? this.parietal.lookup(topic) : null;
+    const knownFact = topic ? this.parietal.lookup(topic) : null;
+
+    /* سؤالٌ عن المشار إليه («شو هذا؟») وهو يرى شيئاً يعرفه: الجواب مما يراه لا
+     * مما حُفظ نصّاً. فيُصاغ ما يراه حقيقةً آنيّة تُقدَّم على المحفوظ، لأن السؤال
+     * عن الحاضر لا عن الذاكرة. */
+    const askingAboutSight = understanding.intent === 'ASK'
+      && recognized !== null
+      && (topic === null || DEMONSTRATIVE_KEYS.has(topic));
+    const seenFact = askingAboutSight && recognized
+      ? {
+        subject: topic ?? 'هذا',
+        object: recognized.name,
+        confidence: recognized.confidence,
+        taughtBy: 'رآه بعينه',
+        lastSeenTick: this.ticks,
+      }
+      : null;
+
+    const fact = seenFact ?? knownFact;
     const generalized = !fact && topic ? this.parietal.generalize(topic, this.lexicon) : null;
 
     /* ٩. اللوزة: هل هذا المعنى مقترن بمدح أم بخطأ في تجربتي؟ */
@@ -287,7 +446,8 @@ export class Zubair {
       hasGeneralization: generalized !== null,
       recallScore: recall.bestScore,
       vocab: this.lexicon.size,
-      unknownCount: percept.unknown.length,
+      unknownCount: unknownContent.length,
+      factConfidence: fact?.confidence ?? 0,
     }));
 
     /* ١٢. العُقد القاعدية: أي استجابة أختار؟
@@ -305,7 +465,7 @@ export class Zubair {
     const state = this.basalGanglia.encodeState({
       understanding, recallScore: recall.bestScore, hasFact: fact !== null,
       hasGeneralization: generalized !== null, valence, conflict: conflict.level,
-      intero, insula: insulaVec, stage: stage.id, unknownCount: percept.unknown.length,
+      intero, insula: insulaVec, stage: stage.id, unknownCount: unknownContent.length,
     });
     const decision = timed(this.basalGanglia, `اختار استجابته (حرارة ${temperature.toFixed(2)})`, this.compute_.unit,
       () => this.basalGanglia.select(state, allowed, temperature, this.rng, this.compute_));
@@ -313,7 +473,7 @@ export class Zubair {
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
       strategy: decision.strategy, stage, percept, understanding, recall, fact, generalized,
-      intero, unknownWords: percept.unknown,
+      intero, unknownWords: unknownContent,
       /* موضوع سؤالك يُضاف إلى ما سأل عنه في هذه النبضة وحدها: طفل يُسأل «شو
        * القطة؟» فيردّ «شو القطة؟» يبدو ساخراً لا جاهلاً. إن كان لا يعرف فليقل
        * «ما بعرف، علّمني» — وهذا ما تفعله استراتيجية الإقرار بالجهل. */
@@ -353,6 +513,8 @@ export class Zubair {
       meaning: understanding.meaning.slice(), state: state.slice(),
       strategy: decision.strategy, intent: understanding.intent,
       subject: bound.subject, object: bound.object,
+      sawFeatures: askingAboutSight && vision ? vision.features.slice() : null,
+      namedFromSight: askingAboutSight ? (recognized?.name ?? null) : null,
       assertedObject: decision.strategy === 'ANSWER_MEMORY' ? (fact?.object ?? null)
         : decision.strategy === 'ANSWER_GENERAL' ? (generalized?.fact.object ?? null) : null,
     };
@@ -399,6 +561,21 @@ export class Zubair {
     const learned: string[] = [];
 
     this.hippocampus.annotate(pending.tick, pending.replied, reward);
+
+    /* تصحيح التسمية البصرية: أخطر من تصحيح الكلام لأنه يُعدّل ما يراه لا ما
+     * يحفظه. ويمرّ على نفس منطق الحقائق: لا يُمحى النموذج من مرة واحدة. */
+    if (pending.sawFeatures && pending.namedFromSight) {
+      if (reward > 0) {
+        this.inferotemporal.confirm(pending.namedFromSight, pending.sawFeatures, this.ticks);
+        learned.push(`ثبّت أن ما رآه هو «${pending.namedFromSight}»`);
+      } else {
+        const rightName = feedback.correction?.trim() ?? null;
+        this.inferotemporal.correct(pending.namedFromSight, rightName, pending.sawFeatures, this.ticks);
+        learned.push(rightName
+          ? `تعلّم بعينه أن هذا «${rightName}» لا «${pending.namedFromSight}»`
+          : `أضعف أن ما رآه «${pending.namedFromSight}»`);
+      }
+    }
     this.amygdala.condition(pending.meaning, reward);
     this.thalamus.reinforce(reward);
     const { dopamine } = this.basalGanglia.learn(pending.state, pending.strategy, reward);
@@ -541,6 +718,10 @@ export class Zubair {
         prefrontal: this.prefrontal.save(),
         cerebellum: this.cerebellum.save(),
         broca: this.broca.save(),
+        visualCortex: this.visualCortex.save(),
+        auditoryCortex: this.auditoryCortex.save(),
+        somatosensory: this.somatosensory.save(),
+        inferotemporal: this.inferotemporal.save(),
       },
     };
   }
@@ -576,6 +757,10 @@ export class Zubair {
     this.prefrontal.load(lobes['prefrontal'] as never);
     this.cerebellum.load(lobes['cerebellum'] as never);
     this.broca.load(lobes['broca'] as never);
+    this.visualCortex.load(lobes['visualCortex'] as never);
+    this.auditoryCortex.load(lobes['auditoryCortex'] as never);
+    this.somatosensory.load(lobes['somatosensory'] as never);
+    this.inferotemporal.load(lobes['inferotemporal'] as never);
   }
 
   async save(): Promise<void> {
@@ -611,6 +796,11 @@ export class Zubair {
 
 const QUESTION_WORDS = new Set([
   'ما', 'ماذا', 'شو', 'مين', 'من', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متى', 'كم', 'ايش', 'شنو',
+]);
+
+/** أسماء الإشارة بصورتها المطبَّعة: بها يُعرَف أن الأب يشير إلى ما تراه الكاميرا. */
+const DEMONSTRATIVE_KEYS = new Set([
+  'هذا', 'هذه', 'هذي', 'هاد', 'هادا', 'هاي', 'هيدا', 'هيدي', 'هاذا', 'ذا',
 ]);
 
 const STOP_WORDS = new Set([
