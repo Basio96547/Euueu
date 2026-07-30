@@ -162,6 +162,7 @@ const inhibitCtx = {
   unknownCount: 1,
   factConfidence: 0.8,
   lessonLanded: false,
+  ruleToTest: false,
 };
 
 test('لا يجيب من ذاكرة لا يملكها ولا يعمّم بلا تعميم', () => {

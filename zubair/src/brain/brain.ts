@@ -399,8 +399,15 @@ export class Zubair {
      * والجهل يُقاس بكلمات المعنى وحدها: أدوات الاستفهام وأسماء الإشارة وحروف
      * الوصل ليست أشياءً يُسأل عنها. الطفل لا يقول «ما معنى هذا؟» عن كلمة «هذا»،
      * ولو عُدَّت جهلاً لصار زبير يردّ سؤالك بسؤالٍ عن أداة سؤالك. */
+    /* كلمةُ معنى: ليست أداةَ استفهام ولا اسمَ إشارة ولا **حرفاً**.
+     *
+     * والحرف يُعرَف من النحو لا من قائمةٍ هنا، وهذا فرقٌ عملي لا ترتيبيّ: قِيسَ
+     * فخرج «وماذا أيضاً عن هيك؟» — عُدّت «هيك» شيئاً يجهله فسأل عنها، لأنها لم
+     * تكن في القائمة المكتوبة هنا وهي في قائمة الحروف عند النحو. والقوائم
+     * المكرّرة تفترق، وقسمُ الكلمة موضعه فصٌّ واحد. */
     const isContent = (word: string): boolean =>
-      !QUESTION_WORDS.has(word) && !STOP_WORDS.has(word) && !DEMONSTRATIVE_KEYS.has(word);
+      !QUESTION_WORDS.has(word) && !STOP_WORDS.has(word) && !DEMONSTRATIVE_KEYS.has(word)
+      && this.syntax.classify(word).pos !== 'حرف';
     const unknownContent = percept.unknown.filter(isContent);
     /** كلمات المعنى في جملته كلها — عنها يُسأل، لا عن أدوات سؤاله */
     const contentTokens = percept.tokens.filter(isContent);
@@ -594,7 +601,10 @@ export class Zubair {
       });
     }
 
-    const topic = bound.subject ?? resolvedSubject ?? this.salientTopic(percept, gated.weights);
+    /* موضوع الحوار يُصفّى بالنحو مهما كان مصدره: الحرف لا يصلح موضوعاً بحال،
+     * لا من الربط ولا من الانتباه. قِيسَ فخرج «وماذا أيضاً عن هيك؟». */
+    const boundTopic = bound.subject ?? resolvedSubject ?? this.salientTopic(percept, gated.weights);
+    const topic = boundTopic && this.syntax.classify(boundTopic).pos !== 'حرف' ? boundTopic : null;
     const knownFact = topic ? this.parietal.lookup(topic) : null;
 
     /* سؤالٌ عن المشار إليه («شو هذا؟») وهو يرى شيئاً يعرفه: الجواب مما يراه لا
@@ -636,6 +646,17 @@ export class Zubair {
     /* أنزل الدرس فعلاً؟ يُقاس بما حُفظ لا بما قيل: أبٌ يُعلّم جملةً لم يفهمها
      * ابنه لم يُعلّمه شيئاً بعد. وعليه وحده يُكبَح «علّمني» و«شو هذا؟». */
     const lessonLanded = this.lessons > lessonsBefore;
+
+    /** أخٌ في جنس موضوع الحوار: به يمتحن قاعدته بدل أن يسأل عن لفظ */
+    const akin = topic ? this.parietal.sibling(topic) : null;
+
+    /** قسمُ كل كلمة في جملة أبيه — من النحو، ليصوغ بروكا سؤالاً غير ملحون */
+    const wordForms = new Map<string, import('./lobes/broca.js').AskForm>();
+    const wordGenders = new Map<string, import('./lobes/syntax.js').Gender>();
+    for (const form of parse.words) {
+      wordForms.set(form.word, this.syntax.describes(form.stem) ? 'صفة' : form.pos);
+      wordGenders.set(form.word, form.gender);
+    }
 
     /* ٩. اللوزة: هل هذا المعنى مقترن بمدح أم بخطأ في تجربتي؟ */
     const valence = timed(this.amygdala, 'وسم عاطفي للمعنى', this.compute_.unit,
@@ -685,6 +706,9 @@ export class Zubair {
       unknownCount: unknownContent.length,
       factConfidence: fact?.confidence ?? 0,
       lessonLanded,
+      /* ولا يمتحن قاعدةً في وجه سؤال: مَن سُئل يُجيب. الامتحان يأتي بعد الدرس
+       * أو في الكلام العادي، وهو موضعه عند الطفل أيضاً. */
+      ruleToTest: akin !== null && understanding.intent !== 'ASK',
     }));
 
     /* ١٢. العُقد القاعدية: أي استجابة أختار؟
@@ -715,6 +739,10 @@ export class Zubair {
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
       strategy: decision.strategy, stage, percept, understanding, recall, fact, generalized,
       intero, unknownWords: unknownContent, contentWords: contentTokens,
+      /* أقسام كلمات جملتك: بها يُصاغ سؤاله صحيحاً. وكان يسأل «علّمني أكثر عن
+       * بيطير» لأنه لا يعرف أن ما بيده فعل. */
+      wordForms, wordGenders, topic, akin,
+      topicGender: topic ? this.syntax.classify(topic).gender : undefined,
       /* موضوع سؤالك يُضاف إلى ما سأل عنه في هذه النبضة وحدها: طفل يُسأل «شو
        * القطة؟» فيردّ «شو القطة؟» يبدو ساخراً لا جاهلاً. إن كان لا يعرف فليقل
        * «ما بعرف، علّمني» — وهذا ما تفعله استراتيجية الإقرار بالجهل. */
@@ -787,13 +815,17 @@ export class Zubair {
   }
 
   /** أعلى كلمة انتباهاً ليست أداة استفهام — عمّا يسألني أبي. */
-  private salientTopic(percept: { tokens: string[]; isQuestion: boolean }, weights: number[]): string | null {
+  private salientTopic(percept: { tokens: readonly string[]; isQuestion: boolean }, weights: number[]): string | null {
     if (percept.tokens.length === 0) return null;
     let best: string | null = null;
     let bestWeight = -Infinity;
     for (let i = 0; i < percept.tokens.length; i++) {
       const token = percept.tokens[i]!;
       if (QUESTION_WORDS.has(token) || STOP_WORDS.has(token)) continue;
+      /* والحرف لا يصلح موضوعاً بحال، ويُعرَف من النحو لا من قائمةٍ هنا: قِيسَ
+       * فخرج «ماذا أيضاً عن هيك؟» — جُعلت «هيك» موضوع الحوار لأنها لم تكن في
+       * القائمة. والقوائم تُنسى، وقسمُ الكلمة لا يُنسى. */
+      if (this.syntax.classify(token).pos === 'حرف') continue;
       const w = weights[i] ?? 0;
       if (w > bestWeight) {
         bestWeight = w;

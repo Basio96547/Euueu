@@ -80,6 +80,15 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     factConfidence: number;
     /** أنزل درسُ أبيه في هذه النبضة فعلاً؟ أي: فُهم وحُفظ لا أنه قيل فحسب */
     lessonLanded: boolean;
+    /**
+     * أعنده قاعدةٌ يمتحنها الآن؟ أي: يعرف شيئين من جنسٍ واحد فيسأل عن حدّه.
+     *
+     * وهذا استثناءٌ من كبح السؤال، وسببه أن الكبح بُني على عطلٍ آخر: كان يردّ
+     * سؤال أبيه بسؤاله عن الشيء نفسه، فمُنع السؤالُ عند العلم. لكن «القطة
+     * حيوان… والكلب كمان حيوان؟» ليس ردّ سؤال بسؤال بل امتحانُ قاعدة، وهو
+     * أنفع ما يقوله طفل — به يعرف حدّ الصنف من جوابك في دورٍ واحد.
+     */
+    ruleToTest: boolean;
   }): Strategy[] {
     /** ما يصحّ أصلاً — حَتْم */
     const allowed: Strategy[] = [];
@@ -117,10 +126,10 @@ export class Prefrontal implements Lobe<PrefrontalState> {
            * بتشغيل التطبيق: سُئل «شو القطة؟» وهو يعرف أنها حيوان فأجاب «شو
            * القطه؟» — ردّ سؤال أبيه بسؤاله عن الشيء نفسه. والسؤال في موضع
            * المعرفة ليس فضولاً بل تهرّب، ويُعلّم الأب أن ابنه لا يجيب. */
-          if (ctx.hasFact && ctx.unknownCount === 0) continue;
+          if (ctx.hasFact && ctx.unknownCount === 0 && !ctx.ruleToTest) continue;
           /* ومَن نزل فيه الدرس لا يسأل عن شيء ليس فيه جهلٌ حاضر: قال له أبوه
            * «القطة حيوان» فحفظها، فسؤاله بعدها «شو هذا؟» يُظهره كأنه لم يسمع. */
-          if (ctx.lessonLanded && ctx.unknownCount === 0) continue;
+          if (ctx.lessonLanded && ctx.unknownCount === 0 && !ctx.ruleToTest) continue;
           break;
         case 'BABBLE':
           // من تعلّم كلمات لا يعود يثغثغ: هذا هو النمو محسوساً

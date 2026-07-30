@@ -403,6 +403,30 @@ export class Parietal implements Lobe<ParietalState> {
     return this.view;
   }
 
+  /**
+   * أخٌ في الجنس: شيءٌ آخر يعرف أنه من جنس هذا الشيء نفسه.
+   *
+   * وبه يسأل زبير أنفع أسئلته وأصدقها طفولةً: «القطة حيوان… والكلب كمان
+   * حيوان؟». وهذا ليس استظهاراً بل **اختبار قاعدة**: الطفل يبني الصنف في ذهنه
+   * فيمتحنه على شيء آخر، ومن جواب أبيه يعرف حدَّ الصنف. ولولا هذا الأخ لبقي
+   * سؤاله عن كلمةٍ مفردة معلّقة لا عن معرفةٍ تُبنى.
+   */
+  sibling(subject: string, relation: RelationKind = 'جنس'): Fact | null {
+    const s = factKey(subject);
+    const record = this.records.get(recordKey(s, relation));
+    if (!record) return null;
+    const category = record.main.object;
+
+    let best: Fact | null = null;
+    for (const other of this.records.values()) {
+      const fact = other.main;
+      if (fact.subject === s || fact.object !== category) continue;
+      // الأوثق أولى: أخٌ يشكّ فيه لا يصلح لامتحان قاعدة
+      if (!best || fact.confidence > best.confidence) best = fact;
+    }
+    return best;
+  }
+
   /* ————— التعميم ————— */
 
   /**

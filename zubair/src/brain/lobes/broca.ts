@@ -16,6 +16,11 @@ import type { Percept } from '../core/text.js';
 import type { Recall } from './hippocampus.js';
 import type { Understanding } from './temporal.js';
 import type { Fact, Interoception, Lobe, Stage, Strategy, TickOutput } from '../core/types.js';
+import type { Gender, PartOfSpeech } from './syntax.js';
+
+/** قسمُ الكلمة كما يلزم للسؤال. والصفة زائدة على أقسام الصرف الثلاثة لأنها
+ *  اسمٌ في الإعراب وتُسأل سؤالاً آخر: «شو صغيرة؟» لحن، و«شو قطة؟» صواب. */
+export type AskForm = PartOfSpeech | 'صفة';
 
 export interface SpeechRequest {
   strategy: Strategy;
@@ -29,6 +34,15 @@ export interface SpeechRequest {
   unknownWords: readonly string[];
   /** كلمات المعنى في جملة الأب — بها يُسأل، فأدواتُ السؤال ليست أشياءً يُسأل عنها */
   contentWords?: readonly string[];
+  /** قسمُ كل كلمة في جملة الأب: اسمٌ أم فعل أم صفة. بلاه يُصاغ سؤالٌ ملحون */
+  wordForms?: ReadonlyMap<string, AskForm>;
+  /** موضوع الحوار الآن — عنه يسأل، لا عن كلمةٍ معلّقة في الفراغ */
+  topic?: string | null;
+  /** جنس كل كلمة، وجنس الموضوع — بهما تُتجنَّب صيغةٌ لا تُطابق */
+  wordGenders?: ReadonlyMap<string, Gender>;
+  topicGender?: Gender;
+  /** أخٌ في الجنس لموضوع الحوار — به يسأل سؤال القاعدة: «والكلب كمان حيوان؟» */
+  akin?: Fact | null;
   askedBefore: readonly string[];
   lexicon: Lexicon;
   selfName: string;
@@ -156,48 +170,179 @@ export class Broca implements Lobe<BrocaState> {
     return { text: out, kind: 'babble', about: null };
   }
 
-  /* ————— السؤال: أسئلة أطفال متدرّجة —————
-   * يسأل عمّا يجهله فعلاً: كلمة مجهولة حاضرة في كلام أبيه أولاً، فيكون جواب
-   * الأب في موضع الحاجة لا في الفراغ. */
+  /* ————— السؤال —————
+   *
+   * كانت أسئلته تُبنى بقالبٍ واحد يُحشى فيه أيُّ لفظٍ كان، فخرجت ملحونةً
+   * وغريبة: «علّمني أكثر عن بيطير»، و«علّمني أكثر عن ضخم» — و«عن» لا يدخل على
+   * فعلٍ ولا على صفةٍ مفردة في العربية. ولا يُصلحه تحسينُ القالب: الخلل أن
+   * القالب لا يعرف **قسم الكلمة** ولا **موضوع الحوار**.
+   *
+   * والسؤال هنا يُبنى على ثلاثة:
+   *
+   *   ١) قسمُ ما يجهله: الاسم يُسأل عنه بـ«شو»، والصفةُ بـ«شو يعني» و«مين
+   *      كمان»، والفعلُ بـ«ليش» و«كيف». وسؤالُ صفةٍ بـ«شو» لحنٌ لا طفولة.
+   *   ٢) موضوعُ الحوار: «ليش القطة صغيرة؟» لا «ليش صغيرة؟». الطفل يسأل عن
+   *      الشيء الذي بين يديه لا عن لفظٍ معلّق.
+   *   ٣) ما يعرفه أصلاً: «القطة حيوان… والكلب كمان حيوان؟» — وهذا أصدق ما
+   *      يسأله طفل، لأنه امتحانُ قاعدةٍ بناها لا استفهامٌ عن لفظ.
+   *
+   * والتدرّج باقٍ: الوليد يُعيد اللفظ باستفهام، والطفل في سنّ «ليش»، واليافع
+   * يسأل عن الحدّ والفرق.
+   */
   private ask(req: SpeechRequest): Speech {
-    const target = this.questionTarget(req);
     const rng = req.rng;
+    const target = this.questionTarget(req);
+    /* والموضوع يُقارَن بالمسؤول عنه بجذعيهما لا بصورتيهما: «الجمل» و«جمل»
+     * شيءٌ واحد، فلولا نزع الأداة لخرج «الجمل متل جمل؟» — سؤالٌ عن تشابه
+     * الشيء بنفسه، وهو أظهر ما يفضح قالباً يُحشى بلا فهم. */
+    const topic = req.topic && !sameThing(req.topic, target)
+      ? req.lexicon.pretty(req.topic)
+      : null;
 
-    if (!target) {
-      const blind = this.isShami
-        ? ['شو هذا؟', 'شو صار؟', 'وبعدين؟']
-        : ['ما هذا؟', 'ماذا حدث؟', 'ثم ماذا؟'];
-      return { text: this.pick(blind, rng), kind: 'question', about: null };
+    if (target) {
+      const pos: AskForm = req.wordForms?.get(target) ?? 'مجهول';
+      const word = req.lexicon.pretty(target);
+      /* الموضوع لا يُذكر مع الكلمة إلا إذا طابقها في التذكير والتأنيث: «كلب
+       * دايماً صغيرة؟» لحنٌ لا يقوله طفلٌ عربي في أي سنّ. وحين لا تُطابق
+       * تُستعمل صيغةٌ لا موضوع فيها — «مين كمان صغيرة؟» — فيبقى السؤال
+       * سليماً ولا يُخترع تصريف. */
+      const wordGender = req.wordGenders?.get(target) ?? 'مجهول';
+      const agrees = topic !== null
+        && (req.topicGender === undefined || req.topicGender === 'مجهول'
+          || wordGender === 'مجهول' || req.topicGender === wordGender);
+      return {
+        text: this.pick(this.aboutWord(word, pos, agrees ? topic : null, req.stage.id), rng),
+        kind: 'question',
+        about: target,
+      };
     }
 
-    let options: readonly string[];
-    switch (req.stage.id) {
-      case 0:
-        options = [`${target}؟`, 'شو؟'];
-        break;
-      case 1:
-        options = this.isShami
-          ? [`شو ${target}؟`, `${target}؟ شو هذا؟`, 'مين؟']
-          : [`ما ${target}؟`, `${target}؟ ما هذا؟`, 'من؟'];
-        break;
-      case 2:
-        options = this.isShami
-          ? [`شو يعني ${target}؟`, `ليش ${target}؟`, `و${target} شو؟`]
-          : [`ما معنى ${target}؟`, `لماذا ${target}؟`, `و${target} ماذا؟`];
-        break;
-      case 3:
-        options = this.isShami
-          ? [`${target} شو يعني بالزبط؟`, `هل ${target} مثل الشي اللي علّمتني؟`, `علّمني أكثر عن ${target}`]
-          : [`ما معنى ${target} بالضبط؟`, `هل ${target} مثل ما علّمتني؟`, `علّمني أكثر عن ${target}`];
-        break;
-      default:
-        options = this.isShami
-          ? [`هل كل ${target} هيك؟`, `ليش ${target} هيك ومو غير هيك؟`, `شو الفرق بين ${target} وغيره؟`]
-          : [`هل كل ${target} كذلك؟`, `لماذا ${target} هكذا لا غير ذلك؟`, `ما الفرق بين ${target} وغيره؟`];
-        break;
+    // لا يجهل لفظاً: فيسأل عمّا يعرف — امتحانَ قاعدةٍ أو استزادة
+    if (topic) {
+      return {
+        text: this.pick(this.aboutTopic(topic, req, req.stage.id), rng),
+        kind: 'question',
+        about: req.topic ?? null,
+      };
     }
 
-    return { text: this.pick(options, rng), kind: 'question', about: target };
+    const open = this.isShami
+      ? ['شو صار؟', 'وبعدين؟', 'شو هاد؟', 'في شي جديد؟']
+      : ['ماذا حدث؟', 'ثم ماذا؟', 'ما هذا؟', 'هل من جديد؟'];
+    return { text: this.pick(open, rng), kind: 'question', about: null };
+  }
+
+  /** سؤالٌ عن لفظٍ يجهله، مصوغٌ على قسمه الصرفي ومرحلته. */
+  private aboutWord(word: string, pos: AskForm, topic: string | null, stage: number): readonly string[] {
+    // الوليد لا يُركّب سؤالاً: يُعيد اللفظ باستفهام، وهذا أول سؤال في كل لغة
+    if (stage === 0) return [`${word}؟`, 'شو؟'];
+
+    const shami = this.isShami;
+
+    /* بلا موضوعٍ مطابق لا يُستبدَل باسم إشارة: «هاد» مذكّر، فـ«هاد دايماً
+     * صغيرة؟» لحنٌ كالذي فررنا منه. والسؤال بلا موضوع سليمٌ تامّ. */
+    if (topic === null && (pos === 'صفة' || pos === 'فعل')) {
+      if (stage <= 1) return [`${word}؟`, shami ? 'شو؟' : 'ماذا؟'];
+      return shami
+        ? [`شو يعني ${word}؟`, `مين كمان ${word}؟`, `${word}؟ ليش؟`]
+        : [`ما معنى ${word}؟`, `من أيضاً ${word}؟`, `${word}؟ لماذا؟`];
+    }
+
+    const on = topic ?? (shami ? 'هاد' : 'هذا');
+
+    if (pos === 'فعل') {
+      /* الفعل لا يُسأل عنه بـ«شو» ولا يدخل عليه «عن»: يُسأل عن فاعله وسببه
+       * وكيفيته. وهذا ما يفعله الطفل: «ليش بيطير؟» لا «شو بيطير؟». */
+      if (stage === 1) return shami ? [`${word}؟`, 'ليش؟'] : [`${word}؟`, 'لماذا؟'];
+      if (stage === 2) {
+        return shami
+          ? [`ليش ${on} ${word}؟`, `${on} ${word} كيف؟`, `شو يعني ${word}؟`]
+          : [`لماذا ${on} ${word}؟`, `كيف ${on} ${word}؟`, `ما معنى ${word}؟`];
+      }
+      if (stage === 3) {
+        return shami
+          ? [`ليش ${on} ${word}؟`, `مين كمان ${word}؟`, `${on} دايماً ${word}؟`]
+          : [`لماذا ${on} ${word}؟`, `من أيضاً ${word}؟`, `هل ${on} دائماً ${word}؟`];
+      }
+      return shami
+        ? [`ليش ${on} ${word} ومو غير هيك؟`, `كل شي متل ${on} ${word}؟`, `شو بيصير لو ما ${word}؟`]
+        : [`لماذا ${on} ${word} لا غير ذلك؟`, `هل كل مثله ${word}؟`, `ماذا يحدث لو لم ${word}؟`];
+    }
+
+    if (pos === 'صفة') {
+      /* الصفة كذلك: «شو صغيرة؟» لحن. وأصدق ما يسأله الطفل عن صفة أن يمتحن
+       * مداها: «مين كمان صغير؟» — يبني بها صنفاً لا يحفظ لفظاً. */
+      if (stage === 1) return shami ? [`${word}؟`, `${on} ${word}؟`] : [`${word}؟`, `${on} ${word}؟`];
+      if (stage === 2) {
+        return shami
+          ? [`شو يعني ${word}؟`, `ليش ${on} ${word}؟`, `مين كمان ${word}؟`]
+          : [`ما معنى ${word}؟`, `لماذا ${on} ${word}؟`, `من أيضاً ${word}؟`];
+      }
+      if (stage === 3) {
+        return shami
+          ? [`شو يعني ${word}؟`, `مين كمان ${word}؟`, `${on} دايماً ${word}؟`]
+          : [`ما معنى ${word}؟`, `من أيضاً ${word}؟`, `هل ${on} دائماً ${word}؟`];
+      }
+      return shami
+        ? [`كل ${on} ${word}؟`, `شو الفرق بين ${word} وغيره؟`, `إيمتى بيصير ${on} مو ${word}؟`]
+        : [`هل كل ${on} ${word}؟`, `ما الفرق بين ${word} وغيره؟`, `متى لا يكون ${on} ${word}؟`];
+    }
+
+    /* ما لم تُبيّن العلامةُ قسمَه: يُسأل عنه بما يصلح لكل قسم.
+     *
+     * و«عن» و«كل» و«شو» تُمنَع هنا بقصد: ثلاثتها تفترض الاسمية، فلو حُشي فيها
+     * فعلٌ لم تُبيّنه العلامة خرج اللحن نفسه الذي بُني هذا كلُّه لإصلاحه. ومَن
+     * لا يعرف قسم الكلمة يسأل سؤالاً محايداً — والحياد هنا صدقٌ لا عجز. */
+    if (pos === 'مجهول') {
+      if (stage <= 1) return [`${word}؟`, shami ? 'شو؟' : 'ماذا؟'];
+      return shami
+        ? [`شو يعني ${word}؟`, `${word} يعني شو؟`, `ليش قلت ${word}؟`]
+        : [`ما معنى ${word}؟`, `${word} تعني ماذا؟`, `لماذا قلت ${word}؟`];
+    }
+
+    // اسمٌ مؤكَّد: هذا وحده ما يصحّ فيه «شو» و«عن» و«كل»
+    if (stage === 1) return shami ? [`شو ${word}؟`, `${word}؟`] : [`ما ${word}؟`, `${word}؟`];
+    if (stage === 2) {
+      return shami
+        ? [`شو يعني ${word}؟`, `${word} شو؟`, `وين ${word}؟`]
+        : [`ما معنى ${word}؟`, `ما هي ${word}؟`, `أين ${word}؟`];
+    }
+    if (stage === 3) {
+      return shami
+        /* كلها استفهامٌ صريح: «حكيلي كمان عن كذا» طلبٌ لا سؤال، وكان يخرج بلا
+         * علامة استفهام فيُعرَض على الأب سؤالاً وهو أمر. */
+        ? [`شو يعني ${word} بالزبط؟`, `${word} متل ${on}؟`, `وشو كمان عن ${word}؟`]
+        : [`ما معنى ${word} بالضبط؟`, `هل ${word} مثل ${on}؟`, `وماذا أيضاً عن ${word}؟`];
+    }
+    return shami
+      ? [`شو الفرق بين ${word} و${on}؟`, `كل ${word} متل بعضها؟`, `ليش سمّوها ${word}؟`]
+      : [`ما الفرق بين ${word} و${on}؟`, `هل كل ${word} سواء؟`, `لماذا سُمّيت ${word}؟`];
+  }
+
+  /**
+   * سؤالٌ عمّا يعرفه: امتحانُ قاعدةٍ بناها، أو طلبُ استزادة.
+   *
+   * وامتحان القاعدة أنفع سؤال يسأله طفل: «القطة حيوان… والكلب كمان حيوان؟»
+   * يمتحن به حدّ الصنف، فيتعلّم من جواب أبيه ما لا يتعلّمه من مئة درس مفرد.
+   */
+  private aboutTopic(topic: string, req: SpeechRequest, stage: number): readonly string[] {
+    const shami = this.isShami;
+    const akin = req.akin;
+
+    if (akin && stage >= 2) {
+      const other = req.lexicon.pretty(akin.subject);
+      const category = req.lexicon.pretty(akin.object);
+      return shami
+        ? [`و${other} كمان ${category}؟`, `${topic} و${other} متل بعض؟`, `كل شي ${category} متل ${topic}؟`]
+        : [`وهل ${other} أيضاً ${category}؟`, `هل ${topic} و${other} سواء؟`, `هل كل ${category} مثل ${topic}؟`];
+    }
+
+    if (stage <= 1) return shami ? [`${topic}؟`, 'وبعدين؟'] : [`${topic}؟`, 'ثم ماذا؟'];
+    /* بلا «عن»: موضوع الحوار قد يكون لفظاً لم تُبيّن العلامةُ اسميّته، و«عن»
+     * تفترض الاسم. قِيسَ فخرج «وشو كمان عن عرفتها؟». وهذه الصيغ تصلح لكل لفظ. */
+    return shami
+      ? [`و${topic} شو كمان؟`, `ليش ${topic}؟`, `${topic}؟ كيف يعني؟`]
+      : [`و${topic} ماذا أيضاً؟`, `لماذا ${topic}؟`, `${topic}؟ كيف؟`];
   }
 
   /** ما يسأل عنه: مجهول حاضر لم يسأل عنه قبلاً، أو أقلّ كلماته سماعاً. */
@@ -374,6 +519,13 @@ export class Broca implements Lobe<BrocaState> {
       }
     } catch { /* أسلوب عطب يُترك: يعود يتكلّم بقوالبه المدمجة */ }
   }
+}
+
+/** أهما الشيء نفسه؟ تُنزع أداة التعريف من الطرفين ثم يُقارَن ما بقي. */
+function sameThing(a: string, b: string | null): boolean {
+  if (!b) return false;
+  const bare = (word: string): string => (word.length >= 5 && word.startsWith('ال') ? word.slice(2) : word);
+  return bare(a) === bare(b);
 }
 
 function limitWords(text: string, max: number): string {
