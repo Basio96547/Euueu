@@ -12,3 +12,6 @@ dist-worker/
 dist-preview/
 media/
 *.tsbuildinfo
+
+# النسخ الاحتياطية لا تُرفع: بياناتٌ شخصية، وحجمها ينمو بلا حدّ
+backups/
