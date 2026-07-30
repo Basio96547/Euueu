@@ -87,6 +87,19 @@ export default {
       }
       /* التهيئة تسبق كل شيء: تعمل والقاعدة بلا جداول، فلا تمرّ بطبقة
          الخدمات التي تفترض وجودها. وتُرفض على قاعدة مهيّأة. */
+      /* كلمة السرّ الأولى: تُضبط مرة واحدة على حساب إدارة بلا كلمة سرّ.
+         بدونها لا يدخل صاحب المتجر لوحته ما دام الواتساب بالمحاكاة. */
+      if (path === '/api/v1/bootstrap/admin-password' && request.method === 'POST') {
+        const boot = new BootstrapService(env.DB);
+        try {
+          const b: any = await request.json();
+          return Response.json({ data: await boot.setInitialAdminPassword(b.phone, b.password) });
+        } catch (e: any) {
+          return Response.json(e?.body?.() ?? { error: { code: 'BOOTSTRAP_FAILED' } },
+            { status: e?.status ?? 500 });
+        }
+      }
+
       if (path === '/api/v1/bootstrap') {
         const boot = new BootstrapService(env.DB);
         if (request.method === 'GET') return Response.json({ data: await boot.status() });

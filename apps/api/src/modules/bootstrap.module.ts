@@ -1,4 +1,5 @@
 import { Errors } from '../common/errors.js';
+import { hashPassword, checkPasswordStrength } from '../common/password.js';
 import type { D1Binding } from '../common/prisma.service.js';
 import { MIGRATION_SQL, SEED_SQL } from '../generated/bootstrap-sql.js';
 
@@ -74,6 +75,45 @@ export class BootstrapService {
       tables: after.filter((n) => !n.startsWith('_')).length,
       ok: applied.errors.length === 0,
     };
+  }
+
+  /**
+   * كلمة سرّ أولى لحساب الإدارة.
+   *
+   * بلا هذا المسار لا يدخل صاحب المتجر لوحته أصلاً: الدخول برمز واتساب،
+   * والقناة تعمل بالمحاكاة حتى يُضبط مفتاح المزوّد، والرمز لا يُعاد في
+   * الإنتاج — وإعادته كانت ستعني أن كل من يعرف الرقم يدخل.
+   *
+   * حارسه شرطان معاً: الحساب موجود بدور ADMIN، ولا كلمة سرّ له بعدُ.
+   * فالنافذة تُغلق بأول استعمال ولا تُفتح ثانية، ومن أراد التغيير بعدها
+   * فمن اللوحة بكلمته الحالية.
+   */
+  async setInitialAdminPassword(phone: string, password: string) {
+    const row: any = await (this.db as any)
+      .prepare('SELECT id, role, password_hash FROM users WHERE phone_e164 = ?')
+      .bind(phone)
+      .first();
+
+    if (!row) throw Errors.notFound('حساب الإدارة');
+    if (row.role !== 'ADMIN') {
+      throw Errors.badRequest('NOT_ADMIN', 'هذا الرقم ليس حساب إدارة', 'Not an admin account');
+    }
+    if (row.password_hash) {
+      throw Errors.badRequest('PASSWORD_ALREADY_SET',
+        'للحساب كلمة سرّ — تُغيَّر من اللوحة لا من هنا',
+        'Password already set; change it from the panel');
+    }
+
+    const check = checkPasswordStrength(password);
+    if (!check.ok) throw Errors.badRequest('PASSWORD_WEAK', check.reason!, 'Password too weak');
+
+    const hash = await hashPassword(password);
+    await (this.db as any)
+      .prepare('UPDATE users SET password_hash = ?, password_set_at = ? WHERE id = ?')
+      .bind(hash, new Date().toISOString(), row.id)
+      .run();
+
+    return { phone, passwordSet: true, note: 'غيّرها من تبويب «كلمة السرّ» بعد أول دخول.' };
   }
 }
 
