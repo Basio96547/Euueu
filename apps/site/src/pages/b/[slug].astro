@@ -8,6 +8,7 @@ import Base from '../../layouts/Base.astro';
 import Header from '../../components/Header.astro';
 import ProductCard from '../../components/ProductCard.astro';
 import { brandList, productsOfBrand, categories } from '../../lib/catalog';
+import { breadcrumbLd, itemListLd } from '../../lib/seo';
 
 export function getStaticPaths() {
   return brandList.map((b) => ({ params: { slug: b.slug }, props: { brand: b } }));
@@ -22,19 +23,27 @@ const cheapest = items.length
   ? Math.min(...items.map((p) => Math.min(...p.variants.map((v) => v.priceUsdCents))))
   : 0;
 
-const ld = {
-  '@context': 'https://schema.org',
-  '@type': 'CollectionPage',
-  name: `${brand.name.ar} في سوريا`,
-  about: { '@type': 'Brand', name: brand.name.en ?? brand.name.ar },
-  numberOfItems: items.length,
-};
+const base = (Astro.site?.href ?? 'https://talisham.com/').replace(/\/$/, '');
+const schema = [
+  {
+    '@type': 'CollectionPage',
+    name: `${brand.name.ar} في سوريا`,
+    about: { '@type': 'Brand', name: brand.name.en ?? brand.name.ar },
+    numberOfItems: items.length,
+  },
+  breadcrumbLd(base, [['الرئيسية', '/'], [brand.name.ar, `/b/${brand.slug}/`]]),
+  itemListLd(base, items.map((p) => ({
+    slug: p.slug, name: p.name.ar,
+    usdCents: p.variants[0]!.priceUsdCents, inStock: p.variants[0]!.stock > 0,
+  }))),
+];
 ---
 
 <Base
   title={`${brand.name.ar} في سوريا`}
   description={`أجهزة وملحقات ${brand.name.ar} بأسعار محدَّثة ودفع عند الاستلام — تالي شام`}
   active="search"
+  schema={schema}
 >
   <Header title={brand.name.ar} back="/" active="search" />
 
@@ -63,8 +72,6 @@ const ld = {
       </nav>
     )}
   </main>
-
-  <script type="application/ld+json" is:inline set:html={JSON.stringify(ld)} />
 </Base>
 
 <style>

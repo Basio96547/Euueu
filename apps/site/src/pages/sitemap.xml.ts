@@ -16,8 +16,8 @@ export const GET: APIRoute = ({ site }) => {
 
   const entries: Entry[] = [
     { loc: '/', priority: '1.0', changefreq: 'daily' },
+    { loc: '/prices/', priority: '0.9', changefreq: 'daily' },
     { loc: '/search/', priority: '0.6', changefreq: 'weekly' },
-    { loc: '/compare/', priority: '0.4', changefreq: 'monthly' },
     { loc: '/help/', priority: '0.7', changefreq: 'monthly' },
     { loc: '/blog/', priority: '0.7', changefreq: 'weekly' },
     ...categories.map((c) => ({ loc: `/c/${c.slug}/`, priority: '0.9', changefreq: 'daily' })),

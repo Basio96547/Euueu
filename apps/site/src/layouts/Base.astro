@@ -4,17 +4,38 @@ import '@talisham/ui/base.css';
 import { currentFx, isDemoMode, catalogSource } from '../lib/catalog';
 import BottomNav from '../components/BottomNav.astro';
 import Footer from '../components/Footer.astro';
+import { SITE, organizationLd, websiteLd, graph } from '../lib/seo';
 
 interface Props {
   title: string;
   description?: string;
   active?: 'home' | 'search' | 'cart' | 'account';
+  /** أنواع schema خاصة بالصفحة — تُضاف إلى رسم الموقع الثابت */
+  schema?: unknown[];
+  /** صفحةٌ لا معنى لفهرستها: نتيجةُ مقارنةٍ أو نتيجةُ بحث */
+  noindex?: boolean;
+  /** حين يكون للصفحة عنوانٌ قانونيّ واحد غير المسار الحالي */
+  canonical?: string;
 }
 
-const { title, description = 'متجر الهواتف الجوالة في سوريا — دفع عند الاستلام', active = 'home' } = Astro.props;
+const {
+  title, description = 'متجر الهواتف الجوالة في سوريا — دفع عند الاستلام',
+  active = 'home', schema = [], noindex = false, canonical,
+} = Astro.props;
 const fx = currentFx();
 const demo = isDemoMode();
 const full = `${title} | تالي شام`;
+
+/*
+  العنوان القانونيّ للصفحة.
+  بلا تصريحٍ به تصير ‎/c/smartphones‎ و‎/c/smartphones/‎ و‎/c/smartphones/?x=1‎
+  ثلاثَ صفحاتٍ متطابقة في نظر محرك البحث، تتقاسم ثقة الرابط الواحد
+  وتُضعف بعضها. والتصريح يجمعها في واحدة.
+*/
+const base = (Astro.site?.href ?? 'https://talisham.com/').replace(/\/$/, '');
+const href = canonical ?? new URL(Astro.url.pathname, base + '/').href;
+const ogImage = `${base}/og.png`;
+const ld = graph(base, [organizationLd(base), websiteLd(base), ...schema]);
 ---
 
 <html lang="ar" dir="rtl">
@@ -23,14 +44,32 @@ const full = `${title} | تالي شام`;
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{full}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={href} />
+    <link rel="alternate" hreflang="ar-SY" href={href} />
+    <link rel="alternate" hreflang="x-default" href={href} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
     <meta name="theme-color" content="#efece5" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#08110f" media="(prefers-color-scheme: dark)" />
     <link rel="manifest" href="/manifest.webmanifest" />
+
     <meta property="og:title" content={full} />
     <meta property="og:description" content={description} />
     <meta property="og:locale" content="ar_SY" />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={href} />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="تالي شام — متجر الهواتف الجوالة في سوريا" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={full} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
     <meta name="format-detection" content="telephone=no" />
+
+    {/* رسمٌ واحد يعرّف المتجر والموقع وما تخصّ به هذه الصفحة */}
+    <script type="application/ld+json" is:inline set:html={ld} />
 
     <!--
       سعر الصرف يُحقن هنا وقت الطلب من الحافة (الفصل 7 §7.11).

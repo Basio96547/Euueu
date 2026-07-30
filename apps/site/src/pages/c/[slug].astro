@@ -3,6 +3,7 @@ import Base from '../../layouts/Base.astro';
 import Header from '../../components/Header.astro';
 import ProductCard from '../../components/ProductCard.astro';
 import { categories, productsInCategory } from '../../lib/catalog';
+import { breadcrumbLd, itemListLd } from '../../lib/seo';
 
 export function getStaticPaths() {
   return categories.map((c) => ({ params: { slug: c.slug }, props: { category: c } }));
@@ -22,9 +23,25 @@ const siblings = parent
 /* من الأدنى سعراً إلى الأعلى: المشتري في هذا السوق يبدأ من الميزانية */
 const sorted = [...items].sort((a, b) => a.variants[0]!.priceUsdCents - b.variants[0]!.priceUsdCents);
 const cheapest = sorted[0]?.variants[0]?.priceUsdCents ?? 0;
+
+/* الفتات يظهر في نتيجة البحث بدل الرابط، والقائمة تُظهر السعر والتوفّر
+   تحت العنوان — فتُقرأ النتيجة قبل أن تُفتَح. */
+const base = (Astro.site?.href ?? 'https://talisham.com/').replace(/\/$/, '');
+const schema = [
+  breadcrumbLd(base, [['الرئيسية', '/'], [category.name.ar, `/c/${category.slug}/`]]),
+  itemListLd(base, sorted.map((p) => ({
+    slug: p.slug, name: p.name.ar,
+    usdCents: p.variants[0]!.priceUsdCents, inStock: p.variants[0]!.stock > 0,
+  }))),
+];
 ---
 
-<Base title={category.name.ar} description={`${category.name.ar} في سوريا — أسعار محدَّثة ودفع عند الاستلام`} active="search">
+<Base
+  title={`${category.name.ar} في سوريا`}
+  description={`${items.length} من ${category.name.ar} بأسعار محدَّثة على سعر الصرف، دفع نقداً عند الاستلام في دمشق وسوريا — تالي شام`}
+  active="search"
+  schema={schema}
+>
   <Header title={category.name.ar} back="/" active="search" />
 
   <main class="container">

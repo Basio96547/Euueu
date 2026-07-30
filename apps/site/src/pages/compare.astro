@@ -52,7 +52,12 @@ const data = products.map((p) => {
 const ROWS = Object.keys(data[0]?.rows ?? {});
 ---
 
-<Base title="المقارنة" description="قارن حتى أربعة أجهزة في جدول فروق واحد — تالي شام" active="search">
+<Base
+  title="المقارنة"
+  description="قارن حتى أربعة أجهزة في جدول فروق واحد — تالي شام"
+  active="search"
+  noindex
+>
   <Header title="المقارنة" back="/" active="search" />
 
   <main class="container">

@@ -1,0 +1,379 @@
+---
+/**
+ * الواجهة — صفحة الأسعار.
+ *
+ * هذه الصفحة مبنيّة لتُرتَّب في نتائج البحث، لا لتزيّن. والفرق بين
+ * صفحةٍ تُرتَّب وصفحةٍ تُعاقَب سطرٌ واحد: أن يجد فيها الزائر جواباً لا
+ * يجده في غيرها. صفحةٌ فارغةٌ محشوّةٌ بالكلمات المفتاحية اسمُها عند
+ * جوجل «صفحة بوّابة»، وعقوبتها خفضُ الموقع كلّه لا خفضُها وحدها.
+ *
+ * فما فيها كلُّه جوابٌ حقيقي: الأسعار بالليرة اليوم، وكيف حُسبت من
+ * الدولار، وما الفرق بين ZA/A وLL/A، وما معنى «مجدَّد»، ولماذا يُفحص
+ * الـIMEI في سوقٍ نصفه مستورَد. وهذه أسئلةٌ تُسأل فعلاً، وأجوبتها
+ * متفرّقة في الموقع — وجَمعها في صفحةٍ واحدة هو ما يجعلها تُرتَّب.
+ *
+ * وأنواع التحسين كلّها مُطبَّقة هنا معاً:
+ *   تقنيّ    — عنوانٌ قانونيّ، وخريطة، وسرعةٌ مقيسة، وصفر جافاسكربت.
+ *   محتوى    — نصٌّ أصيل مع عناوين مرتّبة (h1 واحد ثم h2 ثم h3).
+ *   منظَّم   — ItemList وFAQPage وBreadcrumbList في رسمٍ واحد.
+ *   محلّي    — دمشق وسوريا مصرَّحٌ بهما في بيانات المتجر.
+ *   داخليّ   — رابطٌ إلى كل فئة وكل علامة وكل منتج.
+ *   تجاريّ   — سعرٌ وتوفّرٌ في البيانات المنظَّمة، فيظهران في النتيجة.
+ */
+import Base from '../layouts/Base.astro';
+import Header from '../components/Header.astro';
+import {
+  products, categories, brandList, currentFx,
+  CONDITION_AR, ORIGIN_AR,
+} from '../lib/catalog';
+import { breadcrumbLd, itemListLd, faqLd, SITE } from '../lib/seo';
+
+const base = (Astro.site?.href ?? 'https://talisham.com/').replace(/\/$/, '');
+const fx = currentFx();
+const syp = Math.round(fx.rate / 1000) * 1000;
+const catName = new Map(categories.map((c) => [c.slug, c.name.ar]));
+
+/* الأرخص أولاً: من يبحث عن «أسعار» يبحث عن حدٍّ أدنى قبل كل شيء */
+const rows = [...products]
+  .map((p) => ({ p, v: p.variants[0]! }))
+  .sort((a, b) => a.v.priceUsdCents - b.v.priceUsdCents);
+
+const cheapest = rows[0]?.v.priceUsdCents ?? 0;
+const dearest = rows[rows.length - 1]?.v.priceUsdCents ?? 0;
+const inStock = rows.filter((r) => r.v.stock > 0).length;
+const today = new Date().toISOString().slice(0, 10);
+
+const FAQ = [
+  {
+    q: 'كيف تُحسب أسعار الجوالات بالليرة السورية؟',
+    a: `السعر المرجعيّ بالدولار، ويُضرب بسعر صرفٍ معلَن نعرضه في أعلى الصفحة `
+      + `(اليوم: 1 دولار = ${syp.toLocaleString('en-US')} ليرة)، ثم يُقرَّب إلى أقرب ألف لأن الدفع نقديّ. `
+      + `والسعر يُثبَّت على طلبك 48 ساعة من لحظة تأكيده، فلا يتغيّر عليك إن تحرّك الصرف قبل التسليم.`,
+  },
+  {
+    q: 'ما الفرق بين ZA/A وLL/A في الآيفون؟',
+    a: 'رمز النسخة يقول من أي سوقٍ خرج الجهاز. ZA/A نسخة الإمارات والخليج، وفيها شريحتان فعليتان '
+      + 'وصوت الكاميرا يمكن كتمه. وLL/A النسخة الأمريكية، وأجهزتها الحديثة بشريحة إلكترونية (eSIM) '
+      + 'فقط بلا منفذ شريحة. الفرق ليس في الجودة بل في ما يناسب استعمالك، ورمز كل جهاز مكتوب على صفحته.',
+  },
+  {
+    q: 'ما الفرق بين المستعمل والمجدَّد؟',
+    a: 'المستعمل جهازٌ عمل عند صاحبه ثم بيع، ونصنّفه «ممتاز» أو «جيد» بحسب أثر الاستعمال. '
+      + 'والمجدَّد جهازٌ استُبدلت فيه قطعٌ (بطارية أو شاشة غالباً) وأُعيد فحصه. '
+      + 'لكل جهاز مستعمل أو مجدَّد نسبة صحة بطاريته مكتوبة، ونتيجة فحص IMEI الخاصة به.',
+  },
+  {
+    q: 'لماذا يهمّ فحص IMEI عند الشراء في سوريا؟',
+    a: 'رقم IMEI يكشف إن كان الجهاز مبلَّغاً عنه مفقوداً أو مسروقاً، أو مقفلاً على شبكةٍ أجنبية. '
+      + 'نفحص كل جهاز قبل عرضه، ونسلّمك نتيجة الفحص مطبوعةً على الإيصال مع الجهاز — لا شفهياً.',
+  },
+  {
+    q: 'هل أدفع شيئاً قبل الاستلام؟',
+    a: 'لا. الدفع نقداً عند الاستلام حصراً، بعد أن تفتح العلبة وتفحص الجهاز أمام المندوب. '
+      + 'لا نطلب أي دفعة مقدَّمة ولا تحويلاً بأي وسيلة، ومن يطلب ذلك باسمنا فليس منّا.',
+  },
+  {
+    q: 'كم تستغرق مدة التوصيل؟',
+    a: 'داخل دمشق وريفها خلال 24 إلى 48 ساعة بمندوبينا. وإلى باقي المحافظات عبر مكاتب النقل، '
+      + 'والمدة تتبع المكتب. الكفالة تبدأ يوم التسليم لا يوم الطلب.',
+  },
+  {
+    q: 'هل الأسعار المعروضة نهائية؟',
+    a: 'نعم، السعر المعروض هو ما تدفعه — لا رسوم تظهر عند الاستلام. '
+      + 'وأجرة التوصيل إن وُجدت تُعرض قبل تأكيد الطلب لا بعده.',
+  },
+];
+
+const schema = [
+  breadcrumbLd(base, [['الرئيسية', '/'], ['أسعار الجوالات في سوريا', '/prices/']]),
+  itemListLd(base, rows.map(({ p, v }) => ({
+    slug: p.slug, name: p.name.ar, usdCents: v.priceUsdCents, inStock: v.stock > 0,
+  }))),
+  faqLd(FAQ),
+];
+
+const title = 'أسعار الجوالات في سوريا اليوم';
+const desc = `أسعار ${products.length} جهازاً وملحقاً بالليرة السورية والدولار، محدَّثة على سعر صرف اليوم `
+  + `(1 دولار = ${syp.toLocaleString('en-US')} ل.س). دفع عند الاستلام في دمشق وسوريا.`;
+---
+
+<Base title={title} description={desc} active="home" schema={schema}>
+  <Header />
+
+  <main class="container lp">
+    <nav class="crumbs" aria-label="مسار التصفّح">
+      <a href="/">الرئيسية</a><span aria-hidden="true">/</span>
+      <span aria-current="page">الأسعار</span>
+    </nav>
+
+    <section class="lead">
+      <p class="eyebrow">محدَّثة اليوم {today}</p>
+      <h1>{title}</h1>
+      <p class="lede">
+        كل جهاز في المحل بسعره بالليرة السورية وبالدولار، مرتَّباً من الأرخص إلى الأغلى.
+        الأسعار تُحسب على سعر صرفٍ معلَن نعرضه أدناه، وتُثبَّت على طلبك 48 ساعة.
+        والدفع نقداً عند الاستلام بعد أن تفحص الجهاز — بلا أي دفعة مقدَّمة.
+      </p>
+
+      <p class="fx tnum">
+        <span class="dot" aria-hidden="true"></span>
+        <span>سعر الصرف المعتمد اليوم: <b>1 دولار = {syp.toLocaleString('en-US')} ل.س</b></span>
+      </p>
+
+      {/* زر الدخول: هذه الصفحة تُجيب، والمتجر يبيع — والانتقال بينهما بضغطة */}
+      <div class="enter">
+        <a class="btn btn--lg" href="/">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+            ><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5" /></svg>
+          ادخل إلى المتجر
+        </a>
+        <a class="btn btn--quiet btn--lg" href="/c/used-refurbished/">مستعمل بكفالة</a>
+      </div>
+
+      <dl class="stats">
+        <div><dt>عدد الأجهزة</dt><dd class="tnum">{products.length}</dd></div>
+        <div><dt>متوفّر الآن</dt><dd class="tnum">{inStock}</dd></div>
+        <div><dt>يبدأ من</dt><dd class="tnum" data-usd={cheapest}></dd></div>
+        <div><dt>يصل إلى</dt><dd class="tnum" data-usd={dearest}></dd></div>
+      </dl>
+    </section>
+
+    <section class="sec">
+      <h2>جدول الأسعار الكامل</h2>
+      <p class="sec-note">
+        اضغط اسم الجهاز لصفحته: فيها المواصفات ورمز النسخة وصحة البطارية ونتيجة فحص IMEI.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <caption class="sr-only">أسعار أجهزة وملحقات تالي شام بالليرة السورية والدولار</caption>
+          <thead>
+            <tr>
+              <th scope="col">الجهاز</th>
+              <th scope="col">الحالة</th>
+              <th scope="col">السعر</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ p, v }) => (
+              <tr>
+                <th scope="row">
+                  <a href={`/p/${p.slug}/`}>{p.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</a>
+                  <small>{p.brandName.ar} · {catName.get(p.category) ?? ''} · {ORIGIN_AR[v.deviceOrigin]}</small>
+                </th>
+                <td>
+                  <span class="cond">{CONDITION_AR[v.condition]}</span>
+                  {v.warrantyMonths > 0 && <small>كفالة {v.warrantyMonths} شهراً</small>}
+                </td>
+                <td class="pr">
+                  <b class="tnum" data-usd={v.priceUsdCents}></b>
+                  <small class="tnum" data-usd={v.priceUsdCents} data-alt></small>
+                  {v.stock === 0 && <small class="out">نفد</small>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="sec prose">
+      <h2>كيف تقرأ السعر قبل أن تشتري</h2>
+
+      <h3>من الدولار إلى الليرة</h3>
+      <p>
+        مرجع أسعارنا الدولار، لأن الاستيراد يُسعَّر به. والليرة تُحسب بضرب السعر في سعر صرفٍ
+        واحدٍ معلَن — هو المعروض في أعلى هذه الصفحة — ثم يُقرَّب الناتج إلى أقرب ألف، لأن الدفع
+        نقديّ ولا وجود لفكّة أدقّ. حين تؤكّد طلبك يُثبَّت السعر عليك 48 ساعة: إن ارتفع الصرف قبل
+        أن يصلك الجهاز فالفرق علينا لا عليك.
+      </p>
+
+      <h3>رمز النسخة والمصدر</h3>
+      <p>
+        الجهاز نفسه يُباع بنسخٍ تختلف باختلاف السوق الذي خرج منه، والفرق ليس في الجودة بل في
+        التفاصيل التي تهمّك يومياً: عدد الشرائح، ووجود منفذ شريحة أصلاً، وكتم صوت الكاميرا.
+        نكتب رمز النسخة على كل جهاز — <b>ZA/A</b> خليجي، و<b>LL/A</b> أمريكي — ونكتب المصدر
+        بالعربية إلى جانبه، فلا تحتاج أن تسأل.
+      </p>
+
+      <h3>جديد، مستعمل، مجدَّد</h3>
+      <p>
+        <b>الجديد</b> بعلبته مغلقة. و<b>المستعمل</b> جهازٌ عمل عند صاحبه ثم بيع، نصنّفه «ممتاز»
+        أو «جيد» بحسب أثر الاستعمال الظاهر. و<b>المجدَّد</b> جهازٌ استُبدلت فيه قطعة — بطارية أو
+        شاشة غالباً — وأُعيد فحصه بالكامل. ولكل جهاز غير جديد نسبة صحة بطاريته مكتوبةً بالرقم،
+        لا بوصفٍ عامّ مثل «بطارية ممتازة».
+      </p>
+
+      <h3>الكفالة: ما تعنيه بالضبط</h3>
+      <p>
+        نميّز ثلاثة أنواع ونكتب نوع كل جهاز على صفحته: <b>كفالة محل</b> نحن من ينفّذها،
+        و<b>كفالة وكيل</b> ينفّذها وكيل العلامة في سوريا، و<b>كفالة مستورد</b> ينفّذها المستورد.
+        والمدّة تبدأ يوم التسليم لا يوم الطلب، وتُطبع على الإيصال برقم الجهاز — فلا تحتاج إلى
+        ورقةٍ تحفظها ولا إلى ذاكرةِ أحد.
+      </p>
+
+      <h3>فحص IMEI</h3>
+      <p>
+        رقم IMEI بصمة الجهاز. نفحصه قبل عرض أي جهاز: هل هو مبلَّغ عنه مفقوداً أو مسروقاً؟ هل هو
+        مقفل على شبكةٍ أجنبية؟ والنتيجة تُسلَّم إليك مطبوعةً مع الجهاز. في سوقٍ أكثرُ أجهزته
+        مستورَدة يدوياً، هذا الفحص هو الفرق بين شراءٍ وبين مخاطرة.
+      </p>
+
+      <h3>الدفع والتوصيل</h3>
+      <p>
+        الدفع نقداً عند الاستلام حصراً. يصلك المندوب، تفتح العلبة، تفحص الجهاز، ثم تدفع — وإن لم
+        يعجبك ترجعه في حينه بلا نقاش. داخل دمشق وريفها خلال 24 إلى 48 ساعة، وإلى باقي المحافظات
+        عبر مكاتب النقل. <b>لا نطلب أي دفعة مقدَّمة بأي وسيلة</b>، ومن يطلب ذلك باسمنا فليس منّا.
+      </p>
+    </section>
+
+    <section class="sec">
+      <h2>تصفّح حسب الفئة</h2>
+      <nav class="links" aria-label="الفئات">
+        {categories.map((c) => <a class="chip" href={`/c/${c.slug}/`}>{c.name.ar}</a>)}
+      </nav>
+    </section>
+
+    <section class="sec">
+      <h2>تصفّح حسب العلامة</h2>
+      <nav class="links" aria-label="العلامات">
+        {brandList.map((b) => <a class="chip" href={`/b/${b.slug}/`}>{b.name.ar} في سوريا</a>)}
+      </nav>
+    </section>
+
+    <section class="sec">
+      <h2>أسئلة شائعة</h2>
+      <div class="faq">
+        {FAQ.map(({ q, a }) => (
+          <details>
+            <summary>{q}</summary>
+            <p>{a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="sec closing">
+      <h2>ادخل إلى المتجر</h2>
+      <p>
+        {products.length} جهازاً وملحقاً، أسعارها أعلاه، ودفعها عند الاستلام في {SITE.city} وسائر
+        {' '}{SITE.countryName}.
+      </p>
+      <a class="btn btn--lg btn--block" href="/">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5" /></svg>
+        ادخل إلى المتجر
+      </a>
+      <p class="alt">
+        أو <a href="/search/">ابحث عن جهاز بالاسم</a> · <a href="/help/">اقرأ مركز المساعدة</a>
+      </p>
+    </section>
+  </main>
+</Base>
+
+<style>
+  .lp { padding-block: 4px 0; }
+  .crumbs {
+    display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+    font-size: var(--step--2); color: var(--ink-3); padding-block-start: 10px;
+  }
+  .crumbs a { color: var(--ink-3); }
+
+  .lead { display: grid; gap: 13px; padding-block: 18px 4px; max-inline-size: 40rem; }
+  .lead h1 { font-size: var(--step-3); line-height: 1.22; }
+  .lede { color: var(--ink-2); line-height: var(--lh-body); }
+
+  .fx {
+    display: flex; align-items: center; gap: 8px;
+    font-size: var(--step--1); color: var(--ink-2);
+    padding: 10px 13px; border-radius: var(--r-s);
+    background: color-mix(in srgb, var(--jade) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--jade) 24%, transparent);
+  }
+  .fx b { color: var(--ink); white-space: nowrap; }
+  .fx .dot {
+    inline-size: 7px; block-size: 7px; border-radius: 50%; flex: none;
+    background: var(--jade); box-shadow: 0 0 0 3px color-mix(in srgb, var(--jade) 22%, transparent);
+  }
+
+  .enter { display: flex; gap: 10px; flex-wrap: wrap; }
+  .enter .btn { flex: 1 1 auto; min-inline-size: 10rem; }
+  :global(.btn--lg) { min-height: 52px; font-size: var(--step-0); padding-inline: 24px; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+    border: 1px solid var(--line); border-radius: var(--r-l);
+    background: var(--line); overflow: hidden; margin-block-start: 4px;
+  }
+  .stats > div { background: var(--surface); padding: 11px 13px; display: grid; gap: 2px; }
+  .stats dt { font-size: var(--step--2); color: var(--ink-3); font-weight: 700; }
+  /* رقمُ الليرة من سبع خانات: مقاسٌ أكبر يكسره على سطرين داخل خانةٍ ضيّقة */
+  .stats dd { font-size: var(--step-0); font-weight: 800; margin: 0; white-space: nowrap; }
+  @media (min-width: 560px) { .stats dd { font-size: var(--step-1); } }
+  @media (min-width: 560px) { .stats { grid-template-columns: repeat(4, 1fr); } }
+
+  /* ————— جدول الأسعار ————— */
+  .tablewrap {
+    overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-l);
+    background: var(--surface);
+  }
+  /*
+    بلا عرضٍ أدنى: التمرير الأفقي في اتجاه RTL يبدأ من اليمين، فيقع عمود
+    السعر — وهو غاية الصفحة — خارج الشاشة عند فتحها. جدولٌ يُخفي سعره
+    أسوأ من جدولٍ يلفّ اسماً على سطرين.
+  */
+  table { inline-size: 100%; border-collapse: collapse; font-size: var(--step--1); }
+  thead th {
+    text-align: start; font-size: var(--step--2); font-weight: 800; color: var(--ink-3);
+    padding: 10px 9px; border-block-end: 1px solid var(--line); white-space: nowrap;
+  }
+  tbody tr { border-block-end: 1px solid var(--line-2); }
+  tbody tr:last-child { border-block-end: 0; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  tbody th, tbody td { text-align: start; padding: 11px 9px; vertical-align: top; font-weight: 400; }
+  tbody th { inline-size: 52%; }
+  tbody td:last-child { inline-size: 30%; }
+  tbody th a { font-weight: 700; color: var(--ink); }
+  tbody th a:hover { color: var(--brass); }
+  tbody small { display: block; font-size: var(--step--2); color: var(--ink-3); margin-block-start: 2px; }
+  .cond { font-weight: 700; color: var(--ink-2); }
+  .pr { white-space: nowrap; }
+  .pr b { font-weight: 800; }
+  .pr .out { color: var(--clay); font-weight: 700; }
+
+  /* ————— النصّ ————— */
+  .prose { max-inline-size: 42rem; }
+  .prose h3 {
+    font-size: var(--step-1); margin-block-start: var(--space-5);
+    padding-block-start: var(--space-4); border-block-start: 1px solid var(--line);
+  }
+  .prose h3:first-of-type { border-block-start: 0; padding-block-start: 0; margin-block-start: 0; }
+  .prose p { color: var(--ink-2); line-height: var(--lh-body); margin-block-start: 8px; }
+  .prose b { color: var(--ink); }
+
+  .links { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ————— الأسئلة ————— */
+  .faq { border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface); overflow: hidden; }
+  details { border-block-end: 1px solid var(--line-2); }
+  details:last-child { border-block-end: 0; }
+  summary {
+    padding: 13px 14px; font-weight: 700; font-size: var(--step--1);
+    cursor: pointer; list-style: none; display: flex; gap: 10px; align-items: flex-start;
+    line-height: 1.55;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: '+'; flex: none; color: var(--brass); font-weight: 800;
+    inline-size: 16px; text-align: center;
+  }
+  details[open] summary::before { content: '−'; }
+  details p {
+    padding-block: 0 14px; padding-inline: 40px 14px; color: var(--ink-2);
+    font-size: var(--step--1); line-height: var(--lh-body);
+  }
+
+  .closing { display: grid; gap: 12px; justify-items: start; }
+  .closing p { color: var(--ink-2); line-height: var(--lh-body); }
+  .closing .alt { font-size: var(--step--1); }
+  .closing .alt a { color: var(--brass); font-weight: 700; }
+</style>

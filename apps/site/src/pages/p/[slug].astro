@@ -8,6 +8,7 @@ import {
   products, categories, compatibleAccessories, currentFx, reviewsFor, questionsFor,
   CONDITION_AR, ORIGIN_AR, WARRANTY_AR,
 } from '../../lib/catalog';
+import { breadcrumbLd } from '../../lib/seo';
 
 export function getStaticPaths() {
   return products.map((p) => ({ params: { slug: p.slug }, props: { product: p } }));
@@ -46,8 +47,8 @@ const specRows: Array<[string, string]> = [
 
 /* البيانات المنظمة بالدولار — وهي العملة المرجعية.
    صلاحية قصيرة لأن سعر الصرف يتحرك (الفصل 12 §12.1). */
-const jsonLd = {
-  '@context': 'https://schema.org',
+const base = (Astro.site?.href ?? 'https://talisham.com/').replace(/\/$/, '');
+const productLd = {
   '@type': 'Product',
   name: product.name.ar,
   description: product.shortDesc?.ar ?? undefined,
@@ -62,14 +63,33 @@ const jsonLd = {
       v.condition === 'NEW' ? 'https://schema.org/NewCondition'
       : v.condition === 'REFURBISHED' ? 'https://schema.org/RefurbishedCondition'
       : 'https://schema.org/UsedCondition',
+    seller: { '@id': `${base}/#store` },
   },
+  ...(reviews.count > 0
+    ? { aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: reviews.average.toFixed(1),
+          reviewCount: reviews.count,
+        } }
+    : {}),
 };
+
+/* الفتات يحلّ محلّ الرابط تحت العنوان في نتيجة البحث */
+const schema = [
+  productLd,
+  breadcrumbLd(base, [
+    ['الرئيسية', '/'],
+    [catName, `/c/${product.category}/`],
+    [product.name.ar, `/p/${product.slug}/`],
+  ]),
+];
 ---
 
 <Base
   title={`${product.name.ar}${v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}`}
-  description={product.shortDesc?.ar ?? product.name.ar}
+  description={product.shortDesc?.ar ?? `${product.name.ar} في سوريا — ${CONDITION_AR[v.condition]}، ${ORIGIN_AR[v.deviceOrigin]}، دفع عند الاستلام`}
   active="home"
+  schema={schema}
 >
   <Header title={product.name.ar} back={`/c/${product.category}`} />
 
@@ -230,8 +250,6 @@ const jsonLd = {
       </section>
     )}
   </main>
-
-  <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
 
   <script is:inline>
     // جزيرة صغيرة: تبديل المتغيّر يغيّر السعر والوسوم (الفصل 5 §5.2)
