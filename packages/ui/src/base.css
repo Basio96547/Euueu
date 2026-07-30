@@ -346,6 +346,32 @@ p { text-wrap: pretty; }
 }
 .bottomnav .badge[data-show] { transform: scale(1); }
 
+/*
+  الشريط السفلي نمطُ هاتفٍ لا نمطُ شاشة: إبهامٌ يصل إلى أسفل الشاشة هو
+  سبب وجوده، ولا إبهام على حاسوب. وشريطٌ من أربعة عناصر ممدودٌ على ألف
+  بكسل يبدو نافذةً عالقة لا تنقّلاً.
+  وتصفير ‎--nav-h‎ يكفي وحده: حشوة الجسد وشريط الشراء والرسالة العابرة
+  والتذييل كلّها محسوبةٌ عليه، فتتبعه بلا استثناءات مكرّرة.
+*/
+@media (min-width: 900px) {
+  :root { --nav-h: 0px; }
+  .bottomnav { display: none; }
+}
+
+/* روابط الشريط السفلي تنتقل إلى الترويسة على الشاشة الواسعة */
+.navlinks { display: none; }
+@media (min-width: 900px) {
+  .navlinks { display: flex; align-items: center; gap: 2px; }
+  .navlinks a {
+    display: inline-flex; align-items: center; gap: 7px;
+    min-height: 38px; padding: 0 13px; border-radius: var(--r-s);
+    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    transition: background var(--dur-tap) var(--ease-state), color var(--dur-tap) var(--ease-state);
+  }
+  .navlinks a:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+  .navlinks a[aria-current='page'] { color: var(--brass); }
+}
+
 .icon {
   inline-size: 20px; block-size: 20px; flex: none;
   stroke: currentColor; fill: none;

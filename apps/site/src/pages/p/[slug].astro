@@ -93,6 +93,7 @@ const jsonLd = {
       <span class="mnote">رسمٌ توضيحيّ</span>
     </ProductMedia>
 
+    <div class="buy">
     <div class="head">
       <p class="brandline">{product.brandName.ar}{v.colorName ? ` · ${v.colorName.ar}` : ''}</p>
       <h1>{product.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</h1>
@@ -141,15 +142,24 @@ const jsonLd = {
       </div>
     )}
 
-    <dl class="facts">
-      {specRows.map(([k, val]) => (
-        <div class="fact"><dt>{k}</dt><dd class="tnum">{val}</dd></div>
-      ))}
-    </dl>
-
     <div class="cod">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /></svg>
       الدفع نقداً عند الاستلام — تفحص الجهاز قبل أن تدفع
+    </div>
+
+    {/* شريط الشراء: عائمٌ ملتصقٌ بالأسفل على الهاتف، وجزءٌ من لوحة الشراء
+        على الشاشة الواسعة — عنصرٌ واحد بسلوكين لا نسختان في الصفحة. */}
+    <div class="buybar glass">
+      <span class="pr">
+        <b data-usd={v.priceUsdCents}></b>
+        <small data-usd={v.priceUsdCents} data-alt></small>
+      </span>
+      <a class="btn btn--icon" href="https://wa.me/963900000000" aria-label="تواصل عبر واتساب">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3.2-6.4" /><path d="M4 20l1.4-3.6" /></svg>
+      </a>
+      <button class="btn btn--buy" type="button" disabled={v.stock === 0}>
+        {v.stock === 0 ? 'نفد المخزون' : 'أضف للسلة'}
+      </button>
     </div>
 
     <div class="cmpbar">
@@ -158,6 +168,13 @@ const jsonLd = {
       </button>
       <a class="cmplink" href="/compare/" hidden data-cmp-link>افتح المقارنة (<span data-cmp-n>0</span>)</a>
     </div>
+    </div>
+
+    <dl class="facts">
+      {specRows.map(([k, val]) => (
+        <div class="fact"><dt>{k}</dt><dd class="tnum">{val}</dd></div>
+      ))}
+    </dl>
 
     {reviews.count > 0 && (
       <section class="also">
@@ -213,19 +230,6 @@ const jsonLd = {
       </section>
     )}
   </main>
-
-  <div class="buybar glass">
-    <span class="pr">
-      <b data-usd={v.priceUsdCents}></b>
-      <small data-usd={v.priceUsdCents} data-alt></small>
-    </span>
-    <a class="btn btn--icon" href="https://wa.me/963900000000" aria-label="تواصل عبر واتساب">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3.2-6.4" /><path d="M4 20l1.4-3.6" /></svg>
-    </a>
-    <button class="btn btn--buy" type="button" disabled={v.stock === 0}>
-      {v.stock === 0 ? 'نفد المخزون' : 'أضف للسلة'}
-    </button>
-  </div>
 
   <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
 
@@ -288,6 +292,7 @@ const jsonLd = {
 
 <style>
   .pdp { padding-block: 6px 0; display: grid; gap: 14px; }
+  .buy { display: grid; gap: 14px; align-content: start; }
   /* الشريطان السفليّان معاً: شريط الشراء ثم شريط التنقّل تحته */
   :global(body) { padding-block-end: calc(var(--nav-h) + var(--safe-b) + 88px); }
 
@@ -427,5 +432,36 @@ const jsonLd = {
 
   @media (min-width: 560px) {
     .buybar { inset-inline: auto 8px; max-inline-size: 440px; }
+  }
+
+  /*
+    عمودان على الشاشة الواسعة: الصورة إلى جانب قرار الشراء لا فوقه.
+    عمودٌ واحد بعرض ألف بكسل يعني أن السعر يقع تحت الطيّة ويحتاج تمريراً
+    ليُرى — وصفحة منتجٍ لا يُرى سعرها بلا تمرير صفحةُ عرضٍ لا صفحة بيع.
+    والصورة تلتصق أثناء التمرير فتبقى مرافقةً للمواصفات تحتها.
+  */
+  @media (min-width: 900px) {
+    .pdp {
+      grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
+      column-gap: var(--space-6); row-gap: var(--space-5);
+      align-items: start; padding-block-start: 10px;
+    }
+    .crumbs, .facts, .also { grid-column: 1 / -1; }
+    .pdp :global(.pm--hero) { position: sticky; top: 86px; max-inline-size: none; }
+    .buy { grid-column: 2; }
+    .pdp h1 { font-size: var(--step-3); }
+
+    /* الشريط يعود عنصراً عادياً داخل اللوحة: لا حاجة إلى تعويم على شاشةٍ
+       يرى فيها الزبون السعر والزرّ معاً بلا تمرير. */
+    .buybar {
+      position: static; inset: auto; max-inline-size: none;
+      padding: 13px; margin: 0;
+      /* صفّان لا صفّ: سبعُ خاناتٍ بجانب زرّين تدفع الرقم فوق الأيقونة */
+      display: grid; grid-template-columns: 1fr auto; gap: 11px;
+    }
+    .buybar .pr { grid-column: 1 / -1; grid-row: 1; }
+    .buybar .pr b { font-size: var(--step-1); }
+    .buybar .btn--icon { grid-column: 2; grid-row: 2; }
+    .btn--buy { grid-column: 1; grid-row: 2; inline-size: 100%; }
   }
 </style>

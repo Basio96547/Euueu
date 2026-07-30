@@ -10,8 +10,15 @@
  * وتخطيطه بين صفحةٍ وأخرى يُشعر الزبون بأنه انتقل إلى موقعٍ آخر.
  */
 import CurrencyToggle from './CurrencyToggle.astro';
-interface Props { title?: string; back?: string; search?: boolean }
-const { title, back, search = true } = Astro.props;
+interface Props { title?: string; back?: string; search?: boolean; active?: string }
+const { title, back, search = true, active } = Astro.props;
+
+/* تظهر على الشاشة الواسعة وحدها، حيث يختفي الشريط السفلي */
+const links = [
+  { key: 'search', href: '/search/', label: 'البحث', d: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5' },
+  { key: 'cart', href: '/app/cart', label: 'السلة', d: 'M6 6h15l-1.6 9H7.5zM6 6 5 3H2' },
+  { key: 'account', href: '/app/account', label: 'حسابي', d: 'M12 4.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2M4.5 20c1.6-4 4.3-6 7.5-6s5.9 2 7.5 6' },
+];
 ---
 <header class="topbar">
   <div class="inner glass">
@@ -32,9 +39,17 @@ const { title, back, search = true } = Astro.props;
       : <a href="/" class="brand">تالي <span>شام</span></a>}
 
     <div class="acts">
+      <nav class="navlinks" aria-label="التنقل">
+        {links.map((l) => (
+          <a href={l.href} aria-current={active === l.key ? 'page' : undefined}>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={l.d} /></svg>
+            {l.label}
+          </a>
+        ))}
+      </nav>
       <CurrencyToggle />
       {search && (
-        <a href="/search/" class="ico" aria-label="البحث">
+        <a href="/search/" class="ico ico--sm" aria-label="البحث">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
             ><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5" /></svg>
         </a>
@@ -93,4 +108,6 @@ const { title, back, search = true } = Astro.props;
     color: var(--ink-2);
   }
   .ico:active { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  /* أيقونة البحث تكرار لرابط البحث في الترويسة الواسعة */
+  @media (min-width: 900px) { .ico--sm { display: none; } }
 </style>
