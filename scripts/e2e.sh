@@ -44,6 +44,22 @@ curl -s -X POST "$API/admin/users/$CPID/role" -H "$AH" -H 'content-type: applica
   -d '{"role":"COURIER","reason":"تهيئة الفحص من طرف إلى طرف"}' > /dev/null
 CT=$(tok "+963955555555"); CH="authorization: Bearer $CT"
 
+# ومندوبٌ مسجَّل لا دورٌ وحده: التضييق يفشل مغلقاً، فحاملُ الدور بلا صفٍّ
+# في جدول المندوبين لا يرى طلباً ولا يتصرّف فيه. وهذا ما يمنع أن يكفي
+# منحُ الدور لرؤية كل زبائن المتجر.
+# حسابٌ جديد لكل تشغيل: صفّ المندوب يبقى في القاعدة بين التشغيلات، فرقمٌ
+# ثابت يجعل الفحص يمرّ أول مرة ويكذب بعدها.
+NEWC="+96395$(printf '%07d' $((RANDOM * RANDOM % 10000000)))"
+NCT=$(tok "$NEWC")
+NCPID=$(curl -s "$API/auth/me" -H "authorization: Bearer $NCT"|grep -o '"publicId":"[^"]*"'|cut -d'"' -f4)
+curl -s -X POST "$API/admin/users/$NCPID/role" -H "$AH" -H 'content-type: application/json' \
+  -d '{"role":"COURIER","reason":"فحص التضييق"}' > /dev/null
+NCT=$(tok "$NEWC")
+chk "الدور وحده لا يكفي: مندوب بلا صفّ لا يرى شيئاً" "$(curl -s "$API/courier/tasks" -H "authorization: Bearer $NCT")" '"data":\[\]'
+curl -s -X POST "$API/admin/delivery/couriers" -H "$AH" -H 'content-type: application/json' \
+  -d '{"code":"DMS-99","fullName":"مندوب الفحص","phone":"+963955555555","homeGovernorate":"DAMASCUS"}' >/dev/null
+CT=$(tok "+963955555555"); CH="authorization: Bearer $CT"
+
 # زبونٌ جديد لكل تشغيل: سقف الطلبات المفتوحة قاعدةٌ حقيقية لا عائق
 # فحص، وإعادة استعمال رقمٍ واحد تجعل التشغيل الثالث يفشل بحقّ.
 CUST="+96394$(printf '%07d' $((RANDOM * RANDOM % 10000000)))"
@@ -128,6 +144,8 @@ O=$(curl -s -X POST $API/orders -H "$UH" -H 'content-type: application/json' -H 
 NO=$(echo "$O"|grep -o '"orderNo":"[^"]*"'|cut -d'"' -f4); DUE=$(echo "$O"|grep -o '"cashDueSyp":[0-9]*'|cut -d: -f2)
 chk "إنشاء الطلب" "$O" 'TS-'
 curl -s -X POST "$API/admin/orders/$NO/confirm" -H "$AH" -H 'content-type: application/json' -d '{"outcome":"CONFIRMED"}' >/dev/null
+chk "التصرّف بطلبٍ غير مُسنَد مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}')" 'NOT_YOUR_ORDER'
+chk "المطالبة بطلبٍ في منطقته" "$(curl -s -X POST "$API/courier/orders/$NO/claim" -H "$CH")" '"assigned":true'
 curl -s -X POST "$API/courier/orders/$NO/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$NO/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"OUT_FOR_DELIVERY"}' >/dev/null
 
@@ -174,6 +192,7 @@ O2=$(curl -s -X POST $API/orders -H "$UH" -H 'content-type: application/json' -H
  -d "{\"cartToken\":\"$C2\",\"address\":{\"recipientName\":\"سامر\",\"governorate\":\"DAMASCUS\",\"city\":\"دمشق\",\"neighborhood\":\"المزة\",\"landmark\":\"مقابل الصيدلية\",\"phone\":\"$CUST\"}}")
 N2=$(echo "$O2"|grep -o '"orderNo":"[^"]*"'|cut -d'"' -f4); D2=$(echo "$O2"|grep -o '"cashDueSyp":[0-9]*'|cut -d: -f2)
 curl -s -X POST "$API/admin/orders/$N2/confirm" -H "$AH" -H 'content-type: application/json' -d '{"outcome":"CONFIRMED"}' >/dev/null
+curl -s -X POST "$API/courier/orders/$N2/claim" -H "$CH" >/dev/null
 curl -s -X POST "$API/courier/orders/$N2/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$N2/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"OUT_FOR_DELIVERY"}' >/dev/null
 I2=$(onshelf)

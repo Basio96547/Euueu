@@ -448,9 +448,12 @@ export function registerRoutes(app: Hono<Ctx>, d: Deps, env: Record<string, unkn
   /* ————————————————— واجهة المندوب ————————————————— */
 
   const courierRoles = () => protect(d.prisma, 'COURIER', 'OPS_MANAGER', 'ADMIN');
-  app.get(`${P}/courier/tasks`, courierRoles(), async (c) => send(c, await d.courier.tasks()));
+  app.get(`${P}/courier/tasks`, courierRoles(), async (c) => send(c, await d.courier.tasks(sub(c))));
+  /* المطالبة بطلبٍ في منطقته: بها وحدها تنكشف بيانات الزبون له */
+  app.post(`${P}/courier/orders/:orderNo/claim`, courierRoles(), async (c) =>
+    send(c, await d.courier.claim(c.req.param('orderNo'), sub(c))));
   app.post(`${P}/courier/orders/:orderNo/status`, courierRoles(), async (c) =>
-    send(c, await d.courier.status(c.req.param('orderNo'), await body(c))));
+    send(c, await d.courier.status(c.req.param('orderNo'), await body(c), sub(c))));
   app.post(`${P}/courier/orders/:orderNo/collect`, courierRoles(), async (c) =>
     send(c, await d.courier.collect(
       c.req.param('orderNo'), await body(c), { user: { sub: sub(c)! } },

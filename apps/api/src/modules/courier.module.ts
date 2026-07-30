@@ -15,29 +15,138 @@ export class CourierService {
     private notify: NotificationsService,
     private settlements: SettlementsService,
   ) {}
-  async tasks() {
+  /**
+   * صفّ المندوب من رمزه — لا من معامل يكتبه.
+   *
+   * ويفشل مغلقاً: من يحمل دور «مندوب» بلا صفٍّ في جدول المندوبين لا يرى
+   * شيئاً ولا يتصرّف في شيء. والفشل مفتوحاً هنا كان يُلغي التضييق كلّه —
+   * يكفي أن يُمنح الدور لحسابٍ ولا يُنشأ صفّه ليعود يرى كل طلبات المتجر.
+   */
+  private async courierOf(publicId?: string) {
+    if (!publicId) return { supervisor: false as const, id: null, zones: [] as string[] };
+    const u = await this.prisma.user.findUnique({
+      where: { publicId }, select: { id: true, role: true },
+    });
+    if (!u) return { supervisor: false as const, id: null, zones: [] as string[] };
+    if (u.role !== 'COURIER') return { supervisor: true as const, id: null, zones: [] as string[] };
+    const c = await this.prisma.courier.findUnique({
+      where: { userId: u.id },
+      select: { id: true, homeGovernorate: true, zones: { select: { zone: { select: { governorate: true } } } } },
+    });
+    if (!c) return { supervisor: false as const, id: null, zones: [] as string[] };
+    const zones = [c.homeGovernorate, ...c.zones.map((z) => z.zone.governorate)];
+    return { supervisor: false as const, id: c.id, zones: [...new Set(zones)] };
+  }
+
+  /**
+   * مهامّ اليوم.
+   *
+   * كانت تُعيد كل طلبات المتجر إلى كل مندوب: اسم كل زبون ورقمه وحيّه
+   * ومعلمه في هاتف كل من يحمل الدور. والفصل 19.3 يعطي المندوب نطاق
+   * «طلبه فقط».
+   *
+   * والحلّ ليس إخفاء كل شيء: المندوب يحتاج أن يرى أن ثمّة عملاً في
+   * منطقته ليطالب به. فالطلب غير المُسنَد يظهر بموضعه ومبلغه وعدد قطعه
+   * فقط — بلا اسمٍ ولا رقمٍ ولا عنوان. وحين يطالب به تنكشف بياناته.
+   * أن تعرف أن ثمّة توصيلاً في المزّة شيء، وأن تعرف من يسكن هناك ورقمه
+   * شيءٌ آخر.
+   */
+  async tasks(publicId?: string) {
+    const me = await this.courierOf(publicId);
+    const active = { in: ['PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] };
+
+    /* مندوبٌ بلا صفّ: لا مناطق له فلا طلبات — لا كلّها */
+    /* المشرف (إدارة أو عمليات) يرى الكل: مسؤوليته الطابور كلّه */
+    const where = !me.supervisor
+      ? {
+          status: active,
+          OR: [
+            { courierId: me.id },
+            { courierId: null, shippingAddress: { governorate: { in: me.zones } } },
+          ],
+        }
+      : { status: active };
+    if (!me.supervisor && !me.id) return { data: [] };
+
     const rows = await this.prisma.order.findMany({
-      where: { status: { in: ['PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY'] } },
+      where: where as any,
       include: { shippingAddress: true, items: true },
       orderBy: { placedAt: 'asc' },
     });
+
     return {
-      data: rows.map((o) => ({
-        orderNo: o.orderNo, status: o.status,
-        /* المبلغ المعروض للمندوب مقرَّب كما سيُقبض تماماً */
-        cashDueSyp: roundCash(Number(o.totalSyp)),
-        customer: o.shippingAddress.recipientName,
-        phone: o.shippingAddress.phone,
-        altPhone: o.shippingAddress.altPhone,
-        governorate: o.shippingAddress.governorate,
-        city: o.shippingAddress.city,
-        neighborhood: o.shippingAddress.neighborhood,
-        landmark: o.shippingAddress.landmark,
-        itemCount: o.items.length,
-      })),
+      data: rows.map((o) => {
+        const mine = me.supervisor || o.courierId === me.id;
+        const base = {
+          orderNo: o.orderNo, status: o.status,
+          /* المبلغ المعروض للمندوب مقرَّب كما سيُقبض تماماً */
+          cashDueSyp: roundCash(Number(o.totalSyp)),
+          governorate: o.shippingAddress.governorate,
+          city: o.shippingAddress.city,
+          itemCount: o.items.length,
+          assigned: o.courierId !== null,
+          mine,
+        };
+        if (!mine) return base;
+        return {
+          ...base,
+          customer: o.shippingAddress.recipientName,
+          phone: o.shippingAddress.phone,
+          altPhone: o.shippingAddress.altPhone,
+          neighborhood: o.shippingAddress.neighborhood,
+          landmark: o.shippingAddress.landmark,
+        };
+      }),
     };
   }
-  async status(no: string, b: { to: 'SHIPPED' | 'OUT_FOR_DELIVERY' | 'DELIVERY_FAILED' }) {
+
+  /**
+   * مطالبةٌ بطلبٍ غير مُسنَد.
+   *
+   * `updateMany` بشرط `courierId: null` لا `update`: مندوبان يضغطان معاً
+   * فيفوز أوّلهما كتابةً ويُخبَر الثاني أن الطلب صار لغيره — بدل أن
+   * يذهبا إلى العنوان نفسه.
+   */
+  async claim(no: string, publicId?: string) {
+    const me = await this.courierOf(publicId);
+    if (me.supervisor || !me.id) {
+      throw Errors.badRequest('NOT_A_COURIER', 'هذا الحساب ليس مندوباً', 'Not a courier');
+    }
+    const o = await this.prisma.order.findUnique({
+      where: { orderNo: no }, include: { shippingAddress: { select: { governorate: true } } },
+    });
+    if (!o) throw Errors.notFound('الطلب');
+    if (!me.zones.includes(o.shippingAddress.governorate)) {
+      throw Errors.badRequest('OUT_OF_ZONE', 'هذا الطلب خارج مناطقك', 'Order is outside your zones');
+    }
+    const r = await this.prisma.order.updateMany({
+      where: { orderNo: no, courierId: null }, data: { courierId: me.id },
+    });
+    if (r.count === 0) {
+      throw Errors.badRequest('ALREADY_ASSIGNED', 'أُسنِد هذا الطلب إلى مندوب آخر', 'Already assigned');
+    }
+    return { data: { orderNo: no, assigned: true } };
+  }
+
+  /** يمنع مندوباً من التصرّف في طلبٍ ليس له */
+  private async assertMine(no: string, publicId?: string) {
+    const me = await this.courierOf(publicId);
+    if (me.supervisor) return;
+    if (!me.id) {
+      throw Errors.badRequest('NOT_A_COURIER',
+        'هذا الحساب ليس مندوباً مسجَّلاً', 'Account is not a registered courier');
+    }
+    const o = await this.prisma.order.findUnique({
+      where: { orderNo: no }, select: { courierId: true },
+    });
+    if (!o) throw Errors.notFound('الطلب');
+    if (o.courierId !== me.id) {
+      throw Errors.badRequest('NOT_YOUR_ORDER',
+        'هذا الطلب ليس مُسنَداً إليك — طالِب به أولاً', 'Order is not assigned to you');
+    }
+  }
+  async status(no: string, b: { to: 'SHIPPED' | 'OUT_FOR_DELIVERY' | 'DELIVERY_FAILED' }, publicId?: string) {
+    await this.assertMine(no, publicId);
     const o = await this.prisma.order.findUnique({ where: { orderNo: no }, include: { shippingAddress: true } });
     if (!o) throw Errors.notFound('الطلب');
 
@@ -83,6 +192,8 @@ export class CourierService {
     req: { user?: { sub: string } },
     key?: string,
   ) {
+    await this.assertMine(no, req.user?.sub);
+
     if (key) {
       const prior = await kv().get<unknown>(this.idemKey(key));
       if (prior) return { data: prior };

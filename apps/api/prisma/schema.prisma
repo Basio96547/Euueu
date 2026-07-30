@@ -394,6 +394,9 @@ model Order {
   userId            String?     @map("user_id")
   status            String @default("PENDING_CONFIRMATION")
   shippingAddressId String      @map("shipping_address_id")
+  /// المندوب المُسنَد إليه الطلب. بلا هذا الحقل كان كل مندوب يرى كل
+  /// طلبات المتجر بأسماء زبائنها وأرقامهم وعناوينهم في هاتفه.
+  courierId         String?     @map("courier_id")
 
   subtotalUsdCents      BigInt @map("subtotal_usd_cents")
   discountTotalUsdCents BigInt @default(0) @map("discount_total_usd_cents")
@@ -441,8 +444,10 @@ model Order {
   tickets         SupportTicket[]
   redemption      CouponRedemption?
   settlement      CashSettlement?      @relation(fields: [settlementId], references: [id])
+  courier         Courier?             @relation(fields: [courierId], references: [id])
 
   @@index([status, placedAt])
+  @@index([courierId, status])
   @@map("orders")
 }
 
@@ -942,6 +947,7 @@ model Courier {
 
   user       User           @relation(fields: [userId], references: [id])
   zones      CourierZone[]
+  orders     Order[]
   defaultFor DeliveryZone[] @relation("ZoneDefaultCourier")
 
   @@index([status, active])

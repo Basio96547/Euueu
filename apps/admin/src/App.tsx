@@ -20,8 +20,11 @@ interface FxPreview {
 }
 interface CourierTask {
   orderNo: string; status: string; cashDueSyp: number;
-  customer: string; phone: string; altPhone?: string;
-  governorate: string; city: string; neighborhood: string; landmark: string; itemCount: number;
+  governorate: string; city: string; itemCount: number;
+  /* بيانات الزبون لا تصل إلا لمن أُسنِد إليه الطلب */
+  assigned: boolean; mine: boolean;
+  customer?: string; phone?: string; altPhone?: string;
+  neighborhood?: string; landmark?: string;
 }
 
 const STATUS_AR: Record<string, string> = {
@@ -358,6 +361,18 @@ function Courier() {
   const step = (no: string, to: string) =>
     act(no, `/courier/orders/${no}/status`, { to }, `${no}: ${STATUS_AR[to] ?? to}`);
 
+  /* المطالبة تُرسَل فوراً لا عبر الطابور: مندوبان قد يطالبان بالطلب نفسه،
+     والفوز يُحسم عند الخادم — فتأجيلها يعني ذهاب اثنين إلى عنوان واحد. */
+  const claim = async (no: string) => {
+    setErr(null);
+    try {
+      await api.post(`/courier/orders/${no}/claim`, {});
+      await load();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.messageAr : 'تعذّرت المطالبة');
+    }
+  };
+
   /*
     أرقام الأجهزة تُدخَل قبل التحصيل.
     كان الخادم يختار من الرفّ بترتيب المعرّف أياً كان الجهاز الذي وُضع في
@@ -421,9 +436,18 @@ function Courier() {
           <div className="top">
             <div>
               <div className="no">{t.orderNo}</div>
-              <div className="muted">{t.customer}</div>
-              <div className="muted">{GOV_AR[t.governorate] ?? t.governorate} · {t.neighborhood}</div>
-              <div style={{ fontWeight: 700, fontSize: 'var(--step--1)' }}>المعلم: {t.landmark}</div>
+              {t.mine ? (
+                <>
+                  <div className="muted">{t.customer}</div>
+                  <div className="muted">{GOV_AR[t.governorate] ?? t.governorate} · {t.neighborhood}</div>
+                  <div style={{ fontWeight: 700, fontSize: 'var(--step--1)' }}>المعلم: {t.landmark}</div>
+                </>
+              ) : (
+                <>
+                  <div className="muted">{GOV_AR[t.governorate] ?? t.governorate} · {t.city}</div>
+                  <div className="hint">بيانات الزبون تظهر بعد أن تطالب بالطلب.</div>
+                </>
+              )}
             </div>
             <div style={{ textAlign: 'end' }}>
               <div className="muted">المستحق نقداً</div>
@@ -431,14 +455,20 @@ function Courier() {
               <span className="tag">{STATUS_AR[t.status] ?? t.status}</span>
             </div>
           </div>
-          <div className="acts">
-            <a className="btn btn--ghost" href={`tel:${t.phone}`}>اتصال</a>
-            {t.status === 'PROCESSING' && <Btn label="استلمت الشحنة" onClick={async () => step(t.orderNo, 'SHIPPED')} />}
-            {t.status === 'SHIPPED' && <Btn label="خرجت للتوصيل" onClick={async () => step(t.orderNo, 'OUT_FOR_DELIVERY')} />}
-            {t.status === 'OUT_FOR_DELIVERY' && (
-              <CollectRow task={t} onCollect={collect} onFail={() => step(t.orderNo, 'DELIVERY_FAILED')} />
-            )}
-          </div>
+          {t.mine ? (
+            <div className="acts">
+              <a className="btn btn--ghost" href={`tel:${t.phone}`}>اتصال</a>
+              {t.status === 'PROCESSING' && <Btn label="استلمت الشحنة" onClick={async () => step(t.orderNo, 'SHIPPED')} />}
+              {t.status === 'SHIPPED' && <Btn label="خرجت للتوصيل" onClick={async () => step(t.orderNo, 'OUT_FOR_DELIVERY')} />}
+              {t.status === 'OUT_FOR_DELIVERY' && (
+                <CollectRow task={t} onCollect={collect} onFail={() => step(t.orderNo, 'DELIVERY_FAILED')} />
+              )}
+            </div>
+          ) : (
+            <div className="acts">
+              <Btn label="أنا آخذه" onClick={async () => claim(t.orderNo)} />
+            </div>
+          )}
         </div>
       ))}
     </>
