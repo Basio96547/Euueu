@@ -13,6 +13,34 @@ const items = [
     <a href={i.href} aria-current={active === i.key ? 'page' : undefined}>
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={i.d} /></svg>
       {i.label}
+      {i.key === 'cart' && <span class="badge" data-cart-badge aria-hidden="true"></span>}
     </a>
   ))}
 </nav>
+
+<script is:inline>
+  /*
+    عدّاد السلة يُقرأ من تخزين المتصفح لا من الشبكة: صفحةٌ ساكنة تنتظر
+    طلباً لترسم رقماً صغيراً تُبطئ أول ما يراه الزبون. الرقم يُكتب لحظة
+    الإضافة، ويُصحَّح من الخادم حين تُفتح السلة نفسها — فأسوأ انحراف
+    ممكن رقمٌ قديم على أيقونة، لا سعرٌ خاطئ ولا مخزونٌ موهوم.
+  */
+  (function () {
+    var el = document.querySelector('[data-cart-badge]');
+    if (!el) return;
+    function paint(n) {
+      var v = parseInt(n, 10);
+      if (!v || v < 1) { el.removeAttribute('data-show'); el.textContent = ''; return; }
+      el.textContent = v > 9 ? '9+' : String(v);
+      el.setAttribute('data-show', '');
+      el.setAttribute('aria-hidden', 'false');
+      el.setAttribute('aria-label', v + ' في السلة');
+    }
+    try { paint(localStorage.getItem('cart_count')); } catch (e) {}
+    document.addEventListener('cart:count', function (e) { paint(e.detail); });
+    /* تبويبٌ آخر أضاف إلى السلة: الرقم يتبع بلا تحديث الصفحة */
+    addEventListener('storage', function (e) {
+      if (e.key === 'cart_count') paint(e.newValue);
+    });
+  })();
+</script>

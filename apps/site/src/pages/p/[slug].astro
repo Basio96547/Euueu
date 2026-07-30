@@ -150,7 +150,8 @@ const schema = [
         <span class="picker-h">النسخة والمصدر</span>
         <div class="opts">
           {product.variants.map((x, i) => (
-            <button class="opt" type="button" aria-pressed={i === 0} data-usd-opt={x.priceUsdCents}>
+            <button class="opt" type="button" aria-pressed={i === 0}
+              data-usd-opt={x.priceUsdCents} data-sku={x.sku} data-stock={x.stock}>
               {x.partCode ?? ORIGIN_AR[x.deviceOrigin]}
               <small>
                 {x.esimOnly ? 'eSIM فقط' : x.dualSim ? 'شريحتان' : '—'} ·
@@ -177,10 +178,14 @@ const schema = [
       <a class="btn btn--icon" href="https://wa.me/963993223887" aria-label="تواصل عبر واتساب">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3.2-6.4" /><path d="M4 20l1.4-3.6" /></svg>
       </a>
-      <button class="btn btn--buy" type="button" disabled={v.stock === 0}>
+      <button class="btn btn--buy" type="button" data-add data-sku={v.sku}
+        disabled={v.stock === 0} aria-live="polite">
         {v.stock === 0 ? 'نفد المخزون' : 'أضف للسلة'}
       </button>
     </div>
+
+    {/* رسالة النتيجة تُقرأ بالصوت أيضاً: من لا يرى الزرّ يتبدّل يسمع ما جرى */}
+    <p class="addmsg" data-add-msg role="status" hidden></p>
 
     <div class="cmpbar">
       <button class="btn btn--ghost" type="button" data-cmp={product.slug} aria-pressed="false">
@@ -259,6 +264,15 @@ const schema = [
       opts.forEach(function (btn) {
         btn.addEventListener('click', function () {
           opts.forEach(function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+          /* الزرّ يشتري النسخة المختارة لا الأولى: بلا هذا يدفع الزبون
+             ثمن ما اختار ويستلم ما لم يختره. */
+          var add = document.querySelector('[data-add]');
+          if (add) {
+            add.setAttribute('data-sku', btn.getAttribute('data-sku') || '');
+            var st = parseInt(btn.getAttribute('data-stock') || '0', 10);
+            add.disabled = st <= 0;
+            add.textContent = st > 0 ? 'أضف للسلة' : 'نفد المخزون';
+          }
           var usd = btn.getAttribute('data-usd-opt');
           document.querySelectorAll('.price__main, .price__alt, .buybar [data-usd]').forEach(function (el) {
             el.classList.add('is-fading');
@@ -271,6 +285,118 @@ const schema = [
             document.dispatchEvent(new Event('click')); // يعيد التصيير عبر مستمع العملة
           }, 140);
         });
+      });
+    })();
+
+
+    /*
+      الإضافة إلى السلة.
+
+      هذا كان الثقب الذي يُفرغ كل ما قبله من معنى: الواجهة البرمجية
+      تُضيف إلى السلة وتُختبر، وزرُّ «أضف للسلة» بلا مستمعٍ واحد — فالمتجر
+      كلّه لا يستطيع استقبال طلب. والاختبارات كانت تنادي المسار مباشرةً
+      فتمرّ، وهو بالضبط ما يُخفيه اختبارٌ لا يمرّ من حيث يمرّ الزبون.
+
+      والسلة على الأصل نفسه الذي عليه ‎/app‎، فرمزها في `localStorage`
+      مشتركٌ بينهما: يُنشأ هنا ويقرؤه التطبيق كما هو.
+
+      والقراءة قبل الكتابة مقصودة: مسار الخادم يضبط الكمية ضبطاً لا
+      زيادة، فضغطتان تتركان واحدة. نقرأ الكمية القائمة ونضيف إليها.
+    */
+    (function () {
+      var btn = document.querySelector('[data-add]');
+      var msg = document.querySelector('[data-add-msg]');
+      if (!btn) return;
+      var API = '/api/v1';
+      var busy = false;
+
+      function say(text, kind) {
+        if (!msg) return;
+        msg.textContent = text;
+        msg.hidden = false;
+        msg.setAttribute('data-kind', kind);
+      }
+
+      async function jsonOf(res) {
+        try { return await res.json(); } catch (e) { return null; }
+      }
+
+      /* رسالة الخادم بالعربية تُعرض كما هي: هو وحده يعرف السبب —
+         نفد المخزون؟ سعر تبدّل؟ سعر صرف متقادم؟ */
+      function reasonOf(body, fallback) {
+        var m = body && body.error && body.error.message;
+        return (m && (m.ar || m.en)) || fallback;
+      }
+
+      async function cartToken() {
+        var t = localStorage.getItem('cart_token');
+        if (t) return t;
+        var res = await fetch(API + '/carts', { method: 'POST' });
+        var body = await jsonOf(res);
+        if (!res.ok || !body || !body.data) throw new Error(reasonOf(body, 'تعذّر إنشاء السلة'));
+        localStorage.setItem('cart_token', body.data.cartToken);
+        return body.data.cartToken;
+      }
+
+      function badge(n) {
+        try { localStorage.setItem('cart_count', String(n)); } catch (e) {}
+        document.dispatchEvent(new CustomEvent('cart:count', { detail: n }));
+      }
+
+      btn.addEventListener('click', async function () {
+        if (busy || btn.disabled) return;
+        var sku = btn.getAttribute('data-sku');
+        if (!sku) return;
+
+        busy = true;
+        var label = btn.textContent;
+        btn.setAttribute('data-busy', '');
+        btn.textContent = 'جارٍ الإضافة…';
+        if (msg) msg.hidden = true;
+
+        try {
+          var token = await cartToken();
+
+          var cur = await fetch(API + '/carts/' + token);
+          var curBody = await jsonOf(cur);
+          /* رمزٌ لسلّةٍ مسحها الخادم: يُنسى ويُنشأ غيره بدل أن يفشل الزبون */
+          if (cur.status === 404) {
+            localStorage.removeItem('cart_token');
+            token = await cartToken();
+            curBody = null;
+          }
+          var lines = (curBody && curBody.data && curBody.data.lines) || [];
+          var qty = 1;
+          for (var i = 0; i < lines.length; i++) {
+            if (lines[i].sku === sku) { qty = (lines[i].qty || 0) + 1; break; }
+          }
+
+          var res = await fetch(API + '/carts/' + token + '/items', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sku: sku, qty: qty }),
+          });
+          var body = await jsonOf(res);
+          if (!res.ok) throw new Error(reasonOf(body, 'تعذّرت الإضافة'));
+
+          var all = (body.data && body.data.lines) || [];
+          var count = all.reduce(function (a, l) { return a + (l.qty || 0); }, 0);
+          badge(count);
+
+          btn.textContent = 'أُضيف ✓';
+          say('في سلتك الآن — الدفع عند الاستلام.', 'ok');
+          /* النجاح يزول وحده، والخطأ يبقى: من فشلت إضافته يحتاج أن يقرأ لماذا */
+          setTimeout(function () {
+            btn.textContent = label;
+            if (msg && msg.getAttribute('data-kind') === 'ok') msg.hidden = true;
+          }, 2600);
+        } catch (e) {
+          btn.textContent = label;
+          say((e && e.message) || 'تعذّرت الإضافة — أعد المحاولة', 'err');
+        } finally {
+          busy = false;
+          btn.removeAttribute('data-busy');
+        }
       });
     })();
 
@@ -445,7 +571,39 @@ const schema = [
   .buybar .pr small { font-size: var(--step--2); color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .buybar .btn--icon { --btn-bg: transparent; --btn-fg: var(--jade); --btn-brd: var(--line); }
 
-  .btn--buy { flex: none; white-space: nowrap; }
+  .btn--buy { flex: none; white-space: nowrap; min-inline-size: 8.5rem; }
+  .btn--buy[data-busy] { opacity: 0.7; }
+
+  /*
+    الرسالة تُعرض حيث تقع العين لا حيث يقع العنصر في الشيفرة: الزبون ضغط
+    زرّاً ملتصقاً بأسفل الشاشة، فرسالةٌ في وسط الصفحة تحت الطيّة لا يراها
+    — والأخطر أنها رسالة الخطأ نفسها.
+    فتطفو فوق شريط الشراء على الهاتف، وتعود عنصراً عادياً على الشاشة
+    الواسعة حيث الشريط جزءٌ من اللوحة أصلاً.
+  */
+  .addmsg {
+    position: fixed; z-index: 42;
+    inset-inline: 12px;
+    inset-block-end: calc(var(--nav-h) + var(--safe-b) + 84px);
+    max-inline-size: calc(var(--content) - 24px); margin-inline: auto;
+    font-size: var(--step--1); font-weight: 700; line-height: 1.55;
+    padding: 11px 13px; border-radius: var(--r-m);
+    box-shadow: var(--sh-2);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  @media (min-width: 900px) {
+    .addmsg { position: static; inset: auto; box-shadow: none; backdrop-filter: none; }
+  }
+  .addmsg[data-kind='ok'] {
+    color: var(--jade);
+    background: color-mix(in srgb, var(--jade) 16%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
+  }
+  .addmsg[data-kind='err'] {
+    color: var(--clay);
+    background: color-mix(in srgb, var(--clay) 16%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--clay) 34%, transparent);
+  }
   .is-fading { opacity: 0; transition: opacity var(--dur-out) var(--ease-state); }
 
   @media (min-width: 560px) {

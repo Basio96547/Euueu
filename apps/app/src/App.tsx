@@ -59,6 +59,16 @@ function ActionButton(props: {
   );
 }
 
+/*
+  عدّاد السلة على شريط الموقع الساكن يُقرأ من `localStorage`. والخادم هو
+  المرجع: كلّما رأينا ملخّصاً حقيقياً صحّحنا الرقم به، فينضبط ما رسمه
+  الموقع تخميناً عند الإضافة.
+*/
+function syncBadge(c: CartSummary) {
+  const n = c.lines.reduce((a, l) => a + (l.qty ?? 0), 0);
+  try { localStorage.setItem('cart_count', String(n)); } catch { /* تخزين مغلق */ }
+}
+
 /* ————— السلة ————— */
 function CartPage({ nav }: { nav: (to: string) => void }) {
   const [cart, setCart] = useState<CartSummary | null>(null);
@@ -73,7 +83,9 @@ function CartPage({ nav }: { nav: (to: string) => void }) {
           token = created.cartToken;
           localStorage.setItem('cart_token', token);
         }
-        setCart(await api.get<CartSummary>(`/carts/${token}`));
+        const summary = await api.get<CartSummary>(`/carts/${token}`);
+        setCart(summary);
+        syncBadge(summary);
       } catch (e) { setErr(e instanceof ApiError ? e.messageAr : 'تعذّر تحميل السلة'); }
     })();
   }, []);
@@ -98,7 +110,9 @@ function CartPage({ nav }: { nav: (to: string) => void }) {
   const setQty = async (sku: string, qty: number) => {
     setErr(null);
     try {
-      setCart(await api.post<CartSummary>(`/carts/${cart.cartToken}/items/${sku}`, { qty }));
+      const updated = await api.post<CartSummary>(`/carts/${cart.cartToken}/items/${sku}`, { qty });
+      setCart(updated);
+      syncBadge(updated);
     } catch (e) {
       setErr(e instanceof ApiError ? e.messageAr : 'تعذّر تعديل السلة');
     }
