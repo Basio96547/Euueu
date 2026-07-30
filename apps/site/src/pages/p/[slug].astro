@@ -126,10 +126,13 @@ const schema = [
     </div>
 
     <div class="badges">
-      {v.partCode && <span class="tag tag--brass">{v.partCode} · {ORIGIN_AR[v.deviceOrigin]}</span>}
-      {v.dualSim && <span class="tag">شريحتان فعليتان</span>}
-      {v.esimOnly && <span class="tag tag--clay">eSIM فقط — بلا منفذ شريحة</span>}
-      {v.warrantyMonths > 0 && <span class="tag tag--jade">{WARRANTY_AR[v.warrantyType]} {v.warrantyMonths} شهراً</span>}
+      <span class="tag tag--brass" data-v-part hidden={!v.partCode}>{v.partCode ? `${v.partCode} · ${ORIGIN_AR[v.deviceOrigin]}` : ''}</span>
+      <span class:list={['tag', v.esimOnly && 'tag--clay']} data-v-sim hidden={!v.dualSim && !v.esimOnly}>
+        {v.esimOnly ? 'eSIM فقط — بلا منفذ شريحة' : v.dualSim ? 'شريحتان فعليتان' : ''}
+      </span>
+      <span class="tag tag--jade" data-v-warranty hidden={v.warrantyMonths === 0}>
+        {v.warrantyMonths > 0 ? `${WARRANTY_AR[v.warrantyType]} ${v.warrantyMonths} شهراً` : ''}
+      </span>
       {product.spec.network_gen && <span class="tag">{product.spec.network_gen}</span>}
     </div>
 
@@ -151,7 +154,14 @@ const schema = [
         <div class="opts">
           {product.variants.map((x, i) => (
             <button class="opt" type="button" aria-pressed={i === 0}
-              data-usd-opt={x.priceUsdCents} data-sku={x.sku} data-stock={x.stock}>
+              data-usd-opt={x.priceUsdCents} data-sku={x.sku} data-stock={x.stock}
+              data-old={x.compareAtPriceUsdCents ?? ''}
+              data-part={x.partCode ? `${x.partCode} · ${ORIGIN_AR[x.deviceOrigin]}` : ORIGIN_AR[x.deviceOrigin]}
+              data-sim={x.esimOnly ? 'eSIM فقط — بلا منفذ شريحة' : x.dualSim ? 'شريحتان فعليتان' : ''}
+              data-sim-kind={x.esimOnly ? 'clay' : ''}
+              data-warranty={x.warrantyMonths > 0 ? `${WARRANTY_AR[x.warrantyType]} ${x.warrantyMonths} شهراً` : ''}
+              data-avail={x.stock === 0 ? 'نفد المخزون' : x.stock <= 2 ? `آخر ${x.stock === 1 ? 'قطعة' : 'قطعتين'}` : 'متوفر'}
+              data-color={x.colorName?.ar ?? ''}>
               {x.partCode ?? ORIGIN_AR[x.deviceOrigin]}
               <small>
                 {x.esimOnly ? 'eSIM فقط' : x.dualSim ? 'شريحتان' : '—'} ·
@@ -274,15 +284,63 @@ const schema = [
             add.textContent = st > 0 ? 'أضف للسلة' : 'نفد المخزون';
           }
           var usd = btn.getAttribute('data-usd-opt');
-          document.querySelectorAll('.price__main, .price__alt, .buybar [data-usd]').forEach(function (el) {
-            el.classList.add('is-fading');
-          });
+          var old = btn.getAttribute('data-old') || '';
+          var g = function (k) { return btn.getAttribute(k) || ''; };
+
+          var priced = document.querySelectorAll('.price__main, .price__alt, .buybar [data-usd]');
+          priced.forEach(function (el) { el.classList.add('is-fading'); });
+
           setTimeout(function () {
-            document.querySelectorAll('.price__main, .price__alt, .buybar [data-usd]').forEach(function (el) {
+            priced.forEach(function (el) {
               el.setAttribute('data-usd', usd);
               el.classList.remove('is-fading');
             });
-            document.dispatchEvent(new Event('click')); // يعيد التصيير عبر مستمع العملة
+
+            /* السعر القديم وشارة التوفير يخصّان نسخةً بعينها. وتركُهما من
+               النسخة السابقة يخترع خصماً لا وجود له — وهو أسوأ من إخفائه. */
+            var wasEl = document.querySelector('.price__was');
+            var oldEl = document.querySelector('.price__old');
+            var saveEl = document.querySelector('.price__save');
+            if (wasEl) wasEl.hidden = !(old && Number(old) > Number(usd));
+            if (oldEl) {
+              if (old && Number(old) > Number(usd)) {
+                oldEl.setAttribute('data-usd', old);
+                oldEl.hidden = false;
+                if (saveEl) {
+                  saveEl.textContent = 'وفّر ' + Math.round((1 - usd / old) * 100) + '%';
+                  saveEl.hidden = false;
+                }
+              } else {
+                oldEl.hidden = true;
+                if (saveEl) saveEl.hidden = true;
+              }
+            }
+
+            /* الوصفُ يتبع النسخة أيضاً: «شريحتان فعليتان» على نسخةٍ بلا
+               منفذ شريحة كذبةٌ يكتشفها الزبون عند الباب، وهي أوّل ما يسأل
+               عنه المشتري هنا قبل السعر. */
+            var setTag = function (sel, text, clay) {
+              var el = document.querySelector(sel);
+              if (!el) return;
+              el.textContent = text;
+              el.hidden = !text;
+              if (clay !== undefined) el.classList.toggle('tag--clay', !!clay);
+            };
+            setTag('[data-v-part]', g('data-part'));
+            setTag('[data-v-sim]', g('data-sim'), g('data-sim-kind') === 'clay');
+            setTag('[data-v-warranty]', g('data-warranty'));
+
+            var av = document.querySelector('.avail');
+            if (av) {
+              av.textContent = g('data-avail');
+              av.classList.toggle('avail--out', g('data-avail') === 'نفد المخزون');
+            }
+            var bl = document.querySelector('.brandline');
+            var col = g('data-color');
+            if (bl && col) bl.textContent = bl.textContent.split(' · ')[0] + ' · ' + col;
+
+            // بابٌ صريح لا نقرةٌ مصطنعة: تلك كانت تسقط بـTypeError فلا يُصيَّر شيء
+            document.dispatchEvent(new Event('prices:render'));
           }, 140);
         });
       });

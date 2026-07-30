@@ -130,12 +130,21 @@ const ld = graph(base, [organizationLd(base), websiteLd(base), ...schema]);
         }
 
         document.addEventListener('click', function (e) {
-          var b = e.target.closest('[data-cur-btn]');
+          /* `e.target` قد لا يكون عنصراً: حدثٌ مُرسَل على `document` هدفُه
+             الوثيقة، و`closest` معرَّفةٌ على `Element` وحدها. وبلا هذا
+             الحارس تسقط الدالة بـTypeError عند أول حدثٍ مُصطنَع — وقد
+             سقطت فعلاً، فبقي سعرُ النسخة الأولى معروضاً بعد اختيار الثانية. */
+          var t = e.target;
+          var b = t && t.closest ? t.closest('[data-cur-btn]') : null;
           if (!b) return;
           pref = b.getAttribute('data-cur-btn');
           localStorage.setItem('currency_pref', pref);
           render();
         });
+
+        /* بابٌ صريح لإعادة التصيير بدل نقرةٍ مصطنعة: النقرة المزيّفة
+           تمرّ على كل مستمعي النقر في الصفحة، وتُصيب من لا شأن له بها. */
+        document.addEventListener('prices:render', render);
 
         render();
       })();

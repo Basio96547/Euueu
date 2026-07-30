@@ -15,12 +15,13 @@ const off = compareAt && compareAt > usdCents
 <span class={`price price--${size}`}>
   <span class="price__main" data-usd={usdCents}></span>
   <span class="price__alt" data-usd={usdCents} data-alt></span>
-  {compareAt && (
-    <span class="price__was">
-      <span class="price__old" data-usd={compareAt}></span>
-      {off > 0 && <span class="price__save">وفّر {off}%</span>}
-    </span>
-  )}
+  {/* يبقى في الصفحة دائماً ولو مخفياً: تبديلُ النسخة قد ينتقل من نسخةٍ
+      بلا خصمٍ إلى نسخةٍ بخصم، ووسمٌ غيرُ موجود لا يُملأ — فيضيع الخصم
+      صامتاً. والكلفة سطران فارغان لا يراهما أحد. */}
+  <span class="price__was" hidden={!compareAt}>
+    <span class="price__old" data-usd={compareAt ?? ''} hidden={!compareAt}></span>
+    <span class="price__save" hidden={off === 0}>{off > 0 ? `وفّر ${off}%` : ''}</span>
+  </span>
 </span>
 
 <style>
