@@ -150,7 +150,7 @@ function CartPage({ nav }: { nav: (to: string) => void }) {
       <CouponBox cart={cart} onChange={setCart} />
 
       <p className="warnbox">
-        المبلغ يُحسب على المجموع ثم يُقرَّب لأقرب 1000 ليرة، وقد يختلف قليلاً عن جمع الأسعار المعروضة.
+        المبلغ يُحسب على المجموع ثم يُقرَّب لأقرب 10 ليرات، وقد يختلف قليلاً عن جمع الأسعار المعروضة.
         سعر الصرف المعتمد {cart.fx.rate.toLocaleString('en-US')} ويُثبَّت على طلبك 48 ساعة.
       </p>
 
