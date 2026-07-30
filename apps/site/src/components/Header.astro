@@ -21,7 +21,7 @@ const links = [
 ];
 ---
 <header class="topbar">
-  <div class="inner glass">
+  <div class="inner">
     {back ? (
       <a href={back} class="ico" aria-label="رجوع">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
@@ -73,11 +73,20 @@ const links = [
     block-size: 16px; pointer-events: none;
     background: linear-gradient(var(--ground), transparent);
   }
+  /*
+    سطحٌ صلب لا زجاج: الشريط يقف فوق أرضيةٍ معتمة (‎--ground‎ على .topbar)،
+    فالطمس هنا يقرأ لوناً واحداً ويُخرج اللون نفسه — كلفةُ إطارٍ كاملة
+    مقابل لا شيء يُرى. والزجاج يبقى حيث يمرّ المحتوى فعلاً من تحته:
+    الشريط السفلي وشريط الشراء.
+  */
   .inner {
     max-inline-size: var(--content); margin-inline: auto;
     padding: 7px 10px;
     display: flex; align-items: center; gap: 10px;
     border-radius: var(--r-l);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--sh-1);
   }
 
   .mark {

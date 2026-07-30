@@ -70,6 +70,9 @@ const groups: Array<{ h: string; links: Array<[string, string]> }> = [
 
 <style>
   .foot {
+    /* أسفل كل صفحة ولا يُرى إلا في آخرها: لا يُرسم قبل الاقتراب منه */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 520px;
     margin-block-start: var(--space-7);
     padding-block: var(--space-5) calc(var(--nav-h) + var(--safe-b) + 30px);
     border-block-start: 1px solid var(--line);

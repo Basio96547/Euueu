@@ -96,8 +96,12 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); }
 #root { max-width: 860px; }
 textarea { line-height: 1.65; resize: vertical; min-height: 68px; }
 
-/* صفّ الطلب في الطابور */
-.qrow { display: grid; gap: 9px; padding: 13px; border-radius: var(--r-l); }
+/* صفّ الطلب في الطابور.
+   الطابور يطول في يوم الذروة، وصفٌّ خارج الشاشة لا يُرسم. */
+.qrow {
+  display: grid; gap: 9px; padding: 13px; border-radius: var(--r-l);
+  content-visibility: auto; contain-intrinsic-size: auto 148px;
+}
 .qrow .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .qrow .no { font-weight: 800; font-variant-numeric: tabular-nums; }
 .qrow .acts { display: flex; gap: 7px; flex-wrap: wrap; }

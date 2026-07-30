@@ -59,6 +59,7 @@ const title = `${product.name.ar}${v.storageGb ? ` · ${v.storageGb} جيجاب�
 
 <style>
   .card {
+    position: relative;
     display: grid;
     grid-template-rows: auto auto 1fr auto auto;
     gap: 8px;
@@ -67,23 +68,41 @@ const title = `${product.name.ar}${v.storageGb ? ` · ${v.storageGb} جيجاب�
     background: var(--surface);
     border: 1px solid var(--line);
     box-shadow: var(--sh-1);
-    transition:
-      transform var(--dur-tap) var(--ease-state),
-      box-shadow var(--dur-in) var(--ease-in),
-      border-color var(--dur-in) var(--ease-in);
+    /* التحويل وحده في قائمة الانتقال: يحرّكه المُركِّب على معدّل الشاشة
+       مهما بلغ — ستّون إطاراً أو مئةٌ وعشرون. */
+    transition: transform var(--dur-tap) var(--ease-state);
+    /*
+      بطاقةٌ خارج الشاشة لا تُرسم أصلاً. في صفحة البحث اثنتان وعشرون بطاقة
+      لكلٍّ تدرّجان ورسمُ جهازٍ بظلّ — ورسمُها كلّها ليُرى منها أربع هو
+      سبب تضاعف الإطارات. والمقاس المبدئيّ يمنع اهتزاز شريط التمرير.
+    */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
   }
   .card:active { transform: scale(0.985); }
-  @media (hover: hover) {
-    .card:hover { box-shadow: var(--sh-2); border-color: color-mix(in srgb, var(--brass) 34%, var(--line)); }
+  /*
+    ظلّ التحويم طبقةٌ تُظهَر بالشفافية لا ظلٌّ يتبدّل مقاسه: تحريك
+    box-shadow يعيد رسم الطمس في كل إطار، وتحريك opacity لا يعيد شيئاً.
+  */
+  .card::after {
+    /* داخل الحدود لا خارجها: احتواء الرسم الذي يجلبه content-visibility
+       يقصّ ما يتجاوزها. */
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    box-shadow: var(--sh-2);
+    border: 1px solid color-mix(in srgb, var(--brass) 34%, var(--line));
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--dur-in) var(--ease-in);
   }
+  @media (hover: hover) { .card:hover::after { opacity: 1; } }
   .card--out { opacity: 0.72; }
 
   .badge {
     position: absolute; inset-inline-start: 7px; inset-block-start: 7px;
     font-size: var(--step--2); font-weight: 800; padding: 3px 8px;
     border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--surface) 86%, transparent);
-    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    /* بلا طمس: اثنتان وعشرون شارةً تعني اثنين وعشرين سطحَ تصييرٍ منفصلاً،
+       والأرضية تحتها تدرّجٌ ناعم لا يُرى فرقُ طمسه أصلاً. */
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
     border: 1px solid var(--line); color: var(--ink-2);
   }
   .veil {

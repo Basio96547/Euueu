@@ -9,6 +9,14 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* الوصلة الداخلية لا تقف تحت الشريط العلوي اللاصق */
+  scroll-padding-block-start: 78px;
+  /*
+    وميض التحديد الرمادي عند اللمس تأخيرٌ مرئيّ: يظهر بعد اللمسة لا معها،
+    ويصف مستطيلاً لا شكل الزرّ. عندنا بديلٌ أدقّ وأسرع — انكماشُ الزرّ
+    نفسه (‎:active { scale }‎) يبدأ في الإطار التالي مباشرة.
+  */
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -19,7 +27,6 @@ body {
   color: var(--ink);
   background: var(--ground);
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
   /* مساحة للشريط السفلي الثابت */
   padding-block-end: calc(var(--nav-h) + var(--safe-b) + 26px);
 }
@@ -42,6 +49,22 @@ h1, h2, h3, h4 {
   text-wrap: balance;
 }
 p { text-wrap: pretty; }
+
+/* عناصرُ يُضغط عليها لا يُقرأ منها: تحديدُ نصٍّ أثناء السحب يقطع التمرير */
+:where(.btn, .chip, .tag, .bottomnav, .navlinks, .curtoggle, .eyebrow) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+  ‏touch-action: manipulation يُلغي انتظار النقرة المزدوجة (نحو 300 مللي
+  ثانية) قبل تنفيذ اللمسة. لا شيء في الحسّ أسوأ من زرٍّ صحيحٍ يتأخّر:
+  الشاشة قد تعرض 120 إطاراً في الثانية، والزبون ينتظر ستةً وثلاثين منها
+  قبل أن يرى أن لمسته وصلت.
+*/
+:where(a, button, [role='button'], input, select, textarea, label, summary) {
+  touch-action: manipulation;
+}
 
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--brass);
@@ -142,6 +165,7 @@ p { text-wrap: pretty; }
 }
 .chip-row {
   display: flex; gap: var(--space-2); overflow-x: auto; scrollbar-width: none;
+  overscroll-behavior-inline: contain;
   padding-inline: var(--gutter); margin-inline: calc(-1 * var(--gutter));
   padding-block: 2px;
 }
@@ -241,14 +265,16 @@ p { text-wrap: pretty; }
   background: color-mix(in srgb, var(--clay) 12%, transparent);
   border-radius: var(--r-xs); padding: 1px 6px; white-space: nowrap;
 }
-/* غسلة تحديث سعر الصرف — لا وميض (§5.13 هـ) */
-@keyframes fx-wash {
-  from { background-color: color-mix(in srgb, var(--brass) 18%, transparent); }
-  to   { background-color: transparent; }
-}
-.price[data-fx-updated] .price__main {
+/* غسلة تحديث سعر الصرف — لا وميض (§5.13 هـ).
+   الشفافية لا لون الخلفية: الأولى يحرّكها المُركِّب على معدّل الشاشة،
+   والثانية تُعاد رسمها في الخيط الرئيسي ستّين مرة أو مئةً وعشرين. */
+@keyframes fx-wash { from { opacity: 1; } to { opacity: 0; } }
+.price__main { position: relative; }
+.price[data-fx-updated] .price__main::after {
+  content: ''; position: absolute; inset: -2px -4px; border-radius: 5px;
+  background: color-mix(in srgb, var(--brass) 18%, transparent);
+  pointer-events: none;
   animation: fx-wash 600ms var(--ease-out) both;
-  border-radius: 4px;
 }
 
 /* ————— شريط النظام (الفصل 20 §20.9) ————— */
@@ -315,6 +341,24 @@ p { text-wrap: pretty; }
 .sheet.is-dragging { transition: none !important; }
 
 /* ————— الشريط السفلي ————— */
+/*
+  الشريط السفلي وشريط الشراء سطحان ثابتان فوق محتوىً يتحرّك: ترقيةٌ
+  صريحة إلى طبقةٍ مستقلّة تمنع إعادة رسمهما مع كل إطار تمرير.
+  والرسالة العابرة ليست منهما: لها تحويلٌ خاصّ بها (translateY) تُبنى
+  عليه حركة دخولها، وأيّ تحويلٍ آخر هنا يمحوه فتظهر بلا انزلاق — وهي
+  مُرقّاة أصلاً لأن التحويل والشفافية ينتقلان فيها.
+*/
+.bottomnav, .buybar {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  :root:not([data-glass="off"]) :is(.bottomnav, .buybar, .toast).glass {
+    backdrop-filter: blur(var(--glass-blur-fixed));
+    -webkit-backdrop-filter: blur(var(--glass-blur-fixed));
+  }
+}
+
 .bottomnav {
   position: fixed; z-index: 40;
   bottom: calc(8px + var(--safe-b)); inset-inline: 8px;
