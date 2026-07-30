@@ -1,16 +1,17 @@
 /**
- * مخزن مفتاح ← قيمة بمهلة.
+ * مخزن مفتاح ← قيمة بمهلة: رموز الدخول، ومفاتيح التفرّد، وعدّادات الحدّ.
  *
- * ثلاثة سائقين بواجهة واحدة: ذاكرة العملية، وRedis، وCloudflare KV.
+ * سائقان: Cloudflare KV حين يكون الربط موجوداً، وذاكرة العزلة حين لا
+ * يكون. وذاكرة العزلة ليست خياراً للإنتاج بل شبكةُ أمان: كل عزلة عالمها
+ * الخاص وتُنشأ وتُهدَم بلا إشعار، فرمزٌ يُولَّد في واحدة يُرفض في أخرى،
+ * ومفتاح تفرّد يُخزَّن هنا يُحصِّل الطلب مرتين هناك.
  *
- * الذاكرة تكفي نسخة خادم واحدة. لكنها تنكسر بصمت لحظة تشغيل نسخة ثانية:
- * رمز الدخول يُولَّد في نسخة ويُتحقَّق منه في أخرى فيُرفض، ومفتاح التفرّد
- * يُخزَّن هنا فيُحصَّل الطلب مرتين هناك، وحدّ المعدل يصير ضِعف ما كُتب.
+ * واتساق KV نهائي لا فوري، فحدّ المعدل قد يمرّر طلباً زائداً بين موقعين
+ * متباعدين. مقبولٌ لحاجزٍ يمنع الإساءة، وأفضل بكثير من عدّادٍ يُمحى مع
+ * العزلة التي حملته.
  *
- * وعلى Worker هذا ليس احتمالاً بل يقين: كل عزلة عالمها الخاص وتُنشأ
- * وتُهدَم بلا إشعار. لذلك السائق هناك هو Cloudflare KV — واتساقه نهائي
- * لا فوري، فحدّ المعدل قد يمرّر طلباً زائداً بين موقعين متباعدين.
- * مقبولٌ لحاجزٍ يمنع الإساءة، وهو أفضل بكثير من عدّادٍ يُمحى مع العزلة.
+ * (كان هنا سائق Redis — وحُذف: لا Redis داخل Worker، وشيفرةٌ ميتة تُوهم
+ * بخيارٍ غير موجود.)
  */
 export interface Kv {
   get<T>(key: string): Promise<T | null>;
@@ -18,7 +19,7 @@ export interface Kv {
   del(key: string): Promise<void>;
   /** زيادة ذرّية بمهلة تُضبط عند أول زيادة — لحدّ المعدل */
   incr(key: string, ttlSec: number): Promise<number>;
-  readonly driver: 'redis' | 'memory' | 'cf-kv';
+  readonly driver: 'memory' | 'cf-kv';
 }
 
 class MemoryKv implements Kv {
@@ -92,40 +93,7 @@ class CloudflareKv implements Kv {
   }
 }
 
-interface RedisLike {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string, opts: { EX: number }): Promise<unknown>;
-  del(key: string): Promise<unknown>;
-  incr(key: string): Promise<number>;
-  expire(key: string, sec: number): Promise<unknown>;
-}
-
-class RedisKv implements Kv {
-  readonly driver = 'redis' as const;
-  constructor(private client: RedisLike) {}
-
-  async get<T>(key: string): Promise<T | null> {
-    const raw = await this.client.get(key);
-    if (raw === null) return null;
-    try { return JSON.parse(raw) as T; } catch { return raw as T; }
-  }
-
-  async set<T>(key: string, value: T, ttlSec: number) {
-    await this.client.set(key, JSON.stringify(value), { EX: ttlSec });
-  }
-
-  async del(key: string) { await this.client.del(key); }
-
-  async incr(key: string, ttlSec: number): Promise<number> {
-    const n = await this.client.incr(key);
-    // NX يمنع تمديد النافذة مع كل طلب — وإلا لم تنتهِ أبداً تحت ضغط
-    if (n === 1) await this.client.expire(key, ttlSec);
-    return n;
-  }
-}
-
 let instance: Kv | null = null;
-let warned = false;
 
 /** يُستدعى من الـWorker: الربط يأتي من بيئة الطلب لا من متغيّر عملية */
 export function useCloudflareKv(ns: CfKvNamespace | undefined): Kv {
@@ -134,52 +102,6 @@ export function useCloudflareKv(ns: CfKvNamespace | undefined): Kv {
     return instance;
   }
   if (instance?.driver !== 'cf-kv') instance = new CloudflareKv(ns);
-  return instance;
-}
-
-export async function initKv(): Promise<Kv> {
-  if (instance) return instance;
-
-  const url = process.env.REDIS_URL;
-  if (!url) {
-    instance = new MemoryKv();
-    console.warn('KV في الذاكرة — لنسخة خادم واحدة فقط.');
-    console.warn('عند تشغيل أكثر من نسخة اضبط REDIS_URL، وإلا رُفضت رموز الدخول وتكرّر التحصيل.');
-    return instance;
-  }
-
-  try {
-    /* استراتيجية إعادة محاولة محدودة ومهلة اتصال صريحة.
-       الافتراضي في node-redis إعادةُ محاولة بلا نهاية، فـRedis مضبوط
-       لكنه متوقف يعلّق الإقلاع إلى الأبد — والمتجر يبقى مطفأً بانتظار
-       خدمة مساعدة. المتجر أهمّ من مخزنه المؤقّت.
-
-       والاستيراد كسول: حزمة redis لا مكان لها في حزمة الـWorker،
-       وربطها ساكناً يجرّها إلى بناءٍ لا يستعملها. */
-    const { createClient } = await import('redis');
-    const client = createClient({
-      url,
-      socket: {
-        connectTimeout: 3000,
-        reconnectStrategy: (retries: number) => (retries > 5 ? false : Math.min(retries * 200, 1000)),
-      },
-    });
-    // بلا مستمع للخطأ يرمي node-redis استثناءً غير ملتقَط يُسقط العملية
-    client.on('error', (e: any) => {
-      if (!warned) { console.error('Redis:', e?.message ?? e); warned = true; }
-    });
-    await Promise.race([
-      client.connect(),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('مهلة الاتصال')), 4000)),
-    ]);
-    instance = new RedisKv(client as unknown as RedisLike);
-    console.log(`KV على Redis: ${url.replace(/:\/\/.*@/, '://***@')}`);
-  } catch (e) {
-    /* الفشل لا يُسقط الخادم: متجرٌ يعمل بذاكرة محلية أفضل من متجر
-       لا يعمل. لكن الرسالة صريحة لأن الصمت هنا خطر. */
-    console.error(`تعذّر الاتصال بـRedis (${String(e)}) — التحويل إلى الذاكرة.`);
-    instance = new MemoryKv();
-  }
   return instance;
 }
 

@@ -1,4 +1,5 @@
 import { PrismaService } from '../common/prisma.service.js';
+import { runBatch } from '../common/batch.js';
 
 /**
  * كنّاس الحجوزات المنتهية.
@@ -39,20 +40,21 @@ export class ReservationSweeper {
         if (!due.length) break;
 
         for (const r of due) {
-          await this.prisma.$transaction(async (tx) => {
-            // الحذف أولاً وبشرط: لو سبقنا إليه كنّاس آخر لم نخصم مرتين
-            const gone = await tx.inventoryReservation.deleteMany({ where: { id: r.id } });
-            if (gone.count === 0) return;
+          /* الحذف أولاً وبشرط: لو سبقنا إليه كنّاس آخر لم نخصم مرتين.
+             والدفعة ذرّية: يُحذف الصف ويُخصم العدّاد ويُكتب الأثر معاً
+             أو لا يقع شيء. و`max(0, …)` يمنع عدّاداً سالباً لو تسرّب
+             خصم مزدوج من مسار آخر. */
+          const gone = await this.prisma.inventoryReservation.deleteMany({ where: { id: r.id } });
+          if (gone.count === 0) continue;
 
-            // GREATEST يمنع عدّاداً سالباً لو تسرّب خصم مزدوج من مسار آخر
-            await tx.$executeRaw`
+          await runBatch(this.prisma, [
+            this.prisma.$executeRaw`
               UPDATE inventory_levels
-                 SET reserved = GREATEST(0, reserved - ${r.qty}),
+                 SET reserved = max(0, reserved - ${r.qty}),
                      version  = version + 1
-               WHERE variant_id = ${r.variantId}::uuid
-                 AND warehouse_id = ${r.warehouseId}::uuid`;
-
-            await tx.inventoryMovement.create({
+               WHERE variant_id = ${r.variantId}
+                 AND warehouse_id = ${r.warehouseId}`,
+            this.prisma.inventoryMovement.create({
               data: {
                 variantId: r.variantId, warehouseId: r.warehouseId,
                 reason: 'RELEASE', qtyDelta: r.qty,
@@ -60,11 +62,11 @@ export class ReservationSweeper {
                 refId: r.orderId ?? r.cartId ?? null,
                 note: `تحرير تلقائي: انتهى ${r.kind} في ${r.expiresAt.toISOString()}`,
               },
-            });
+            }),
+          ]);
 
-            released++;
-            qty += r.qty;
-          });
+          released++;
+          qty += r.qty;
         }
 
         if (due.length < this.batch) break;

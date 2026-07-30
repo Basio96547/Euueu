@@ -1,6 +1,7 @@
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
+import { strList } from '../common/json-list.js';
 
 
 /** مهل أول رد والحل بالدقائق ضمن ساعات العمل — الفصل 14 §14.7 */
@@ -331,7 +332,7 @@ export class TicketsService {
     const rows = await this.prisma.ticketMacro.findMany({ where: { isActive: true }, orderBy: { usageCount: 'desc' } });
     return rows.map((m) => ({
       code: m.code, title: (m.title as any).ar, body: (m.body as any).ar,
-      variables: m.variables, usageCount: m.usageCount,
+      variables: strList(m.variables), usageCount: m.usageCount,
     }));
   }
 }

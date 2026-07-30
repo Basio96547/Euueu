@@ -2,6 +2,7 @@ import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 import { roundCash } from '../common/money.js';
 
 /** نافذة الإرجاع سبعة أيام من التسليم — الفصل 8 §8.10 */
@@ -235,63 +236,72 @@ export class ReturnsService {
       data.completedAt = now;
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.return.update({ where: { id: r.id }, data });
+    const writes: any[] = [this.prisma.return.update({ where: { id: r.id }, data })];
 
-      // إعادة البضاعة إلى الرفّ عند الاكتمال، وبالوحدة نفسها إن كانت مسلسلة
-      if (to === 'COMPLETED' && row.restock) {
-        for (const item of r.order.items) {
-          const level = await tx.inventoryLevel.findFirst({ where: { variantId: item.variantId } });
-          if (!level) continue;
-          if (item.unit) {
-            await tx.deviceUnit.update({
-              where: { id: item.unit.id },
-              data: { state: 'IN_STOCK', orderItemId: null },
-            });
-          }
-          await tx.inventoryLevel.updateMany({
-            where: { variantId: item.variantId, warehouseId: level.warehouseId },
-            data: { onHand: { increment: item.qty }, version: { increment: 1 } },
-          });
-          await tx.inventoryMovement.create({
-            data: {
-              variantId: item.variantId, warehouseId: level.warehouseId,
-              reason: 'RETURN', qtyDelta: item.qty,
-              refType: 'return', refId: row.id, note: returnNo,
-            },
-          });
+    // إعادة البضاعة إلى الرفّ عند الاكتمال، وبالوحدة نفسها إن كانت مسلسلة
+    if (to === 'COMPLETED' && (data.restock ?? r.restock)) {
+      const levels = new Map(
+        (await this.prisma.inventoryLevel.findMany({
+          where: { variantId: { in: r.order.items.map((i) => i.variantId) } },
+        })).map((l) => [l.variantId, l]),
+      );
+
+      for (const item of r.order.items) {
+        const level = levels.get(item.variantId);
+        if (!level) continue;
+
+        /* الوحدة تعود IN_STOCK أولاً ثم يُزاد العدّاد: محفِّز التطابق
+           يفحص عند تحديث العدّاد، فلو عُكس الترتيب رفض العودة الصحيحة. */
+        if (item.unit) {
+          writes.push(this.prisma.deviceUnit.update({
+            where: { id: item.unit.id },
+            data: { state: 'IN_STOCK', orderItemId: null },
+          }));
         }
-
-        await tx.order.update({
-          where: { id: r.orderId },
-          data: { status: 'RETURNED', paymentStatus: 'REFUNDED' },
-        });
-        await tx.orderStatusHistory.create({
+        writes.push(this.prisma.inventoryLevel.updateMany({
+          where: { variantId: item.variantId, warehouseId: level.warehouseId },
+          data: { onHand: { increment: item.qty }, version: { increment: 1 } },
+        }));
+        writes.push(this.prisma.inventoryMovement.create({
           data: {
-            orderId: r.orderId, fromStatus: 'DELIVERED', toStatus: 'RETURNED',
-            actorType: 'STAFF', source: 'ADMIN', reasonCode: returnNo,
+            variantId: item.variantId, warehouseId: level.warehouseId,
+            reason: 'RETURN', qtyDelta: item.qty,
+            refType: 'return', refId: r.id, note: returnNo,
           },
-        });
-
-        /* الاسترداد بالدولار مرجعاً وبالليرة مقرَّبة لأقرب ألف:
-           العميل دفع مبلغاً مقرَّباً، فيُعاد إليه بالتقريب نفسه لا بالخام. */
-        const fx = await this.fx.current();
-        const usd = Number(r.order.totalUsdCents);
-        const raw = Math.round((usd * fx.rate) / 100);
-        const syp = roundCash(raw);
-        await tx.refund.create({
-          data: {
-            returnId: row.id,
-            amountUsdCents: BigInt(usd),
-            fxRate: fx.rate,
-            amountSyp: BigInt(syp),
-            roundingDiffSyp: syp - raw,
-            state: 'APPROVED',
-          },
-        });
+        }));
       }
-      return row;
-    });
+
+      writes.push(this.prisma.order.update({
+        where: { id: r.orderId },
+        data: { status: 'RETURNED', paymentStatus: 'REFUNDED' },
+      }));
+      writes.push(this.prisma.orderStatusHistory.create({
+        data: {
+          orderId: r.orderId, fromStatus: 'DELIVERED', toStatus: 'RETURNED',
+          actorType: 'STAFF', source: 'ADMIN', reasonCode: returnNo,
+        },
+      }));
+
+      /* الاسترداد بالدولار مرجعاً وبالليرة مقرَّبة لأقرب ألف:
+         العميل دفع مبلغاً مقرَّباً، فيُعاد إليه بالتقريب نفسه لا بالخام. */
+      const fx = await this.fx.current();
+      const usd = Number(r.order.totalUsdCents);
+      const raw = Math.round((usd * fx.rate) / 100);
+      const syp = roundCash(raw);
+      writes.push(this.prisma.refund.create({
+        data: {
+          returnId: r.id,
+          amountUsdCents: BigInt(usd),
+          fxRate: fx.rate,
+          amountSyp: BigInt(syp),
+          roundingDiffSyp: syp - raw,
+          state: 'APPROVED',
+        },
+      }));
+    }
+
+    await runBatch(this.prisma, writes);
+    const updated = await this.prisma.return.findUniqueOrThrow({ where: { id: r.id } });
 
     if (to !== 'REJECTED') {
       await this.notify.send({

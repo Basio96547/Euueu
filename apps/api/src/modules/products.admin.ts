@@ -1,7 +1,9 @@
 import { PrismaService } from '../common/prisma.service.js';
+import { randomUUID } from 'node:crypto';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 import { publicId } from '../common/money.js';
-import { deleteImage, putImage } from './storage.js';
+import { deleteImage, putImage, type R2Binding } from './storage.js';
 
 
 /** المتغيّر لا يُنشأ ناقصاً: هذه الحقول تصف الجهاز لمن يشتريه بلا أن يراه */
@@ -46,7 +48,7 @@ interface ProductInput {
  * إلا بأن يفتح قاعدة البيانات بيده، وهو ما لن يفعله ولا يجب أن يُطلب منه.
  */
 export class ProductsAdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private media?: R2Binding) {}
 
   private slugOk(s: string) {
     return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) && s.length >= 3 && s.length <= 80;
@@ -152,78 +154,86 @@ export class ProductsAdminService {
     const existing = await this.prisma.product.findFirst({ where: { slug: input.slug } });
     const actor = await this.prisma.user.findUnique({ where: { publicId: actorPublicId } });
 
-    const product = await this.prisma.$transaction(async (tx) => {
-      const data = {
-        brandId: brand.id, categoryId: category.id,
-        name: input.name as any,
-        shortDesc: (input.shortDesc ?? null) as any,
-        description: (input.description ?? null) as any,
-        spec: (input.spec ?? {}) as any,
-        status: (input.status ?? 'DRAFT') as any,
-        deletedAt: null,
+    /* المعرّفات تُولَّد هنا لا في القاعدة: الدفعة تحتاجها قبل التنفيذ،
+       والمتغيّرات تُربط بالمنتج بمعرّفه لا بما يعيده إنشاؤه. */
+    const productId = existing?.id ?? randomUUID();
+    const data = {
+      brandId: brand.id, categoryId: category.id,
+      name: input.name as any,
+      shortDesc: (input.shortDesc ?? null) as any,
+      description: (input.description ?? null) as any,
+      spec: (input.spec ?? {}) as any,
+      status: (input.status ?? 'DRAFT') as any,
+      deletedAt: null,
+    };
+
+    const warehouse = await this.prisma.warehouse.findFirst();
+    const existingVariants = new Map(
+      (await this.prisma.productVariant.findMany({
+        where: { sku: { in: input.variants.map((v) => v.sku) } },
+        include: { levels: true },
+      })).map((v) => [v.sku, v]),
+    );
+
+    const writes: any[] = [
+      existing
+        ? this.prisma.product.update({ where: { id: productId }, data })
+        : this.prisma.product.create({
+            data: { ...data, id: productId, publicId: publicId(), slug: input.slug, isDemo: false },
+          }),
+    ];
+
+    for (const [i, v] of input.variants.entries()) {
+      const vd = {
+        productId,
+        priceUsdCents: BigInt(v.priceUsdCents),
+        compareAtPriceUsdCents: v.compareAtPriceUsdCents ? BigInt(v.compareAtPriceUsdCents) : null,
+        costPriceUsdCents: v.costPriceUsdCents ? BigInt(v.costPriceUsdCents) : null,
+        storageGb: v.storageGb ?? null,
+        ramGb: v.ramGb ?? null,
+        colorCode: v.colorCode ?? null,
+        colorName: (v.colorName ?? null) as any,
+        networkGen: (v.networkGen ?? null) as any,
+        dualSim: v.dualSim ?? false,
+        esimOnly: v.esimOnly ?? false,
+        partCode: v.partCode ?? null,
+        condition: (v.condition ?? 'NEW') as any,
+        batteryHealthPct: v.batteryHealthPct ?? null,
+        deviceOrigin: (v.deviceOrigin ?? 'GULF') as any,
+        warrantyType: (v.warrantyType ?? 'STORE') as any,
+        warrantyMonths: v.warrantyMonths ?? 12,
+        isDefault: v.isDefault ?? i === 0,
       };
+      const prior = existingVariants.get(v.sku);
+      const variantId = prior?.id ?? randomUUID();
 
-      const p = existing
-        ? await tx.product.update({ where: { id: existing.id }, data })
-        : await tx.product.create({
-            data: { ...data, publicId: publicId(), slug: input.slug, isDemo: false },
-          });
+      writes.push(this.prisma.productVariant.upsert({
+        where: { sku: v.sku },
+        update: vd,
+        create: { ...vd, id: variantId, publicId: publicId(), sku: v.sku },
+      }));
 
-      const warehouse = await tx.warehouse.findFirst();
-
-      for (const [i, v] of input.variants.entries()) {
-        const vd = {
-          productId: p.id,
-          priceUsdCents: BigInt(v.priceUsdCents),
-          compareAtPriceUsdCents: v.compareAtPriceUsdCents ? BigInt(v.compareAtPriceUsdCents) : null,
-          costPriceUsdCents: v.costPriceUsdCents ? BigInt(v.costPriceUsdCents) : null,
-          storageGb: v.storageGb ?? null,
-          ramGb: v.ramGb ?? null,
-          colorCode: v.colorCode ?? null,
-          colorName: (v.colorName ?? null) as any,
-          networkGen: (v.networkGen ?? null) as any,
-          dualSim: v.dualSim ?? false,
-          esimOnly: v.esimOnly ?? false,
-          partCode: v.partCode ?? null,
-          condition: (v.condition ?? 'NEW') as any,
-          batteryHealthPct: v.batteryHealthPct ?? null,
-          deviceOrigin: (v.deviceOrigin ?? 'GULF') as any,
-          warrantyType: (v.warrantyType ?? 'STORE') as any,
-          warrantyMonths: v.warrantyMonths ?? 12,
-          isDefault: v.isDefault ?? i === 0,
-        };
-        const variant = await tx.productVariant.upsert({
-          where: { sku: v.sku },
-          update: vd,
-          create: { ...vd, publicId: publicId(), sku: v.sku },
-        });
-
-        /* صف مخزون بكمية صفر لكل متغيّر جديد.
-           غيابه يجعل المتغيّر غير قابل للاستلام ولا للحجز، فيظهر
-           في الكتالوج ولا يُباع أبداً — وهو أسوأ من ألا يظهر. */
-        if (warehouse) {
-          const level = await tx.inventoryLevel.findFirst({
-            where: { variantId: variant.id, warehouseId: warehouse.id },
-          });
-          if (!level) {
-            await tx.inventoryLevel.create({
-              data: { variantId: variant.id, warehouseId: warehouse.id, onHand: 0, reorderPoint: 2 },
-            });
-          }
-        }
+      /* صف مخزون بكمية صفر لكل متغيّر جديد.
+         غيابه يجعل المتغيّر غير قابل للاستلام ولا للحجز، فيظهر
+         في الكتالوج ولا يُباع أبداً — وهو أسوأ من ألا يظهر. */
+      if (warehouse && !prior?.levels.some((l) => l.warehouseId === warehouse.id)) {
+        writes.push(this.prisma.inventoryLevel.create({
+          data: { variantId, warehouseId: warehouse.id, onHand: 0, reorderPoint: 2 },
+        }));
       }
+    }
 
-      await tx.auditLog.create({
-        data: {
-          actorId: actor?.id,
-          action: existing ? 'catalog.product.update' : 'catalog.product.create',
-          entityType: 'products', entityId: p.id,
-          diff: { slug: input.slug, variants: input.variants.map((v) => v.sku) },
-        },
-      });
+    writes.push(this.prisma.auditLog.create({
+      data: {
+        actorId: actor?.id,
+        action: existing ? 'catalog.product.update' : 'catalog.product.create',
+        entityType: 'products', entityId: productId,
+        diff: { slug: input.slug, variants: input.variants.map((v) => v.sku) },
+      },
+    }));
 
-      return p;
-    });
+    await runBatch(this.prisma, writes);
+    const product = { id: productId, slug: input.slug, status: data.status };
 
     return { slug: product.slug, status: product.status, created: !existing };
   }
@@ -318,7 +328,7 @@ export class ProductsAdminService {
 
     let url = b.url ?? '';
     if (b.dataUrl) {
-      const stored = await putImage(b.dataUrl, `products/${p.slug}`);
+      const stored = await putImage(this.media, b.dataUrl, `products/${p.slug}`);
       url = stored.url;
     }
     if (!/^(https?:\/\/|\/)/.test(url)) {
@@ -342,7 +352,7 @@ export class ProductsAdminService {
     if (!m) throw Errors.notFound('الصورة');
     await this.prisma.media.delete({ where: { id } });
     // الصف يُحذف أولاً: ملفٌ بلا صف مساحةٌ ضائعة، وصفٌّ بلا ملف صورةٌ مكسورة
-    await deleteImage(m.url);
+    await deleteImage(this.media, m.url);
     return { deleted: true };
   }
 

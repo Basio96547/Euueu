@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../common/prisma.service.js';
+import { runBatch } from '../common/batch.js';
 import { Errors } from '../common/errors.js';
 import { FxService } from './fx.module.js';
 import { roundCash } from '../common/money.js';
@@ -63,20 +65,22 @@ export class AccountService {
     const count = await this.prisma.address.count({ where: { userId: u.id, deletedAt: null } });
     const makeDefault = b.isDefault || count === 0;
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      if (makeDefault) {
-        await tx.address.updateMany({ where: { userId: u.id }, data: { isDefault: false } });
-      }
-      return tx.address.create({
+    const id = randomUUID();
+    await runBatch(this.prisma, [
+      ...(makeDefault
+        ? [this.prisma.address.updateMany({ where: { userId: u.id }, data: { isDefault: false } })]
+        : []),
+      this.prisma.address.create({
         data: {
+          id,
           userId: u.id, label: b.label, recipientName: b.recipientName.trim(),
           governorate: b.governorate as any, city: b.city.trim(), neighborhood: b.neighborhood.trim(),
           street: b.street, landmark: b.landmark.trim(), details: b.details,
           phone: b.phone, altPhone: b.altPhone, isDefault: makeDefault,
         },
-      });
-    });
-    return { id: created.id, isDefault: created.isDefault };
+      }),
+    ]);
+    return { id, isDefault: makeDefault };
   }
 
   async setDefaultAddress(publicId: string, id: string) {
@@ -298,14 +302,14 @@ export class AccountService {
     let done = 0;
     for (const req of due) {
       const u = req.user;
-      await this.prisma.$transaction(async (tx) => {
-        await tx.address.updateMany({ where: { userId: u.id }, data: { deletedAt: now } });
-        await tx.wishlistItem.deleteMany({ where: { userId: u.id } });
-        await tx.priceAlert.deleteMany({ where: { userId: u.id } });
-        await tx.stockAlert.deleteMany({ where: { userId: u.id } });
-        await tx.pushSubscription.deleteMany({ where: { userId: u.id } });
-        await tx.session.updateMany({ where: { userId: u.id }, data: { revokedAt: now } });
-        await tx.user.update({
+      await runBatch(this.prisma, [
+        this.prisma.address.updateMany({ where: { userId: u.id }, data: { deletedAt: now } }),
+        this.prisma.wishlistItem.deleteMany({ where: { userId: u.id } }),
+        this.prisma.priceAlert.deleteMany({ where: { userId: u.id } }),
+        this.prisma.stockAlert.deleteMany({ where: { userId: u.id } }),
+        this.prisma.pushSubscription.deleteMany({ where: { userId: u.id } }),
+        this.prisma.session.updateMany({ where: { userId: u.id }, data: { revokedAt: now } }),
+        this.prisma.user.update({
           where: { id: u.id },
           data: {
             fullName: null,
@@ -315,17 +319,17 @@ export class AccountService {
             deletedAt: now,
             tokenVersion: { increment: 1 },
           },
-        });
-        await tx.accountDeletionRequest.update({
+        }),
+        this.prisma.accountDeletionRequest.update({
           where: { id: req.id }, data: { state: 'COMPLETED', completedAt: now },
-        });
-        await tx.auditLog.create({
+        }),
+        this.prisma.auditLog.create({
           data: {
             action: 'account.deleted', entityType: 'users', entityId: u.id,
             diff: { requestedAt: req.requestedAt.toISOString(), executedAt: now.toISOString() },
           },
-        });
-      });
+        }),
+      ]);
       done++;
     }
     return { deleted: done };

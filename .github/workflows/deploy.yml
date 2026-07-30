@@ -20,6 +20,15 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
 
+      # الترحيل قبل النشر لا بعده: نصٌّ جديد يقرأ عموداً لم يُنشأ بعدُ
+      # يفشل عند أول طلب، والترتيب هنا يمنع تلك النافذة.
+      - name: ترحيل قاعدة D1
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply talisham --remote
+
       # Worker واحد يخدم الموقع والتطبيقين والواجهة البرمجية:
       # أربع نشرات منفصلة كانت تعني نطاقاً بلا مسار وصفحاتٍ ترجع 404.
       - name: بناء الأصول ونص الـWorker

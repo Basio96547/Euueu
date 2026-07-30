@@ -29,7 +29,9 @@ export class UsersAdminService {
           ? {
               OR: [
                 { phoneE164: { contains: opts.q } },
-                { fullName: { contains: opts.q, mode: 'insensitive' as const } },
+                /* SQLite: `LIKE` غير حسّاس لحالة الأحرف اللاتينية أصلاً،
+                   والعربية بلا حالة — فلا حاجة إلى `mode` ولا وجود له. */
+                { fullName: { contains: opts.q } },
               ],
             }
           : {}),

@@ -1,5 +1,7 @@
 import { PrismaService } from '../common/prisma.service.js';
+import { randomUUID } from 'node:crypto';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 
 /**
  * المشتريات والتكلفة الشاملة (الفصل 16).
@@ -117,9 +119,17 @@ export class ProcurementService {
     const seq = (await this.prisma.purchaseOrder.count()) + 1;
     const poNo = `PO-${yy}${mm}-${String(seq).padStart(4, '0')}`;
 
-    const po = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.purchaseOrder.create({
+    const poId = randomUUID();
+    const levels = new Map(
+      (await this.prisma.inventoryLevel.findMany({
+        where: { variantId: { in: [...variants.values()] } },
+      })).map((l) => [l.variantId, l]),
+    );
+
+    const writes: any[] = [
+      this.prisma.purchaseOrder.create({
         data: {
+          id: poId,
           poNo, supplierId: supplier.id, state: 'CONFIRMED',
           goodsUsdCents: BigInt(alloc.goodsUsdCents),
           extraUsdCents: BigInt(alloc.extraUsdCents),
@@ -136,29 +146,29 @@ export class ProcurementService {
             })),
           },
         },
-      });
+      }),
+    ];
 
-      // زيادة incoming: البضاعة في الطريق ليست متاحة للبيع لكنها معلومة للتخطيط
-      for (const l of alloc.lines) {
-        const level = await tx.inventoryLevel.findFirst({ where: { variantId: variants.get(l.sku)! } });
-        if (level) {
-          await tx.inventoryLevel.update({
-            where: { id: level.id },
-            data: { incoming: { increment: l.qty }, version: { increment: 1 } },
-          });
-        }
-      }
+    // زيادة incoming: البضاعة في الطريق ليست متاحة للبيع لكنها معلومة للتخطيط
+    for (const l of alloc.lines) {
+      const level = levels.get(variants.get(l.sku)!);
+      if (!level) continue;
+      writes.push(this.prisma.inventoryLevel.update({
+        where: { id: level.id },
+        data: { incoming: { increment: l.qty }, version: { increment: 1 } },
+      }));
+    }
 
-      await tx.auditLog.create({
-        data: {
-          action: 'po.create', entityType: 'purchase_orders', entityId: created.id,
-          diff: { poNo, supplier: supplier.code, ...alloc },
-        },
-      });
-      return created;
-    });
+    writes.push(this.prisma.auditLog.create({
+      data: {
+        action: 'po.create', entityType: 'purchase_orders', entityId: poId,
+        diff: { poNo, supplier: supplier.code, ...alloc },
+      },
+    }));
 
-    return { poNo: po.poNo, supplier: supplier.code, state: po.state, ...alloc };
+    await runBatch(this.prisma, writes);
+
+    return { poNo, supplier: supplier.code, state: 'CONFIRMED', ...alloc };
   }
 
   async listPos(state?: string) {
@@ -248,45 +258,40 @@ export class ProcurementService {
 
       const unitCost = r.unitCostUsdCents ?? Number(line.landedUnitCostUsdCents);
 
-      try {
-        await this.prisma.$transaction(async (tx) => {
-          for (const imei of valid) {
-            await tx.deviceUnit.create({
-              data: {
-                variantId: variant.id, warehouseId: level.warehouseId, imei,
-                state: 'IN_STOCK', imeiCheckStatus: 'CLEAN',
-                acquisitionCostUsdCents: BigInt(unitCost),
-              },
-            });
-          }
-          /* للأجهزة المتتبَّعة بالوحدة، الوحدات هي مصدر الحقيقة:
-             يُضبط العدّاد على عددها لا يُزاد عمياً — وإلا رفض المحفِّز المعاملة. */
-          const unitCount = await tx.deviceUnit.count({
-            where: { variantId: variant.id, warehouseId: level.warehouseId, state: 'IN_STOCK' },
-          });
-          await tx.inventoryLevel.update({
-            where: { id: level.id },
-            data: {
-              onHand: unitCount,
-              incoming: { decrement: Math.min(valid.length, level.incoming) },
-              version: { increment: 1 },
-            },
-          });
-          await tx.inventoryMovement.create({
-            data: {
-              variantId: variant.id, warehouseId: level.warehouseId,
-              reason: 'RECEIPT', qtyDelta: valid.length, refType: 'purchase_order', note: poNo,
-            },
-          });
-          await tx.purchaseOrderLine.update({
-            where: { id: line.id }, data: { qtyReceived: { increment: valid.length } },
-          });
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes('انحراف مخزون')) throw Errors.stockDrift(msg.split('ERROR:').pop()?.trim() ?? msg);
-        throw e;
-      }
+      /* الوحدات تُنشأ أولاً ثم يُضبط العدّاد أخيراً: محفِّز التطابق يفحص
+         عند تحديث العدّاد، فترتيب الدفعة جزء من العقد لا تفصيل أسلوب. */
+      const priorUnits = await this.prisma.deviceUnit.count({
+        where: { variantId: variant.id, warehouseId: level.warehouseId, state: 'IN_STOCK' },
+      });
+
+      await runBatch(this.prisma, [
+        ...valid.map((imei) => this.prisma.deviceUnit.create({
+          data: {
+            variantId: variant.id, warehouseId: level.warehouseId, imei,
+            state: 'IN_STOCK', imeiCheckStatus: 'CLEAN',
+            acquisitionCostUsdCents: BigInt(unitCost),
+          },
+        })),
+        /* للأجهزة المتتبَّعة بالوحدة، الوحدات هي مصدر الحقيقة: يُضبط
+           العدّاد على عددها لا يُزاد عمياً — وإلا رفض المحفِّز الدفعة. */
+        this.prisma.inventoryLevel.update({
+          where: { id: level.id },
+          data: {
+            onHand: priorUnits + valid.length,
+            incoming: { decrement: Math.min(valid.length, level.incoming) },
+            version: { increment: 1 },
+          },
+        }),
+        this.prisma.inventoryMovement.create({
+          data: {
+            variantId: variant.id, warehouseId: level.warehouseId,
+            reason: 'RECEIPT', qtyDelta: valid.length, refType: 'purchase_order', note: poNo,
+          },
+        }),
+        this.prisma.purchaseOrderLine.update({
+          where: { id: line.id }, data: { qtyReceived: { increment: valid.length } },
+        }),
+      ]);
 
       results.push({ sku: r.sku, received: valid.length, rejected });
     }
@@ -323,23 +328,31 @@ export class ProcurementService {
         'أمر مستلَم لا يُلغى — استعمل المرتجع للمورد', 'Received PO cannot be cancelled');
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const l of po.lines) {
-        const remaining = l.qty - l.qtyReceived;
-        if (remaining <= 0) continue;
-        const level = await tx.inventoryLevel.findFirst({ where: { variantId: l.variantId } });
-        if (level) {
-          await tx.inventoryLevel.update({
-            where: { id: level.id },
-            data: { incoming: { decrement: Math.min(remaining, level.incoming) }, version: { increment: 1 } },
-          });
-        }
-      }
-      await tx.purchaseOrder.update({ where: { id: po.id }, data: { state: 'CANCELLED', note: reason } });
-      await tx.auditLog.create({
-        data: { action: 'po.cancel', entityType: 'purchase_orders', entityId: po.id, diff: { poNo, reason } },
-      });
-    });
+    const openLevels = new Map(
+      (await this.prisma.inventoryLevel.findMany({
+        where: { variantId: { in: po.lines.map((l) => l.variantId) } },
+      })).map((l) => [l.variantId, l]),
+    );
+
+    const writes: any[] = [];
+    for (const l of po.lines) {
+      const remaining = l.qty - l.qtyReceived;
+      if (remaining <= 0) continue;
+      const level = openLevels.get(l.variantId);
+      if (!level) continue;
+      writes.push(this.prisma.inventoryLevel.update({
+        where: { id: level.id },
+        data: { incoming: { decrement: Math.min(remaining, level.incoming) }, version: { increment: 1 } },
+      }));
+    }
+    writes.push(this.prisma.purchaseOrder.update({
+      where: { id: po.id }, data: { state: 'CANCELLED', note: reason },
+    }));
+    writes.push(this.prisma.auditLog.create({
+      data: { action: 'po.cancel', entityType: 'purchase_orders', entityId: po.id, diff: { poNo, reason } },
+    }));
+
+    await runBatch(this.prisma, writes);
     return { poNo, state: 'CANCELLED' };
   }
 

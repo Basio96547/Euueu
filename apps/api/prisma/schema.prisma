@@ -1,167 +1,49 @@
-// تالي شام — مخطط قاعدة البيانات
-// المرجع: الفصل 3. القيود التي لا يدعمها Prisma (CHECK، المحفِّزات)
-// تُكتب يدوياً في الترحيلات — انظر prisma/sql/constraints.sql
+// تالي شام — مخطط قاعدة البيانات على Cloudflare D1 (SQLite)
+//
+// المرجع: الفصل 3. ثلاثة فروق عن نصّ الفصل، وكلها في التمثيل لا في المعنى:
+//   • الأنواع المعدودة: SQLite بلا ENUM، فالقيم نصوص محروسة بقيود CHECK
+//     مولَّدة في الترحيل — القيمة الخاطئة ترفضها القاعدة كما كانت ترفضها.
+//   • المعرّفات: UUID تُولَّد في العميل بدل gen_random_uuid().
+//   • القيود والمحفِّزات: مكتوبة بلهجة SQLite في الترحيلات — انظر
+//     prisma/sql/constraints.sql. ومحفِّز تطابق المخزون باقٍ كما هو معنى.
 
 generator client {
   provider = "prisma-client-js"
-  // محرك WebAssembly ومحوّل السائق: شرط تشغيل Prisma داخل Cloudflare Worker،
-  // فالمحرك الثنائي الأصلي لا مكان له هناك. الاستعلامات والمخطَّط لا يتغيّران.
+  // محوّل السائق ومترجم استعلامات بلا Rust: شرط تشغيل Prisma داخل
+  // Cloudflare Worker، فالمحرك الثنائي الأصلي لا مكان له هناك.
   previewFeatures = ["driverAdapters", "queryCompiler"]
-  output = "../node_modules/.prisma/client"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 // ——————————————————— الأنواع ———————————————————
 
-enum UserRole {
-  CUSTOMER
-  SUPPORT
-  CATALOG_ADMIN
-  OPS_MANAGER
-  WAREHOUSE
-  COURIER
-  ADMIN
-}
-
-enum Governorate {
-  DAMASCUS
-  RIF_DIMASHQ
-  ALEPPO
-  HOMS
-  HAMA
-  LATAKIA
-  TARTUS
-  IDLIB
-  DEIR_EZZOR
-  HASAKAH
-  RAQQA
-  DARAA
-  SUWAYDA
-  QUNEITRA
-}
-
-enum DeviceOrigin {
-  GULF
-  EURO
-  US
-  ASIA
-  OTHER
-}
-
-enum ProductCondition {
-  NEW
-  OPEN_BOX
-  REFURBISHED
-  USED_A
-  USED_B
-}
-
-enum WarrantyType {
-  STORE
-  AGENT
-  IMPORTER
-  NONE
-}
-
-enum NetworkGen {
-  G2
-  G3
-  G4
-  G5
-}
-
-enum ProductStatus {
-  DRAFT
-  IN_REVIEW
-  PUBLISHED
-  ARCHIVED
-}
-
-enum DeviceUnitState {
-  IN_STOCK
-  ALLOCATED
-  SOLD
-  RETURNED
-  RMA
-  LOANER
-}
-
-/// الحجز الأوّلي ساعتان، ويُمدَّد بعد أول تفاعل ناجح (الفصل 3)
-enum ReservationKind {
-  SOFT_HOLD
-  ORDER_HOLD
-  ORDER_HOLD_EXT
-}
-
-enum MovementReason {
-  RECEIPT
-  RESERVE
-  RELEASE
-  SALE
-  RETURN
-  TRANSFER_IN
-  TRANSFER_OUT
-  ADJUSTMENT
-  RMA
-}
-
-enum OrderStatus {
-  PENDING_CONFIRMATION
-  PROCESSING
-  SHIPPED
-  OUT_FOR_DELIVERY
-  DELIVERED
-  DELIVERY_FAILED
-  RETURNED_TO_ORIGIN
-  RETURN_REQUESTED
-  RETURNED
-  CANCELLED
-}
-
-enum PaymentMethod {
-  COD
-}
-
-enum PaymentStatus {
-  PENDING
-  COLLECTED
-  PARTIAL
-  REFUNDED
-}
-
-enum ShippingMethod {
-  COURIER_INTRACITY
-  INTERCITY_OFFICE
-  POST
-}
-
 // ——————————————————— الهوية والعناوين ———————————————————
 
 model User {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId        String    @unique @map("public_id") @db.Char(12)
-  phoneE164       String    @unique @map("phone_e164") @db.VarChar(16)
-  phoneVerifiedAt DateTime? @map("phone_verified_at") @db.Timestamptz
+  id              String    @id @default(uuid())
+  publicId        String    @unique @map("public_id")
+  phoneE164       String    @unique @map("phone_e164")
+  phoneVerifiedAt DateTime? @map("phone_verified_at")
   fullName        String?   @map("full_name")
-  role            UserRole  @default(CUSTOMER)
-  locale          String    @default("ar") @db.Char(2)
-  displayCurrency String    @default("SYP") @map("display_currency") @db.Char(3)
+  role            String  @default("CUSTOMER")
+  locale          String    @default("ar")
+  displayCurrency String    @default("SYP") @map("display_currency")
   tokenVersion    Int       @default(0) @map("token_version")
   /// كلمة سرّ للحسابات الإدارية فقط: مخزَّنة كـ scrypt بملح لكل حساب.
   /// الزبون يدخل برمز واتساب ولا حاجة به إليها. ووجودها للموظّف ضرورة
   /// لا رفاهية: الاعتماد على الواتساب وحده يعني أن انقطاع مزوّد الرسائل
   /// يقفل لوحة التحكم في وجه صاحبها.
   passwordHash    String?   @map("password_hash")
-  passwordSetAt   DateTime? @map("password_set_at") @db.Timestamptz
+  passwordSetAt   DateTime? @map("password_set_at")
   failedLogins    Int       @default(0) @map("failed_logins")
-  lockedUntil     DateTime? @map("locked_until") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  lockedUntil     DateTime? @map("locked_until")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
 
   /// تفضيلات الإشعار: {"orders":true,"promos":false,...} — حقل واحد بدل
   /// جدول لصفٍّ واحد لكل مستخدم لا يُستعلَم عليه إلا مع صاحبه
@@ -189,24 +71,24 @@ model User {
 }
 
 model Address {
-  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String      @map("user_id") @db.Uuid
+  id            String      @id @default(uuid())
+  userId        String      @map("user_id")
   label         String?
   recipientName String      @map("recipient_name")
-  governorate   Governorate
-  city          String      @db.VarChar(64)
-  neighborhood  String      @db.VarChar(64)
-  street        String?     @db.VarChar(96)
+  governorate   String
+  city          String
+  neighborhood  String
+  street        String?
   /// إلزامي: العناوين الرسمية غير موثوقة عملياً، والمندوب يصل بالمعلم
-  landmark      String      @db.VarChar(120)
+  landmark      String
   details       String?
-  phone         String      @db.VarChar(16)
-  altPhone      String?     @map("alt_phone") @db.VarChar(16)
-  geoLat        Decimal?    @map("geo_lat") @db.Decimal(9, 6)
-  geoLng        Decimal?    @map("geo_lng") @db.Decimal(9, 6)
+  phone         String
+  altPhone      String?     @map("alt_phone")
+  geoLat        Decimal?    @map("geo_lat")
+  geoLng        Decimal?    @map("geo_lng")
   isDefault     Boolean     @default(false) @map("is_default")
-  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  deletedAt     DateTime?   @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime    @default(now()) @map("created_at")
+  deletedAt     DateTime?   @map("deleted_at")
 
   user   User    @relation(fields: [userId], references: [id])
   orders Order[]
@@ -218,10 +100,10 @@ model Address {
 // ——————————————————— الكتالوج ———————————————————
 
 model Brand {
-  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String  @id @default(uuid())
   slug            String  @unique
   name            Json
-  countryOfOrigin String? @map("country_of_origin") @db.Char(2)
+  countryOfOrigin String? @map("country_of_origin")
   isFeatured      Boolean @default(false) @map("is_featured")
   sortOrder       Int     @default(0) @map("sort_order")
 
@@ -231,8 +113,8 @@ model Brand {
 }
 
 model Category {
-  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  parentId  String? @map("parent_id") @db.Uuid
+  id        String  @id @default(uuid())
+  parentId  String? @map("parent_id")
   slug      String  @unique
   name      Json
   path      String
@@ -248,23 +130,23 @@ model Category {
 }
 
 model Product {
-  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId    String        @unique @map("public_id") @db.Char(12)
+  id          String        @id @default(uuid())
+  publicId    String        @unique @map("public_id")
   slug        String        @unique
-  brandId     String        @map("brand_id") @db.Uuid
-  categoryId  String        @map("category_id") @db.Uuid
+  brandId     String        @map("brand_id")
+  categoryId  String        @map("category_id")
   name        Json
   shortDesc   Json?         @map("short_desc")
   description Json?
   spec        Json?
-  status      ProductStatus @default(DRAFT)
+  status      String @default("DRAFT")
   /// منتج بذرة تجريبي: مستبعَد من الفهرس، ولا يقبل طلباً، ويمنع الإقلاع في الإنتاج
   isDemo      Boolean       @default(false) @map("is_demo")
-  ratingAvg   Decimal?      @map("rating_avg") @db.Decimal(2, 1)
+  ratingAvg   Decimal?      @map("rating_avg")
   ratingCount Int           @default(0) @map("rating_count")
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  deletedAt   DateTime?     @map("deleted_at")
 
   brand    Brand            @relation(fields: [brandId], references: [id])
   category Category         @relation(fields: [categoryId], references: [id])
@@ -281,30 +163,30 @@ model Product {
 }
 
 model ProductVariant {
-  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId               String           @unique @map("public_id") @db.Char(12)
-  productId              String           @map("product_id") @db.Uuid
-  sku                    String           @unique @db.VarChar(40)
+  id                     String           @id @default(uuid())
+  publicId               String           @unique @map("public_id")
+  productId              String           @map("product_id")
+  sku                    String           @unique
   colorCode              String?          @map("color_code")
   colorName              Json?            @map("color_name")
   storageGb              Int?             @map("storage_gb")
   ramGb                  Int?             @map("ram_gb")
-  networkGen             NetworkGen?      @map("network_gen")
+  networkGen             String?      @map("network_gen")
   dualSim                Boolean          @default(false) @map("dual_sim")
   esimOnly               Boolean          @default(false) @map("esim_only")
   /// رمز النسخة المطبوع على العلبة: ZA/A · LL/A · AA/A
-  partCode               String?          @map("part_code") @db.VarChar(8)
-  condition              ProductCondition @default(NEW)
+  partCode               String?          @map("part_code")
+  condition              String @default("NEW")
   batteryHealthPct       Int?             @map("battery_health_pct")
-  deviceOrigin           DeviceOrigin
-  warrantyType           WarrantyType
+  deviceOrigin           String
+  warrantyType           String
   warrantyMonths         Int              @map("warranty_months")
   /// التخزين المرجعي بسنتات الدولار — الليرة طبقة عرض (الفصل 3)
   priceUsdCents          BigInt           @map("price_usd_cents")
   compareAtPriceUsdCents BigInt?          @map("compare_at_price_usd_cents")
   costPriceUsdCents      BigInt?          @map("cost_price_usd_cents")
   isDefault              Boolean          @default(false) @map("is_default")
-  deletedAt              DateTime?        @map("deleted_at") @db.Timestamptz
+  deletedAt              DateTime?        @map("deleted_at")
 
   product      Product                @relation(fields: [productId], references: [id])
   levels       InventoryLevel[]
@@ -323,9 +205,9 @@ model ProductVariant {
 }
 
 model ProductCompatibility {
-  id                 String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  accessoryProductId String @map("accessory_product_id") @db.Uuid
-  phoneProductId     String @map("phone_product_id") @db.Uuid
+  id                 String @id @default(uuid())
+  accessoryProductId String @map("accessory_product_id")
+  phoneProductId     String @map("phone_product_id")
   note               Json?
 
   accessory Product @relation("AccessorySide", fields: [accessoryProductId], references: [id])
@@ -338,9 +220,9 @@ model ProductCompatibility {
 
 /// جدول الوسائط الوحيد — لا جدول وسائط خاص بالمنتجات
 model Media {
-  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String  @id @default(uuid())
   ownerType       String  @map("owner_type")
-  ownerId         String  @map("owner_id") @db.Uuid
+  ownerId         String  @map("owner_id")
   url             String
   alt             Json?
   colorCode       String? @map("color_code")
@@ -348,7 +230,7 @@ model Media {
   isRealUnitPhoto Boolean @default(false) @map("is_real_unit_photo")
   sortOrder       Int     @default(0) @map("sort_order")
 
-  product Product? @relation(fields: [ownerId], references: [id], map: "media_product_fk")
+  product Product? @relation(fields: [ownerId], references: [id])
 
   @@index([ownerType, ownerId])
   @@map("media")
@@ -357,10 +239,10 @@ model Media {
 // ——————————————————— المخزون ———————————————————
 
 model Warehouse {
-  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String      @id @default(uuid())
   code        String      @unique
   name        Json
-  governorate Governorate
+  governorate String
 
   levels InventoryLevel[]
   units  DeviceUnit[]
@@ -370,9 +252,9 @@ model Warehouse {
 
 /// مصدر الكمية الوحيد. المتاح = onHand - reserved، بقفل متفائل على version.
 model InventoryLevel {
-  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variantId    String @map("variant_id") @db.Uuid
-  warehouseId  String @map("warehouse_id") @db.Uuid
+  id           String @id @default(uuid())
+  variantId    String @map("variant_id")
+  warehouseId  String @map("warehouse_id")
   onHand       Int    @default(0) @map("on_hand")
   reserved     Int    @default(0)
   incoming     Int    @default(0)
@@ -387,15 +269,15 @@ model InventoryLevel {
 }
 
 model InventoryReservation {
-  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variantId   String          @map("variant_id") @db.Uuid
-  warehouseId String          @map("warehouse_id") @db.Uuid
-  kind        ReservationKind
+  id          String          @id @default(uuid())
+  variantId   String          @map("variant_id")
+  warehouseId String          @map("warehouse_id")
+  kind        String
   qty         Int
-  cartId      String?         @map("cart_id") @db.Uuid
-  orderId     String?         @map("order_id") @db.Uuid
-  expiresAt   DateTime        @map("expires_at") @db.Timestamptz
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  cartId      String?         @map("cart_id")
+  orderId     String?         @map("order_id")
+  expiresAt   DateTime        @map("expires_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
 
   variant ProductVariant @relation(fields: [variantId], references: [id])
 
@@ -406,16 +288,16 @@ model InventoryReservation {
 
 /// دفتر الحركات — الاسم الوحيد
 model InventoryMovement {
-  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variantId   String         @map("variant_id") @db.Uuid
-  warehouseId String         @map("warehouse_id") @db.Uuid
-  reason      MovementReason
+  id          String         @id @default(uuid())
+  variantId   String         @map("variant_id")
+  warehouseId String         @map("warehouse_id")
+  reason      String
   qtyDelta    Int            @map("qty_delta")
   refType     String?        @map("ref_type")
-  refId       String?        @map("ref_id") @db.Uuid
-  actorId     String?        @map("actor_id") @db.Uuid
+  refId       String?        @map("ref_id")
+  actorId     String?        @map("actor_id")
   note        String?
-  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  createdAt   DateTime       @default(now()) @map("created_at")
 
   @@index([variantId, createdAt])
   @@map("inventory_movements")
@@ -423,20 +305,20 @@ model InventoryMovement {
 
 /// وحدات الأجهزة: عددها بحالة IN_STOCK يجب أن يساوي onHand — مفروض بمحفِّز مؤجَّل
 model DeviceUnit {
-  id                      String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variantId               String          @map("variant_id") @db.Uuid
-  warehouseId             String          @map("warehouse_id") @db.Uuid
+  id                      String          @id @default(uuid())
+  variantId               String          @map("variant_id")
+  warehouseId             String          @map("warehouse_id")
   imei                    String?         @unique
   imei2                   String?
   serial                  String?
-  state                   DeviceUnitState @default(IN_STOCK)
+  state                   String @default("IN_STOCK")
   grade                   String?
   batteryHealthPct        Int?            @map("battery_health_pct")
   imeiCheckStatus         String?         @map("imei_check_status")
-  orderItemId             String?         @unique @map("order_item_id") @db.Uuid
-  warrantyType            WarrantyType?   @map("warranty_type")
-  warrantyStartAt         DateTime?       @map("warranty_start_at") @db.Timestamptz
-  warrantyEndAt           DateTime?       @map("warranty_end_at") @db.Timestamptz
+  orderItemId             String?         @unique @map("order_item_id")
+  warrantyType            String?   @map("warranty_type")
+  warrantyStartAt         DateTime?       @map("warranty_start_at")
+  warrantyEndAt           DateTime?       @map("warranty_end_at")
   acquisitionCostUsdCents BigInt?         @map("acquisition_cost_usd_cents")
 
   variant   ProductVariant  @relation(fields: [variantId], references: [id])
@@ -452,16 +334,16 @@ model DeviceUnit {
 
 /// سجل تاريخي غير قابل للتعديل. التقادم ليس حالة مسموحة: validUntil إلزامي.
 model FxRate {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  base           String   @default("USD") @db.Char(3)
-  quote          String   @default("SYP") @db.Char(3)
-  rate           Decimal  @db.Decimal(14, 4)
-  effectiveFrom  DateTime @map("effective_from") @db.Timestamptz
-  validUntil     DateTime @map("valid_until") @db.Timestamptz
+  id             String   @id @default(uuid())
+  base           String   @default("USD")
+  quote          String   @default("SYP")
+  rate           Decimal
+  effectiveFrom  DateTime @map("effective_from")
+  validUntil     DateTime @map("valid_until")
   safetyMarginBp Int      @default(300) @map("safety_margin_bp")
-  setBy          String?  @map("set_by") @db.Uuid
+  setBy          String?  @map("set_by")
   note           String?
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt      DateTime @default(now()) @map("created_at")
 
   orders Order[]
 
@@ -473,14 +355,14 @@ model FxRate {
 // ——————————————————— السلة والطلب ———————————————————
 
 model Cart {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id         String   @id @default(uuid())
   token      String   @unique
-  userId     String?  @map("user_id") @db.Uuid
+  userId     String?  @map("user_id")
   /// الرمز يُحفظ لا الخصم: القيمة تُعاد حسابها عند كل عرض، فلو تغيّر
   /// سعر أو انتهت صلاحية الكوبون بين الإضافة والطلب ظهر ذلك فوراً.
-  couponCode String?  @map("coupon_code") @db.VarChar(32)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  couponCode String?  @map("coupon_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   user  User?      @relation(fields: [userId], references: [id])
   items CartItem[]
@@ -489,9 +371,9 @@ model Cart {
 }
 
 model CartItem {
-  id                        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  cartId                    String @map("cart_id") @db.Uuid
-  variantId                 String @map("variant_id") @db.Uuid
+  id                        String @id @default(uuid())
+  cartId                    String @map("cart_id")
+  variantId                 String @map("variant_id")
   qty                       Int    @default(1)
   unitPriceSnapshotUsdCents BigInt @map("unit_price_snapshot_usd_cents")
 
@@ -503,13 +385,13 @@ model CartItem {
 }
 
 model Order {
-  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId          String      @unique @map("public_id") @db.Char(12)
+  id                String      @id @default(uuid())
+  publicId          String      @unique @map("public_id")
   /// TS-YYMM-NNNNNN — القيد في constraints.sql
-  orderNo           String      @unique @map("order_no") @db.VarChar(14)
-  userId            String?     @map("user_id") @db.Uuid
-  status            OrderStatus @default(PENDING_CONFIRMATION)
-  shippingAddressId String      @map("shipping_address_id") @db.Uuid
+  orderNo           String      @unique @map("order_no")
+  userId            String?     @map("user_id")
+  status            String @default("PENDING_CONFIRMATION")
+  shippingAddressId String      @map("shipping_address_id")
 
   subtotalUsdCents      BigInt @map("subtotal_usd_cents")
   discountTotalUsdCents BigInt @default(0) @map("discount_total_usd_cents")
@@ -518,35 +400,35 @@ model Order {
   taxAmountUsdCents     BigInt @default(0) @map("tax_amount_usd_cents")
   totalUsdCents         BigInt @map("total_usd_cents")
 
-  fxRateId         String?  @map("fx_rate_id") @db.Uuid
-  fxRate           Decimal  @map("fx_rate") @db.Decimal(14, 4)
+  fxRateId         String?  @map("fx_rate_id")
+  fxRate           Decimal  @map("fx_rate")
   totalSyp         BigInt   @map("total_syp")
   /// فرق التقريب يُخزَّن وإلا لم تتطابق التسويات أبداً (الفصل 16)
   roundingDiffSyp  Int      @default(0) @map("rounding_diff_syp")
   fxStale          Boolean  @default(false) @map("fx_stale")
-  priceLockedUntil DateTime @map("price_locked_until") @db.Timestamptz
+  priceLockedUntil DateTime @map("price_locked_until")
 
-  paymentMethod      PaymentMethod @default(COD) @map("payment_method")
-  paymentStatus      PaymentStatus @default(PENDING) @map("payment_status")
+  paymentMethod      String @default("COD") @map("payment_method")
+  paymentStatus      String @default("PENDING") @map("payment_status")
   collectedAmountSyp BigInt?       @map("collected_amount_syp")
-  collectedAt        DateTime?     @map("collected_at") @db.Timestamptz
-  collectedBy        String?       @map("collected_by") @db.Uuid
+  collectedAt        DateTime?     @map("collected_at")
+  collectedBy        String?       @map("collected_by")
 
   confirmationAttempts Int       @default(0) @map("confirmation_attempts")
-  confirmedBy          String?   @map("confirmed_by") @db.Uuid
-  confirmedAt          DateTime? @map("confirmed_at") @db.Timestamptz
+  confirmedBy          String?   @map("confirmed_by")
+  confirmedAt          DateTime? @map("confirmed_at")
   confirmationNotes    String?   @map("confirmation_notes")
 
   /// من حصّل ونوعه وأي تسوية يومية يقع فيها — الفصل 8 §8.7
-  collectorType CollectorType? @map("collector_type")
-  settlementId  String?        @map("settlement_id") @db.Uuid
-  deliveredAt   DateTime?      @map("delivered_at") @db.Timestamptz
+  collectorType String? @map("collector_type")
+  settlementId  String?        @map("settlement_id")
+  deliveredAt   DateTime?      @map("delivered_at")
   /// الطلب البديل يشير إلى أصله فلا ينقطع خيط الاستبدال
-  replacementOf String?        @map("replacement_of") @db.Uuid
-  couponCode    String?        @map("coupon_code") @db.VarChar(32)
+  replacementOf String?        @map("replacement_of")
+  couponCode    String?        @map("coupon_code")
 
-  placedAt  DateTime @default(now()) @map("placed_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  placedAt  DateTime @default(now()) @map("placed_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user            User?                @relation(fields: [userId], references: [id])
   shippingAddress Address              @relation(fields: [shippingAddressId], references: [id])
@@ -563,9 +445,9 @@ model Order {
 }
 
 model OrderItem {
-  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId           String  @map("order_id") @db.Uuid
-  variantId         String  @map("variant_id") @db.Uuid
+  id                String  @id @default(uuid())
+  orderId           String  @map("order_id")
+  variantId         String  @map("variant_id")
   qty               Int     @default(1)
   unitPriceUsdCents BigInt  @map("unit_price_usd_cents")
   lineTotalUsdCents BigInt  @map("line_total_usd_cents")
@@ -581,15 +463,15 @@ model OrderItem {
 }
 
 model OrderStatusHistory {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId    String       @map("order_id") @db.Uuid
-  fromStatus OrderStatus? @map("from_status")
-  toStatus   OrderStatus  @map("to_status")
+  id         String       @id @default(uuid())
+  orderId    String       @map("order_id")
+  fromStatus String? @map("from_status")
+  toStatus   String  @map("to_status")
   actorType  String       @map("actor_type")
-  actorId    String?      @map("actor_id") @db.Uuid
+  actorId    String?      @map("actor_id")
   reasonCode String?      @map("reason_code")
   source     String       @default("SYSTEM")
-  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  createdAt  DateTime     @default(now()) @map("created_at")
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -598,9 +480,9 @@ model OrderStatusHistory {
 }
 
 model ShippingRate {
-  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  governorate       Governorate
-  method            ShippingMethod
+  id                String         @id @default(uuid())
+  governorate       String
+  method            String
   baseFeeUsdCents   BigInt         @map("base_fee_usd_cents")
   perKgFeeUsdCents  BigInt         @default(0) @map("per_kg_fee_usd_cents")
   freeAboveUsdCents BigInt?        @map("free_above_usd_cents")
@@ -616,21 +498,21 @@ model ShippingRate {
 model StoreSetting {
   key       String   @id
   value     Json
-  updatedBy String?  @map("updated_by") @db.Uuid
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("store_settings")
 }
 
 model AuditLog {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  actorId    String?  @map("actor_id") @db.Uuid
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
   action     String
   entityType String   @map("entity_type")
-  entityId   String?  @map("entity_id") @db.Uuid
+  entityId   String?  @map("entity_id")
   diff       Json?
   ip         String?
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([entityType, entityId])
   @@map("audit_logs")
@@ -640,25 +522,13 @@ model AuditLog {
 //  التسوية النقدية — الفصل 8 §8.7
 // ═══════════════════════════════════════════════════════════════
 
-enum CollectorType {
-  COURIER
-  TRANSPORT_OFFICE
-}
-
-enum SettlementState {
-  OPEN
-  RECONCILED
-  DISPUTED
-  SETTLED
-}
-
 /// صف واحد لكل (محصِّل، يوم). بدونه لا يُعرف أين المال:
 /// المتجر يعمل نقداً، فالمطابقة اليومية هي دفتر الصندوق كلّه.
 model CashSettlement {
-  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  collectorType  CollectorType @map("collector_type")
-  collectorId    String        @map("collector_id") @db.Uuid
-  settlementDate DateTime      @map("settlement_date") @db.Date
+  id             String        @id @default(uuid())
+  collectorType  String @map("collector_type")
+  collectorId    String        @map("collector_id")
+  settlementDate DateTime      @map("settlement_date")
 
   ordersCount           Int    @default(0) @map("orders_count")
   expectedAmountSyp     BigInt @default(0) @map("expected_amount_syp")
@@ -668,14 +538,14 @@ model CashSettlement {
   roundingDiffSyp       Int    @default(0) @map("rounding_diff_syp")
   deliveryCommissionSyp BigInt @default(0) @map("delivery_commission_syp")
 
-  state        SettlementState @default(OPEN)
+  state        String @default("OPEN")
   note         String?
   /// من أقفل التسوية — ولا يجوز أن يكون المحصِّل نفسه (الفصل 9 §فصل الواجبات)
-  reconciledBy String?         @map("reconciled_by") @db.Uuid
-  reconciledAt DateTime?       @map("reconciled_at") @db.Timestamptz
-  settledAt    DateTime?       @map("settled_at") @db.Timestamptz
-  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  reconciledBy String?         @map("reconciled_by")
+  reconciledAt DateTime?       @map("reconciled_at")
+  settledAt    DateTime?       @map("settled_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
 
   collector User    @relation("SettlementCollector", fields: [collectorId], references: [id])
   orders    Order[]
@@ -689,39 +559,13 @@ model CashSettlement {
 //  الإرجاع والاسترداد — الفصل 8 §8.10
 // ═══════════════════════════════════════════════════════════════
 
-enum ReturnState {
-  REQUESTED
-  APPROVED
-  REJECTED
-  PICKUP_SCHEDULED
-  RECEIVED
-  INSPECTED
-  COMPLETED
-  CANCELLED
-}
-
-enum ReturnReason {
-  NOT_AS_DESCRIBED
-  DEFECTIVE
-  WRONG_ITEM
-  CHANGED_MIND
-  DAMAGED_IN_TRANSIT
-}
-
-enum RefundState {
-  PENDING
-  APPROVED
-  DISBURSED
-  CANCELLED
-}
-
 model Return {
-  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  returnNo     String       @unique @map("return_no") @db.VarChar(16)
-  orderId      String       @map("order_id") @db.Uuid
-  orderItemId  String?      @map("order_item_id") @db.Uuid
-  state        ReturnState  @default(REQUESTED)
-  reason       ReturnReason
+  id           String       @id @default(uuid())
+  returnNo     String       @unique @map("return_no")
+  orderId      String       @map("order_id")
+  orderItemId  String?      @map("order_item_id")
+  state        String  @default("REQUESTED")
+  reason       String
   customerNote String?      @map("customer_note")
 
   /// فحص IMEI إلزامي: جهاز غير الجهاز المُباع لا يُقبل مهما بدا مطابقاً
@@ -733,12 +577,12 @@ model Return {
   rejectReason   String? @map("reject_reason")
   restock        Boolean @default(false)
 
-  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz
-  decidedAt   DateTime? @map("decided_at") @db.Timestamptz
-  receivedAt  DateTime? @map("received_at") @db.Timestamptz
-  completedAt DateTime? @map("completed_at") @db.Timestamptz
-  decidedBy   String?   @map("decided_by") @db.Uuid
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  decidedAt   DateTime? @map("decided_at")
+  receivedAt  DateTime? @map("received_at")
+  completedAt DateTime? @map("completed_at")
+  decidedBy   String?   @map("decided_by")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   order  Order   @relation(fields: [orderId], references: [id])
   refund Refund?
@@ -751,18 +595,18 @@ model Return {
 /// الاسترداد نقداً: المبلغ بالدولار مرجعاً وبالليرة مقرَّباً لأقرب ألف،
 /// ولا يُصرف قبل تطابق IMEI — النقد لا يُسترجَع بعد خروجه.
 model Refund {
-  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  returnId        String      @unique @map("return_id") @db.Uuid
+  id              String      @id @default(uuid())
+  returnId        String      @unique @map("return_id")
   amountUsdCents  BigInt      @map("amount_usd_cents")
-  fxRate          Decimal     @map("fx_rate") @db.Decimal(14, 4)
+  fxRate          Decimal     @map("fx_rate")
   amountSyp       BigInt      @map("amount_syp")
   roundingDiffSyp Int         @default(0) @map("rounding_diff_syp")
-  state           RefundState @default(PENDING)
-  disbursedBy     String?     @map("disbursed_by") @db.Uuid
-  disbursedAt     DateTime?   @map("disbursed_at") @db.Timestamptz
+  state           String @default("PENDING")
+  disbursedBy     String?     @map("disbursed_by")
+  disbursedAt     DateTime?   @map("disbursed_at")
   note            String?
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
   return Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
 
@@ -774,33 +618,21 @@ model Refund {
 //  الكفالة: مطالبة بجدول حقيقي لا سطراً في سجل التدقيق — الفصل 15
 // ═══════════════════════════════════════════════════════════════
 
-enum ClaimState {
-  OPENED
-  RECEIVED
-  DIAGNOSING
-  DECISION
-  IN_REPAIR
-  TESTING
-  READY
-  CLOSED
-  REJECTED
-}
-
 model WarrantyClaim {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  claimNo      String     @unique @map("claim_no") @db.VarChar(16)
-  deviceUnitId String?    @map("device_unit_id") @db.Uuid
+  id           String     @id @default(uuid())
+  claimNo      String     @unique @map("claim_no")
+  deviceUnitId String?    @map("device_unit_id")
   imei         String?
-  phone        String     @db.VarChar(16)
+  phone        String
   description  String
-  state        ClaimState @default(OPENED)
+  state        String @default("OPENED")
   diagnosis    String?
   resolution   String?
   rejectReason String?    @map("reject_reason")
-  loanerUnitId String?    @map("loaner_unit_id") @db.Uuid
-  openedAt     DateTime   @default(now()) @map("opened_at") @db.Timestamptz
-  closedAt     DateTime?  @map("closed_at") @db.Timestamptz
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  loanerUnitId String?    @map("loaner_unit_id")
+  openedAt     DateTime   @default(now()) @map("opened_at")
+  closedAt     DateTime?  @map("closed_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
 
   unit    DeviceUnit?     @relation(fields: [deviceUnitId], references: [id])
   tickets SupportTicket[]
@@ -814,59 +646,35 @@ model WarrantyClaim {
 //  الدعم: التذاكر — الفصل 14 §14.7
 // ═══════════════════════════════════════════════════════════════
 
-enum TicketStatus {
-  NEW
-  OPEN
-  PENDING_CUSTOMER
-  ESCALATED
-  RESOLVED
-  CLOSED
-}
-
-enum TicketPriority {
-  LOW
-  NORMAL
-  HIGH
-  URGENT
-}
-
-enum TicketChannel {
-  WHATSAPP
-  PHONE
-  WEB
-  EMAIL
-  ADMIN
-}
-
 model SupportTicket {
-  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ticketNo        String  @unique @map("ticket_no") @db.VarChar(16)
-  userId          String? @map("user_id") @db.Uuid
-  phone           String  @db.VarChar(16)
-  orderId         String? @map("order_id") @db.Uuid
-  deviceUnitId    String? @map("device_unit_id") @db.Uuid
-  warrantyClaimId String? @map("warranty_claim_id") @db.Uuid
+  id              String  @id @default(uuid())
+  ticketNo        String  @unique @map("ticket_no")
+  userId          String? @map("user_id")
+  phone           String
+  orderId         String? @map("order_id")
+  deviceUnitId    String? @map("device_unit_id")
+  warrantyClaimId String? @map("warranty_claim_id")
 
-  channel          TicketChannel  @default(WEB)
+  channel          String  @default("WEB")
   externalThreadId String?        @map("external_thread_id")
   subject          String?
   contactReason    String         @map("contact_reason")
-  status           TicketStatus   @default(NEW)
-  priority         TicketPriority @default(NORMAL)
-  assigneeId       String?        @map("assignee_id") @db.Uuid
+  status           String   @default("NEW")
+  priority         String @default("NORMAL")
+  assigneeId       String?        @map("assignee_id")
 
-  firstResponseAt       DateTime? @map("first_response_at") @db.Timestamptz
-  resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
-  closedAt              DateTime? @map("closed_at") @db.Timestamptz
+  firstResponseAt       DateTime? @map("first_response_at")
+  resolvedAt            DateTime? @map("resolved_at")
+  closedAt              DateTime? @map("closed_at")
   /// المهل تُحسب ضمن ساعات العمل لا على مدار الساعة: الكهرباء تنقطع
-  slaFirstResponseDueAt DateTime? @map("sla_first_response_due_at") @db.Timestamptz
-  slaResolutionDueAt    DateTime? @map("sla_resolution_due_at") @db.Timestamptz
+  slaFirstResponseDueAt DateTime? @map("sla_first_response_due_at")
+  slaResolutionDueAt    DateTime? @map("sla_resolution_due_at")
   slaBreached           Boolean   @default(false) @map("sla_breached")
 
   csatScore   Int?     @map("csat_score")
   csatComment String?  @map("csat_comment")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   user     User?           @relation("TicketOwner", fields: [userId], references: [id])
   assignee User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
@@ -881,16 +689,16 @@ model SupportTicket {
 }
 
 model TicketMessage {
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ticketId        String         @map("ticket_id") @db.Uuid
+  id              String         @id @default(uuid())
+  ticketId        String         @map("ticket_id")
   authorType      String         @map("author_type")
-  authorId        String?        @map("author_id") @db.Uuid
+  authorId        String?        @map("author_id")
   body            String
   isInternalNote  Boolean        @default(false) @map("is_internal_note")
-  macroId         String?        @map("macro_id") @db.Uuid
-  deliveryChannel TicketChannel? @map("delivery_channel")
+  macroId         String?        @map("macro_id")
+  deliveryChannel String? @map("delivery_channel")
   deliveryStatus  String?        @map("delivery_status")
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   macro  TicketMacro?  @relation(fields: [macroId], references: [id])
@@ -900,14 +708,15 @@ model TicketMessage {
 }
 
 model TicketMacro {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id         String   @id @default(uuid())
   code       String   @unique
   title      Json
   body       Json
-  variables  String[] @default([])
+  /// قائمة نصية مخزَّنة JSON: SQLite بلا مصفوفات بدائية
+  variables  Json     @default("[]")
   isActive   Boolean  @default(true) @map("is_active")
   usageCount Int      @default(0) @map("usage_count")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt  DateTime @default(now()) @map("created_at")
 
   messages TicketMessage[]
 
@@ -918,33 +727,26 @@ model TicketMacro {
 //  التقييمات والأسئلة — الفصل 14 §14.5
 // ═══════════════════════════════════════════════════════════════
 
-enum ModerationStatus {
-  PENDING
-  PUBLISHED
-  REJECTED
-  HIDDEN
-}
-
 /// لا مراجعة بلا شراء مسلَّم: order_item_id إلزامي وفريد،
 /// فلا يكتب أحد رأياً في جهاز لم يمسكه بيده.
 model Review {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId       String           @map("product_id") @db.Uuid
-  userId          String           @map("user_id") @db.Uuid
-  orderItemId     String           @unique @map("order_item_id") @db.Uuid
+  id              String           @id @default(uuid())
+  productId       String           @map("product_id")
+  userId          String           @map("user_id")
+  orderItemId     String           @unique @map("order_item_id")
   rating          Int
   title           String?
   body            String?
-  status          ModerationStatus @default(PENDING)
+  status          String @default("PENDING")
   rejectReason    String?          @map("reject_reason")
   flagged         Boolean          @default(false)
   helpfulCount    Int              @default(0) @map("helpful_count")
   merchantReply   String?          @map("merchant_reply")
-  merchantReplyAt DateTime?        @map("merchant_reply_at") @db.Timestamptz
-  moderatedBy     String?          @map("moderated_by") @db.Uuid
-  moderatedAt     DateTime?        @map("moderated_at") @db.Timestamptz
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  merchantReplyAt DateTime?        @map("merchant_reply_at")
+  moderatedBy     String?          @map("moderated_by")
+  moderatedAt     DateTime?        @map("moderated_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   product Product        @relation(fields: [productId], references: [id])
   user    User           @relation(fields: [userId], references: [id])
@@ -955,15 +757,15 @@ model Review {
 }
 
 model ReviewReport {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  reviewId   String    @map("review_id") @db.Uuid
-  reporterId String?   @map("reporter_id") @db.Uuid
+  id         String    @id @default(uuid())
+  reviewId   String    @map("review_id")
+  reporterId String?   @map("reporter_id")
   reason     String
   note       String?
   status     String    @default("OPEN")
-  resolvedBy String?   @map("resolved_by") @db.Uuid
-  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  resolvedBy String?   @map("resolved_by")
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
@@ -972,19 +774,19 @@ model ReviewReport {
 }
 
 model ProductQuestion {
-  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId    String           @map("product_id") @db.Uuid
-  userId       String           @map("user_id") @db.Uuid
+  id           String           @id @default(uuid())
+  productId    String           @map("product_id")
+  userId       String           @map("user_id")
   body         String
   answerBody   String?          @map("answer_body")
   answerSource String?          @map("answer_source")
-  answeredBy   String?          @map("answered_by") @db.Uuid
-  answeredAt   DateTime?        @map("answered_at") @db.Timestamptz
-  status       ModerationStatus @default(PENDING)
+  answeredBy   String?          @map("answered_by")
+  answeredAt   DateTime?        @map("answered_at")
+  status       String @default("PENDING")
   rejectReason String?          @map("reject_reason")
   helpfulCount Int              @default(0) @map("helpful_count")
-  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
 
   product Product @relation(fields: [productId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
@@ -997,24 +799,19 @@ model ProductQuestion {
 //  الكوبونات — الفصل 7 §7.7
 // ═══════════════════════════════════════════════════════════════
 
-enum CouponType {
-  PERCENTAGE
-  FIXED_AMOUNT
-  FREE_SHIPPING
-}
-
 /// كل المبالغ بسنتات الدولار: خصمٌ بالليرة يفقد معناه بعد أول قفزة صرف.
 model Coupon {
-  id                    String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                  String     @unique @db.VarChar(32)
-  type                  CouponType
+  id                    String     @id @default(uuid())
+  code                  String     @unique
+  type                  String
   /// نسبة مئوية (1–100) أو مبلغ بسنتات الدولار حسب النوع
   value                 Int
   maxDiscountUsdCents   Int?       @map("max_discount_usd_cents")
   minSubtotalUsdCents   Int        @default(0) @map("min_subtotal_usd_cents")
-  categorySlugs         String[]   @default([]) @map("category_slugs")
-  startsAt              DateTime   @map("starts_at") @db.Timestamptz
-  endsAt                DateTime   @map("ends_at") @db.Timestamptz
+  /// قائمة نصية مخزَّنة JSON: SQLite بلا مصفوفات بدائية
+  categorySlugs         Json       @default("[]") @map("category_slugs")
+  startsAt              DateTime   @map("starts_at")
+  endsAt                DateTime   @map("ends_at")
   usageLimitTotal       Int?       @map("usage_limit_total")
   usageLimitPerCustomer Int        @default(1) @map("usage_limit_per_customer")
   firstOrderOnly        Boolean    @default(false) @map("first_order_only")
@@ -1022,8 +819,8 @@ model Coupon {
   usedCount             Int        @default(0) @map("used_count")
   isActive              Boolean    @default(true) @map("is_active")
   note                  String?
-  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
 
   redemptions CouponRedemption[]
 
@@ -1033,12 +830,12 @@ model Coupon {
 
 /// الحد لكل عميل مرتبط بالجوال الموثّق لا بالجلسة: الجلسة تُمحى بضغطة.
 model CouponRedemption {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  couponId         String   @map("coupon_id") @db.Uuid
-  orderId          String   @unique @map("order_id") @db.Uuid
-  phone            String   @db.VarChar(16)
+  id               String   @id @default(uuid())
+  couponId         String   @map("coupon_id")
+  orderId          String   @unique @map("order_id")
+  phone            String
   discountUsdCents Int      @map("discount_usd_cents")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt        DateTime @default(now()) @map("created_at")
 
   coupon Coupon @relation(fields: [couponId], references: [id])
   order  Order  @relation(fields: [orderId], references: [id])
@@ -1054,15 +851,15 @@ model CouponRedemption {
 /// المقارنة بالدولار حصراً: لو قِيست بالليرة لأطلقت كل قفزة صرف
 /// موجةَ تنبيهات كاذبة عن «انخفاض سعر» لم يحدث.
 model PriceAlert {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId            String    @map("user_id") @db.Uuid
-  variantId         String    @map("variant_id") @db.Uuid
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  variantId         String    @map("variant_id")
   basePriceUsdCents BigInt    @map("base_price_usd_cents")
   thresholdBp       Int       @default(500) @map("threshold_bp")
   isActive          Boolean   @default(true) @map("is_active")
-  lastNotifiedAt    DateTime? @map("last_notified_at") @db.Timestamptz
-  expiresAt         DateTime  @map("expires_at") @db.Timestamptz
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastNotifiedAt    DateTime? @map("last_notified_at")
+  expiresAt         DateTime  @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   user    User           @relation(fields: [userId], references: [id])
   variant ProductVariant @relation(fields: [variantId], references: [id])
@@ -1075,17 +872,17 @@ model PriceAlert {
 /// الاشتراك مربوط بالجهاز لا بالحساب: الزبون قد يتصفّح بلا دخول،
 /// وحرمانُه الإشعار حتى يسجّل يعني ألا يعرف أن طلبه خرج للتوصيل.
 model PushSubscription {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String?   @map("user_id") @db.Uuid
-  phone      String?   @db.VarChar(16)
+  id         String    @id @default(uuid())
+  userId     String?   @map("user_id")
+  phone      String?
   endpoint   String    @unique
   p256dh     String
   auth       String
   userAgent  String?   @map("user_agent")
   isActive   Boolean   @default(true) @map("is_active")
   failCount  Int       @default(0) @map("fail_count")
-  lastSentAt DateTime? @map("last_sent_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastSentAt DateTime? @map("last_sent_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   user User? @relation(fields: [userId], references: [id])
 
@@ -1095,14 +892,14 @@ model PushSubscription {
 }
 
 model StockAlert {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String?   @map("user_id") @db.Uuid
-  phone      String    @db.VarChar(16)
-  variantId  String    @map("variant_id") @db.Uuid
+  id         String    @id @default(uuid())
+  userId     String?   @map("user_id")
+  phone      String
+  variantId  String    @map("variant_id")
   isActive   Boolean   @default(true) @map("is_active")
-  notifiedAt DateTime? @map("notified_at") @db.Timestamptz
-  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  notifiedAt DateTime? @map("notified_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   user    User?          @relation(fields: [userId], references: [id])
   variant ProductVariant @relation(fields: [variantId], references: [id])
@@ -1115,57 +912,31 @@ model StockAlert {
 //  إدارة التوصيل — الفصل 17
 // ═══════════════════════════════════════════════════════════════
 
-enum EmploymentType {
-  EMPLOYEE
-  CONTRACTOR
-}
-
-enum VehicleType {
-  MOTORCYCLE
-  CAR
-  VAN
-  ON_FOOT
-}
-
-enum CourierStatus {
-  AVAILABLE
-  ON_ROUTE
-  OFF_DUTY
-  SUSPENDED
-}
-
-enum ZoneType {
-  URBAN_CORE
-  URBAN_OUTER
-  SUBURBAN
-  REMOTE
-}
-
 /// سجل تشغيلي مستقل عن حساب الدخول: المندوب قد يُوقَف تشغيلياً
 /// مع بقاء حسابه ليطّلع على مستحقاته — إيقافُ عمله ليس مصادرةَ ماله.
 model Courier {
-  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String         @unique @map("user_id") @db.Uuid
-  code             String         @unique @db.VarChar(8)
-  fullName         String         @map("full_name") @db.VarChar(120)
-  phone            String         @db.VarChar(16)
-  employmentType   EmploymentType @default(CONTRACTOR) @map("employment_type")
-  vehicleType      VehicleType    @default(MOTORCYCLE) @map("vehicle_type")
-  vehiclePlate     String?        @map("vehicle_plate") @db.VarChar(20)
-  homeGovernorate  Governorate    @map("home_governorate")
+  id               String         @id @default(uuid())
+  userId           String         @unique @map("user_id")
+  code             String         @unique
+  fullName         String         @map("full_name")
+  phone            String
+  employmentType   String @default("CONTRACTOR") @map("employment_type")
+  vehicleType      String    @default("MOTORCYCLE") @map("vehicle_type")
+  vehiclePlate     String?        @map("vehicle_plate")
+  homeGovernorate  String    @map("home_governorate")
   dailyCapacity    Int            @default(18) @map("daily_capacity")
   /// السقف النقدي بالمرجع الدولاري: الليرة تتغيّر والسقف لا يتبعها يدوياً
   cashCapUsdCents  BigInt         @default(200000) @map("cash_cap_usd_cents")
-  status           CourierStatus  @default(OFF_DUTY)
+  status           String  @default("OFF_DUTY")
   suspensionReason String?        @map("suspension_reason")
   /// كفيل شخصي — عرف سوري راسخ يقلّل مخاطر النقد
-  guarantorName    String?        @map("guarantor_name") @db.VarChar(120)
-  guarantorPhone   String?        @map("guarantor_phone") @db.VarChar(16)
+  guarantorName    String?        @map("guarantor_name")
+  guarantorPhone   String?        @map("guarantor_phone")
   depositUsdCents  BigInt         @default(0) @map("deposit_usd_cents")
-  ratingAvg        Decimal?       @map("rating_avg") @db.Decimal(3, 2)
+  ratingAvg        Decimal?       @map("rating_avg")
   active           Boolean        @default(true)
-  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   user       User           @relation(fields: [userId], references: [id])
   zones      CourierZone[]
@@ -1178,21 +949,22 @@ model Courier {
 /// وحدة التخطيط هي الحي لا الرمز البريدي: المدينة السورية تُعرف
 /// بأسماء أحيائها، ولا رموز بريدية عاملة تُبنى عليها خريطة توصيل.
 model DeliveryZone {
-  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code              String      @unique @db.VarChar(16)
+  id                String      @id @default(uuid())
+  code              String      @unique
   name              Json
-  governorate       Governorate
-  city              String      @db.VarChar(40)
+  governorate       String
+  city              String
   /// أسماء الأحياء ومرادفاتها الشائعة — المطابقة بالاسم لا بالإحداثيات
-  neighborhoods     String[]    @default([])
-  zoneType          ZoneType    @default(URBAN_CORE) @map("zone_type")
+  /// قائمة نصية مخزَّنة JSON: SQLite بلا مصفوفات بدائية
+  neighborhoods     Json        @default("[]")
+  zoneType          String    @default("URBAN_CORE") @map("zone_type")
   surchargeUsdCents Int         @default(0) @map("surcharge_usd_cents")
   slaHours          Int         @default(24) @map("sla_hours")
-  defaultCourierId  String?     @map("default_courier_id") @db.Uuid
+  defaultCourierId  String?     @map("default_courier_id")
   codMaxUsdCents    BigInt?     @map("cod_max_usd_cents")
   active            Boolean     @default(true)
-  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
 
   defaultCourier Courier?      @relation("ZoneDefaultCourier", fields: [defaultCourierId], references: [id])
   couriers       CourierZone[]
@@ -1202,8 +974,8 @@ model DeliveryZone {
 }
 
 model CourierZone {
-  courierId String @map("courier_id") @db.Uuid
-  zoneId    String @map("zone_id") @db.Uuid
+  courierId String @map("courier_id")
+  zoneId    String @map("zone_id")
   /// الأصغر أولى: مندوب المنطقة الأساسي قبل من يغطّيها احتياطاً
   priority  Int    @default(10)
 
@@ -1218,16 +990,16 @@ model CourierZone {
 /// «ثلاث قطع بخصم 10%» لمحلات الجوالات الصغيرة التي تشتري بالجملة.
 /// الشريحة على مستوى المتغيّر أو الفئة، والأسعار بسنتات الدولار كغيرها.
 model QuantityBreak {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id           String   @id @default(uuid())
   /// أحدهما لا كلاهما: شريحة على صنف بعينه أو على فئة كاملة
-  variantSku   String?  @map("variant_sku") @db.VarChar(40)
+  variantSku   String?  @map("variant_sku")
   categorySlug String?  @map("category_slug")
   minQty       Int      @map("min_qty")
   /// نسبة الخصم بنقاط الأساس: 1000 = 10%
   discountBp   Int      @map("discount_bp")
   isActive     Boolean  @default(true) @map("is_active")
   note         String?
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([variantSku, minQty])
   @@index([categorySlug, minQty])
@@ -1239,18 +1011,18 @@ model QuantityBreak {
 /// تُباع هنا جيداً لأن الزبون يشتري الجهاز مرة كل سنتين ويريد
 /// أن ينتهي من ملحقاته في الزيارة نفسها.
 model Bundle {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code          String    @unique @db.VarChar(32)
+  id            String    @id @default(uuid())
+  code          String    @unique
   name          Json
   description   Json?
   /// سعر الحزمة كاملاً بسنتات الدولار — لا نسبة خصم:
   /// الرقم المعلن أوضح للزبون من حسابٍ يُجريه في رأسه
   priceUsdCents Int       @map("price_usd_cents")
-  startsAt      DateTime? @map("starts_at") @db.Timestamptz
-  endsAt        DateTime? @map("ends_at") @db.Timestamptz
+  startsAt      DateTime? @map("starts_at")
+  endsAt        DateTime? @map("ends_at")
   isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   items BundleItem[]
 
@@ -1259,9 +1031,9 @@ model Bundle {
 }
 
 model BundleItem {
-  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bundleId   String @map("bundle_id") @db.Uuid
-  variantSku String @map("variant_sku") @db.VarChar(40)
+  id         String @id @default(uuid())
+  bundleId   String @map("bundle_id")
+  variantSku String @map("variant_sku")
   qty        Int    @default(1)
 
   bundle Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
@@ -1272,31 +1044,23 @@ model BundleItem {
 
 // ——————————————————— المشتريات والموردون (الفصل 16) ———————————————————
 
-enum PurchaseOrderState {
-  DRAFT
-  CONFIRMED
-  PARTIALLY_RECEIVED
-  RECEIVED
-  CANCELLED
-}
-
 /// المورد جدولٌ لا اسمٌ نصّي في أمر الشراء.
 /// تقييم المورد الشهري (الالتزام، العيوب، فارق السعر) يحتاج كياناً يُجمَع
 /// عليه تاريخُه، واسمٌ مكتوب بأربع صيغ في أربعة أوامر شراء لا يُجمَع عليه شيء.
 model Supplier {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String    @unique @db.VarChar(24)
-  name         String    @db.VarChar(120)
-  contactName  String?   @map("contact_name") @db.VarChar(96)
-  contactPhone String?   @map("contact_phone") @db.VarChar(16)
-  country      String?   @db.Char(2)
+  id           String    @id @default(uuid())
+  code         String    @unique
+  name         String
+  contactName  String?   @map("contact_name")
+  contactPhone String?   @map("contact_phone")
+  country      String?
   /// مهلة التوريد المتوقَّعة بالأيام — أساس احتساب نقطة إعادة الطلب
   leadTimeDays Int       @default(14) @map("lead_time_days")
   notes        String?
   isActive     Boolean   @default(true) @map("is_active")
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   purchaseOrders PurchaseOrder[]
 
@@ -1307,10 +1071,10 @@ model Supplier {
 /// مطالبات الكفالة: حالةٌ تُستنتج من سطور سجل، ولا استعلام عليها، وتضيع
 /// لو نُظّف السجل. السجل للتدقيق، والحالة للجداول.
 model PurchaseOrder {
-  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  poNo            String             @unique @map("po_no") @db.VarChar(16)
-  supplierId      String             @map("supplier_id") @db.Uuid
-  state           PurchaseOrderState @default(CONFIRMED)
+  id              String             @id @default(uuid())
+  poNo            String             @unique @map("po_no")
+  supplierId      String             @map("supplier_id")
+  state           String @default("CONFIRMED")
   /// قيمة البضاعة وحدها بسنتات الدولار
   goodsUsdCents   BigInt             @map("goods_usd_cents")
   /// شحن وجمارك ورسوم — تُوزَّع على الوحدات بالقيمة لا بالعدد
@@ -1318,12 +1082,12 @@ model PurchaseOrder {
   totalUsdCents   BigInt             @map("total_usd_cents")
   /// معامل التحميل بأجزاء المليون: 139276 = 13.9276%
   landedFactorPpm Int                @default(0) @map("landed_factor_ppm")
-  expectedAt      DateTime?          @map("expected_at") @db.Timestamptz
-  receivedAt      DateTime?          @map("received_at") @db.Timestamptz
-  createdById     String?            @map("created_by_id") @db.Uuid
+  expectedAt      DateTime?          @map("expected_at")
+  receivedAt      DateTime?          @map("received_at")
+  createdById     String?            @map("created_by_id")
   note            String?
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
 
   supplier Supplier            @relation(fields: [supplierId], references: [id])
   lines    PurchaseOrderLine[]
@@ -1333,9 +1097,9 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLine {
-  id                     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  poId                   String @map("po_id") @db.Uuid
-  variantId              String @map("variant_id") @db.Uuid
+  id                     String @id @default(uuid())
+  poId                   String @map("po_id")
+  variantId              String @map("variant_id")
   qty                    Int
   qtyReceived            Int    @default(0) @map("qty_received")
   unitCostUsdCents       BigInt @map("unit_cost_usd_cents")
@@ -1353,10 +1117,10 @@ model PurchaseOrderLine {
 // ——————————————————— قائمة الرغبات (الفصل 14) ———————————————————
 
 model WishlistItem {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  variantId String   @map("variant_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  variantId String   @map("variant_id")
+  createdAt DateTime @default(now()) @map("created_at")
 
   user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   variant ProductVariant @relation(fields: [variantId], references: [id])
@@ -1372,14 +1136,14 @@ model WishlistItem {
 /// `token_version` يُبطل كل الجلسات دفعةً واحدة، وهو سلاح ثقيل: من ضاع
 /// هاتفه يريد إسقاط ذلك الجهاز وحده لا إخراج نفسه من كل أجهزته.
 model Session {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
   /// يُحمل في مطالبة `sid` داخل الرمزين معاً
-  userAgent  String?   @map("user_agent") @db.VarChar(200)
-  ip         String?   @db.VarChar(45)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz
-  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  userAgent  String?   @map("user_agent")
+  ip         String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  revokedAt  DateTime? @map("revoked_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1387,24 +1151,18 @@ model Session {
   @@map("sessions")
 }
 
-enum DeletionRequestState {
-  PENDING
-  COMPLETED
-  CANCELLED
-}
-
 /// طلب حذف الحساب — بند الجاهزية 25.
 /// الحذف لا يكون فورياً ولا صامتاً: مهلةٌ معلنة، وسجلٌ لما حُذف وما بقي،
 /// لأن فاتورةً صدرت لا تُمحى وكفالةً سارية لا تسقط بحذف الحساب.
 model AccountDeletionRequest {
-  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String               @map("user_id") @db.Uuid
-  state       DeletionRequestState @default(PENDING)
+  id          String               @id @default(uuid())
+  userId      String               @map("user_id")
+  state       String @default("PENDING")
   reason      String?
-  requestedAt DateTime             @default(now()) @map("requested_at") @db.Timestamptz
+  requestedAt DateTime             @default(now()) @map("requested_at")
   /// يُنفَّذ بعدها ما لم يُلغَ الطلب — ثلاثون يوماً كما في سياسة الخصوصية
-  dueAt       DateTime             @map("due_at") @db.Timestamptz
-  completedAt DateTime?            @map("completed_at") @db.Timestamptz
+  dueAt       DateTime             @map("due_at")
+  completedAt DateTime?            @map("completed_at")
   note        String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1415,39 +1173,24 @@ model AccountDeletionRequest {
 
 // ——————————————————— الجاهزية والمهام الدورية (الفصل 19 §19.5) ———————————————————
 
-enum ReadinessCategory {
-  TECH
-  CONTENT
-  OPS
-  LEGAL
-  FINANCE
-}
-
-enum ReadinessStatus {
-  PENDING
-  PASSED
-  FAILED
-  WAIVED
-}
-
 /// بنود الجاهزية صفوفٌ في قاعدة البيانات لا وثيقة خارجية:
 /// وثيقةٌ في ملف تُقرأ مرة وتُنسى، وصفٌّ بحالةٍ يمنع الإطلاق حتى يُحسم.
 model ReadinessCheck {
-  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String            @unique @db.VarChar(48)
-  category     ReadinessCategory
+  id           String            @id @default(uuid())
+  code         String            @unique
+  category     String
   title        Json
   isBlocking   Boolean           @default(true) @map("is_blocking")
-  ownerRole    String            @map("owner_role") @db.VarChar(32)
+  ownerRole    String            @map("owner_role")
   evidenceUrl  String?           @map("evidence_url")
-  status       ReadinessStatus   @default(PENDING)
-  checkedById  String?           @map("checked_by_id") @db.Uuid
-  checkedAt    DateTime?         @map("checked_at") @db.Timestamptz
+  status       String   @default("PENDING")
+  checkedById  String?           @map("checked_by_id")
+  checkedAt    DateTime?         @map("checked_at")
   /// إلزامي عند WAIVED: تجاوزُ بندٍ بلا سبب مكتوب هو إخفاؤه لا حسمه
   waiverReason String?           @map("waiver_reason")
   sortOrder    Int               @default(0) @map("sort_order")
-  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
 
   checkedBy User? @relation(fields: [checkedById], references: [id])
 
@@ -1455,30 +1198,18 @@ model ReadinessCheck {
   @@map("readiness_checks")
 }
 
-enum RoutineCadence {
-  DAILY
-  WEEKLY
-  MONTHLY
-}
-
-enum RoutineRunStatus {
-  DONE
-  SKIPPED
-  FAILED
-}
-
 /// تنفيذ المهام الدورية في 19.2 — القيد الفريد يمنع ازدواج التنفيذ
 model OpsRoutineRun {
-  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  routineCode   String           @map("routine_code") @db.VarChar(48)
-  cadence       RoutineCadence
+  id            String           @id @default(uuid())
+  routineCode   String           @map("routine_code")
+  cadence       String
   /// 2026-07-28 أو 2026-W31 أو 2026-07
-  periodKey     String           @map("period_key") @db.VarChar(12)
-  performedById String?          @map("performed_by_id") @db.Uuid
+  periodKey     String           @map("period_key")
+  performedById String?          @map("performed_by_id")
   isAutomated   Boolean          @default(false) @map("is_automated")
-  status        RoutineRunStatus @default(DONE)
+  status        String @default("DONE")
   notes         String?
-  completedAt   DateTime         @default(now()) @map("completed_at") @db.Timestamptz
+  completedAt   DateTime         @default(now()) @map("completed_at")
 
   performedBy User? @relation(fields: [performedById], references: [id])
 

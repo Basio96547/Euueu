@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CartService } from './cart.module.js';
 import { CouponsService } from './coupons.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 import { cashDue, orderNo, publicId } from '../common/money.js';
 import { kv } from '../common/kv.js';
 import type { Prisma } from '@prisma/client';
@@ -138,28 +140,41 @@ export class OrdersService {
     if (totals.totalUsdCents > codMax) throw Errors.codLimit(codMax);
 
     const now = new Date();
-    const order = await this.prisma.$transaction(async (tx) => {
-      const seq = (await tx.order.count()) + 1;
+    /* الطلب يُنسب لصاحبه إن كان داخلاً؛ وإلا لحساب الرقم الذي كتبه في
+       العنوان. الشراء بلا حساب هو الحالة الغالبة هنا، فلا يجوز أن يقف
+       تسجيل الدخول في وجه بيع — لكن الطلب يبقى موصولاً برقم يُتتبَّع به. */
+    const owner = await this.buyer(buyerPublicId, address.phone);
 
-      // الطلب يُنسب لصاحبه إن كان داخلاً؛ وإلا لحساب الرقم الذي كتبه في العنوان.
-      // الشراء بلا حساب هو الحالة الغالبة هنا، فلا يجوز أن يقف تسجيل الدخول
-      // في وجه بيع — لكن الطلب يجب أن يبقى موصولاً برقم يُتتبَّع به.
-      const owner = await this.buyer(tx, buyerPublicId, address.phone);
+    const seq = (await this.prisma.order.count()) + 1;
+    const addressId = randomUUID();
+    const orderId = randomUUID();
+    const no = orderNo(seq, now);
 
-      const addr = await tx.address.create({
+    /* الحجوزات المرنة تُقرأ قبل الدفعة: الترقية تحتاج معرفة ما حجزته
+       السلّة أصلاً لتخصم الفرق لا الكمية كاملة. */
+    const softHolds = new Map<string, { id: string; qty: number }>();
+    for (const r of await this.prisma.inventoryReservation.findMany({
+      where: { cartId: cart.id, kind: 'SOFT_HOLD' },
+    })) {
+      softHolds.set(r.variantId, { id: r.id, qty: r.qty });
+    }
+
+    const writes: any[] = [
+      this.prisma.address.create({
         data: {
+          id: addressId,
           userId: owner.id,
           recipientName: address.recipientName, governorate: address.governorate,
           city: address.city, neighborhood: address.neighborhood, street: address.street,
           landmark: address.landmark, details: address.details,
           phone: address.phone, altPhone: address.altPhone,
         },
-      });
-
-      const created = await tx.order.create({
+      }),
+      this.prisma.order.create({
         data: {
-          publicId: publicId(), orderNo: orderNo(seq, now),
-          userId: addr.userId, shippingAddressId: addr.id,
+          id: orderId,
+          publicId: publicId(), orderNo: no,
+          userId: owner.id, shippingAddressId: addressId,
           subtotalUsdCents: BigInt(grossSubtotal),
           discountTotalUsdCents: BigInt((coupon?.freeShipping ? 0 : discount) + bundleOff),
           shippingTotalUsdCents: BigInt(shipping),
@@ -179,68 +194,67 @@ export class OrdersService {
           },
           history: { create: { toStatus: 'PENDING_CONFIRMATION', actorType: 'CUSTOMER', source: 'SYSTEM' } },
         },
-      });
+      }),
+    ];
 
-      // ترقية الحجز المرن إلى حجز أوّلي ساعتين — ويُقصَّر للأجهزة النادرة.
-      // ترقيةٌ لا إضافة: الحجز المرن خصم من المتاح أصلاً، فإنشاء حجز ثانٍ
-      // بجانبه يخصم الكمية مرتين ويحجب بضاعة موجودة عن زبائن آخرين
-      // حتى تنتهي مهلة المرن — والعدّاد لا يُصلح نفسه.
-      for (const l of lines) {
-        if (!l.levelWarehouseId) continue;
-        const hours = l.available <= RARE_THRESHOLD ? 1 : ORDER_HOLD_HOURS;
-        const expiresAt = new Date(now.getTime() + hours * 3_600_000);
+    /* ترقية الحجز المرن إلى حجز أوّلي ساعتين — ويُقصَّر للأجهزة النادرة.
+       ترقيةٌ لا إضافة: الحجز المرن خصم من المتاح أصلاً، فإنشاء حجز ثانٍ
+       بجانبه يخصم الكمية مرتين ويحجب بضاعة موجودة عن زبائن آخرين حتى
+       تنتهي مهلة المرن — والعدّاد لا يُصلح نفسه. */
+    for (const l of lines) {
+      if (!l.levelWarehouseId) continue;
+      const hours = l.available <= RARE_THRESHOLD ? 1 : ORDER_HOLD_HOURS;
+      const expiresAt = new Date(now.getTime() + hours * 3_600_000);
+      const soft = softHolds.get(l.variantId);
+      const alreadyHeld = soft?.qty ?? 0;
 
-        const soft = await tx.inventoryReservation.findFirst({
-          where: { cartId: cart.id, variantId: l.variantId, kind: 'SOFT_HOLD' },
-        });
-        const alreadyHeld = soft?.qty ?? 0;
-
-        if (soft) {
-          await tx.inventoryReservation.update({
-            where: { id: soft.id },
-            data: { kind: 'ORDER_HOLD', qty: l.qty, orderId: created.id, cartId: null, expiresAt },
-          });
-        } else {
-          await tx.inventoryReservation.create({
-            data: {
-              variantId: l.variantId, warehouseId: l.levelWarehouseId, kind: 'ORDER_HOLD',
-              qty: l.qty, orderId: created.id, expiresAt,
-            },
-          });
-        }
-
-        // الفرق فقط: ما حجزته السلّة محسوب في العدّاد منذ الإضافة
-        const delta = l.qty - alreadyHeld;
-        if (delta !== 0) {
-          await tx.inventoryLevel.updateMany({
-            where: { variantId: l.variantId, warehouseId: l.levelWarehouseId },
-            data: { reserved: { increment: delta }, version: { increment: 1 } },
-          });
-          // الدفتر يسجّل حركة الكميات؛ سطرٌ بفرق صفر ضجيج يُخفي الحركات الحقيقية
-          await tx.inventoryMovement.create({
-            data: {
-              variantId: l.variantId, warehouseId: l.levelWarehouseId,
-              reason: delta > 0 ? 'RESERVE' : 'RELEASE',
-              qtyDelta: -delta, refType: 'order', refId: created.id,
-              note: soft ? 'ترقية حجز مرن إلى حجز طلب' : undefined,
-            },
-          });
-        }
+      if (soft) {
+        writes.push(this.prisma.inventoryReservation.update({
+          where: { id: soft.id },
+          data: { kind: 'ORDER_HOLD', qty: l.qty, orderId, cartId: null, expiresAt },
+        }));
+      } else {
+        writes.push(this.prisma.inventoryReservation.create({
+          data: {
+            variantId: l.variantId, warehouseId: l.levelWarehouseId, kind: 'ORDER_HOLD',
+            qty: l.qty, orderId, expiresAt,
+          },
+        }));
       }
 
-      /* عدّاد الاستخدام يُزاد داخل معاملة إنشاء الطلب لا عند إدخال الرمز:
-         لو زِيد عند الإدخال لاستنفد فضوليٌّ كوبوناً بلا أن يشتري شيئاً،
-         ولو زِيد بعدها لاستُخدم الرمز مرتين من جهازين في اللحظة نفسها. */
-      if (coupon?.couponId) {
-        await this.coupons.redeem(tx, {
-          couponId: coupon.couponId, orderId: created.id,
-          phone: address.phone, discountUsdCents: discount,
-        });
+      // الفرق فقط: ما حجزته السلّة محسوب في العدّاد منذ الإضافة
+      const delta = l.qty - alreadyHeld;
+      if (delta !== 0) {
+        writes.push(this.prisma.inventoryLevel.updateMany({
+          where: { variantId: l.variantId, warehouseId: l.levelWarehouseId },
+          data: { reserved: { increment: delta }, version: { increment: 1 } },
+        }));
+        // الدفتر يسجّل حركة الكميات؛ سطرٌ بفرق صفر ضجيج يُخفي الحركات الحقيقية
+        writes.push(this.prisma.inventoryMovement.create({
+          data: {
+            variantId: l.variantId, warehouseId: l.levelWarehouseId,
+            reason: delta > 0 ? 'RESERVE' : 'RELEASE',
+            qtyDelta: -delta, refType: 'order', refId: orderId,
+            note: soft ? 'ترقية حجز مرن إلى حجز طلب' : undefined,
+          },
+        }));
       }
+    }
 
-      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-      return created;
-    });
+    /* عدّاد الاستخدام يُزاد داخل دفعة إنشاء الطلب لا عند إدخال الرمز:
+       لو زِيد عند الإدخال لاستنفد فضوليٌّ كوبوناً بلا أن يشتري شيئاً،
+       ولو زِيد بعدها لاستُخدم الرمز مرتين من جهازين في اللحظة نفسها. */
+    if (coupon?.couponId) {
+      writes.push(...this.coupons.redeemOps({
+        couponId: coupon.couponId, orderId,
+        phone: address.phone, discountUsdCents: discount,
+      }));
+    }
+
+    writes.push(this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } }));
+
+    await runBatch(this.prisma, writes);
+    const order = { orderNo: no };
 
     // 72 ساعة تكفي إعادة إرسال متأخرة من جهاز عاد إلى الشبكة (الفصل 17 §17.11)
     if (idempotencyKey) await kv().set(this.idemKey(idempotencyKey), order.orderNo, 72 * 3600);
@@ -307,13 +321,13 @@ export class OrdersService {
    * إنشاء الحساب من الرقم لا يمنحه شيئاً — لا رمز ولا صلاحية — لكنه يجعل
    * الزبون حين يسجّل دخوله لاحقاً بالرقم نفسه يجد طلباته السابقة في مكانها.
    */
-  private async buyer(tx: Prisma.TransactionClient, buyerPublicId?: string, orderPhone?: string) {
+  private async buyer(buyerPublicId?: string, orderPhone?: string) {
     if (buyerPublicId) {
-      const u = await tx.user.findUnique({ where: { publicId: buyerPublicId } });
+      const u = await this.prisma.user.findUnique({ where: { publicId: buyerPublicId } });
       if (u) return u;
     }
     const phone = orderPhone && /^\+9639[0-9]{8}$/.test(orderPhone) ? orderPhone : '+963900000000';
-    return tx.user.upsert({
+    return this.prisma.user.upsert({
       where: { phoneE164: phone },
       update: {},
       create: { publicId: publicId(), phoneE164: phone },

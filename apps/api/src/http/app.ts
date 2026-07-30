@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { ApiError } from '../common/errors.js';
 import { HttpStatus } from '../common/http-status.js';
 import { rateLimit } from '../common/rate-limit.js';
-import { makePrisma, type PrismaService } from '../common/prisma.service.js';
+import { makePrisma, type PrismaService, type D1Binding } from '../common/prisma.service.js';
 import type { Ctx } from './auth.mw.js';
 import { registerRoutes } from './routes.js';
 import { send } from './json.js';
@@ -24,6 +24,7 @@ import { ReviewsService } from '../modules/reviews.module.js';
 import { TicketsService } from '../modules/tickets.module.js';
 import { AlertsService } from '../modules/alerts.module.js';
 import { ProductsAdminService } from '../modules/products.admin.js';
+import type { R2Binding } from '../modules/storage.js';
 import { PushService } from '../modules/push.module.js';
 import { DeliveryService } from '../modules/delivery.module.js';
 import { AdminService } from '../modules/admin.module.js';
@@ -70,8 +71,8 @@ export interface Deps {
   sweeper: ReservationSweeper;
 }
 
-export function buildDeps(databaseUrl: string): Deps {
-  const prisma = makePrisma(databaseUrl);
+export function buildDeps(db: D1Binding, media?: R2Binding): Deps {
+  const prisma = makePrisma(db);
   const notify = new NotificationsService();
   const fx = new FxService(prisma);
   const catalog = new CatalogService(prisma);
@@ -88,7 +89,7 @@ export function buildDeps(databaseUrl: string): Deps {
   const tickets = new TicketsService(prisma, notify);
   const push = new PushService(prisma);
   const alerts = new AlertsService(prisma, notify, fx);
-  const products = new ProductsAdminService(prisma);
+  const products = new ProductsAdminService(prisma, media);
   const delivery = new DeliveryService(prisma, notify);
   const sweeper = new ReservationSweeper(prisma);
   const admin = new AdminService(prisma, orders, notify, sweeper);

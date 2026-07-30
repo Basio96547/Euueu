@@ -2,6 +2,7 @@ import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { SettlementsService } from './settlements.module.js';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 import { roundCash } from '../common/money.js';
 import { kv } from '../common/kv.js';
 
@@ -106,8 +107,19 @@ export class CourierService {
     const collector = await this.prisma.user.findUnique({ where: { publicId: req.user!.sub } });
     if (!collector) throw Errors.notFound('المحصِّل');
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    /* التسليم هو لحظة خروج البضاعة، فهنا يُقيَّد البيع لا في مكان آخر:
+       الحجز يموت لأنه أدّى غرضه، وon_hand ينقص لأن الجهاز صار بيد زبونه،
+       وسطر SALE يُكتب ليبقى الدفتر شاهداً. تأجيل هذا إلى تفعيل الكفالة
+       يعني أن المتجر يعرض للبيع أجهزةً سلّمها بالفعل.
+
+       الترتيب هنا جزء من العقد لا تفصيل أسلوب: تُختم الوحدات SOLD أولاً
+       ثم يُضبط العدّاد أخيراً، لأن محفِّز التطابق يفحص عند تحديث العدّاد.
+       عكسُه يجعل المحفِّز يرفض العملية الصحيحة نفسها. */
+    const items = await this.prisma.orderItem.findMany({ where: { orderId: o.id } });
+    const holds = await this.prisma.inventoryReservation.findMany({ where: { orderId: o.id } });
+
+    const writes: any[] = [
+      this.prisma.order.update({
         where: { id: o.id },
         data: {
           status: 'DELIVERED',
@@ -118,11 +130,8 @@ export class CourierService {
           deliveredAt: occurredAt,
           confirmationNotes: b.reasonCode ? `تحصيل جزئي: ${b.reasonCode}` : undefined,
         },
-      });
-
-      /* الربط بالتسوية داخل المعاملة نفسها: طلبٌ حُصِّل ولم يدخل صف يومه
-         مالٌ بلا دفتر — ولن يُكتشف إلا حين لا يتطابق الصندوق آخر الشهر. */
-      await this.settlements.attach(tx, {
+      }),
+      ...(await this.settlements.attachOps({
         orderId: o.id,
         collectorId: collector.id,
         collectorType: 'COURIER',
@@ -130,64 +139,62 @@ export class CourierService {
         collectedSyp: BigInt(b.amountSyp),
         roundingDiffSyp: o.roundingDiffSyp,
         at: occurredAt,
-      });
-      await tx.orderStatusHistory.create({
+      })),
+      this.prisma.orderStatusHistory.create({
         data: {
           orderId: o.id, fromStatus: 'OUT_FOR_DELIVERY', toStatus: 'DELIVERED',
           actorType: 'COURIER', source: 'COURIER_APP',
         },
+      }),
+    ];
+
+    // تحرير الحجوزات: الصف يُحذف والعدّاد يُخصم معاً
+    for (const h of holds) {
+      writes.push(this.prisma.inventoryReservation.delete({ where: { id: h.id } }));
+      writes.push(this.prisma.$executeRaw`
+        UPDATE inventory_levels
+           SET reserved = max(0, reserved - ${h.qty}), version = version + 1
+         WHERE variant_id = ${h.variantId} AND warehouse_id = ${h.warehouseId}`);
+    }
+
+    for (const item of items) {
+      const wh = holds.find((h) => h.variantId === item.variantId)?.warehouseId
+        ?? (await this.prisma.inventoryLevel.findFirst({ where: { variantId: item.variantId } }))?.warehouseId;
+      if (!wh) continue;
+
+      /* المتغيّر المسلسل: تُختار وحدات بعينها وتُختم SOLD وتُربط بالسطر.
+         الاختيار يقع قبل الدفعة، والختم داخلها — فإن تغيّر المخزون بينهما
+         رفض المحفِّز الدفعة كاملةً عند ضبط العدّاد. */
+      const units = await this.prisma.deviceUnit.findMany({
+        where: { variantId: item.variantId, warehouseId: wh, state: 'IN_STOCK' },
+        orderBy: { id: 'asc' }, take: item.qty,
       });
-
-      /* التسليم هو لحظة خروج البضاعة، فهنا يُقيَّد البيع لا في مكان آخر:
-         الحجز يموت لأنه أدّى غرضه، وon_hand ينقص لأن الجهاز صار بيد زبونه،
-         وسطر SALE يُكتب ليبقى الدفتر شاهداً. تأجيل هذا إلى تفعيل الكفالة
-         يعني أن المتجر يعرض للبيع أجهزةً سلّمها بالفعل. */
-      const items = await tx.orderItem.findMany({ where: { orderId: o.id } });
-      const holds = await tx.inventoryReservation.findMany({ where: { orderId: o.id } });
-
-      for (const h of holds) {
-        await tx.inventoryReservation.delete({ where: { id: h.id } });
-        await tx.$executeRaw`
-          UPDATE inventory_levels
-             SET reserved = GREATEST(0, reserved - ${h.qty}), version = version + 1
-           WHERE variant_id = ${h.variantId}::uuid AND warehouse_id = ${h.warehouseId}::uuid`;
+      for (const [i, u] of units.entries()) {
+        writes.push(this.prisma.deviceUnit.update({
+          where: { id: u.id },
+          data: { state: 'SOLD', ...(i === 0 ? { orderItemId: item.id } : {}) },
+        }));
       }
 
-      for (const item of items) {
-        const wh = holds.find((h) => h.variantId === item.variantId)?.warehouseId
-          ?? (await tx.inventoryLevel.findFirst({ where: { variantId: item.variantId } }))?.warehouseId;
-        if (!wh) continue;
+      writes.push(this.prisma.$executeRaw`
+        UPDATE inventory_levels
+           SET on_hand = max(0, on_hand - ${item.qty}), version = version + 1
+         WHERE variant_id = ${item.variantId} AND warehouse_id = ${wh}`);
 
-        /* المتغيّر المسلسل: تُختار وحدات بعينها وتُختم SOLD وتُربط بالسطر.
-           المحفِّز المؤجَّل يقارن عدد IN_STOCK بـ on_hand، فالخطوتان معاً
-           في هذه المعاملة أو لا تقع أيٌّ منهما. */
-        const units = await tx.deviceUnit.findMany({
-          where: { variantId: item.variantId, warehouseId: wh, state: 'IN_STOCK' },
-          orderBy: { id: 'asc' }, take: item.qty,
-        });
-        for (const [i, u] of units.entries()) {
-          await tx.deviceUnit.update({
-            where: { id: u.id },
-            data: { state: 'SOLD', ...(i === 0 ? { orderItemId: item.id } : {}) },
-          });
-        }
+      writes.push(this.prisma.inventoryMovement.create({
+        data: {
+          variantId: item.variantId, warehouseId: wh,
+          reason: 'SALE', qtyDelta: -item.qty, refType: 'order', refId: o.id,
+          note: units.length ? `وحدات مسلسلة: ${units.length}` : undefined,
+        },
+      }));
+    }
 
-        await tx.$executeRaw`
-          UPDATE inventory_levels
-             SET on_hand = GREATEST(0, on_hand - ${item.qty}), version = version + 1
-           WHERE variant_id = ${item.variantId}::uuid AND warehouse_id = ${wh}::uuid`;
-
-        await tx.inventoryMovement.create({
-          data: {
-            variantId: item.variantId, warehouseId: wh,
-            reason: 'SALE', qtyDelta: -item.qty, refType: 'order', refId: o.id,
-            note: units.length ? `وحدات مسلسلة: ${units.length}` : undefined,
-          },
-        });
-      }
-
-      return updated;
-    });
+    await runBatch(this.prisma, writes);
+    const result = {
+      status: 'DELIVERED',
+      paymentStatus: b.amountSyp >= due ? 'COLLECTED' : 'PARTIAL',
+    };
 
     await this.notify.send({
       type: 'order.delivered', level: 'P2', to: o.shippingAddress.phone, entityId: no,

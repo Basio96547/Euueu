@@ -8,22 +8,20 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
-    "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "dev:up": "docker compose -f infra/docker/docker-compose.yml up -d",
-    "dev:down": "docker compose -f infra/docker/docker-compose.yml down",
-    "db:migrate": "pnpm --filter @talisham/api exec prisma migrate dev",
-    "db:generate": "pnpm --filter @talisham/api exec prisma generate",
-    "db:seed": "pnpm --filter @talisham/api run seed",
-    "db:purge-demo": "pnpm --filter @talisham/api run purge-demo",
     "test": "turbo run test",
     "test:e2e": "bash scripts/e2e.sh",
     "build:worker": "bash scripts/build-worker.sh",
+    "worker:dev": "wrangler dev --port 8787",
     "deploy": "bash scripts/build-worker.sh && wrangler deploy",
-    "worker:dev": "wrangler dev --port 8787"
+    "db:migrate": "wrangler d1 migrations apply talisham --remote",
+    "db:migrate:local": "wrangler d1 migrations apply talisham --local",
+    "db:seed": "node apps/api/prisma/seed-d1.mjs > /tmp/talisham-seed.sql && wrangler d1 execute talisham --local --file=/tmp/talisham-seed.sql",
+    "db:seed:remote": "node apps/api/prisma/seed-d1.mjs > /tmp/talisham-seed.sql && wrangler d1 execute talisham --remote --file=/tmp/talisham-seed.sql"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "wrangler": "4.115.0"
   }
 }

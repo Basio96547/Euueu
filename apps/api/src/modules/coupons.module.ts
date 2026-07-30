@@ -1,5 +1,8 @@
 import { PrismaService } from '../common/prisma.service.js';
+import { randomUUID } from 'node:crypto';
 import { Errors } from '../common/errors.js';
+import { strList } from '../common/json-list.js';
+import { runBatch } from '../common/batch.js';
 import type { Prisma } from '@prisma/client';
 
 /**
@@ -64,11 +67,12 @@ export class CouponsService {
       }
     }
 
-    if (c.categorySlugs.length && args.categorySlugs?.length) {
-      const overlap = args.categorySlugs.some((s) => c.categorySlugs.includes(s));
+    const couponCats = strList(c.categorySlugs);
+    if (couponCats.length && args.categorySlugs?.length) {
+      const overlap = args.categorySlugs.some((s) => couponCats.includes(s));
       if (!overlap) {
         throw Errors.badRequest('COUPON_NOT_APPLICABLE',
-          `هذا الرمز يخصّ ${c.categorySlugs.join('، ')} فقط`, 'Coupon not applicable to cart');
+          `هذا الرمز يخصّ ${couponCats.join('، ')} فقط`, 'Coupon not applicable to cart');
       }
     }
 
@@ -90,20 +94,24 @@ export class CouponsService {
   }
 
   /** يُستدعى داخل معاملة إنشاء الطلب: الزيادة ذرية والاستخدام مقيَّد */
-  async redeem(
-    tx: Prisma.TransactionClient,
-    args: { couponId: string; orderId: string; phone: string; discountUsdCents: number },
-  ) {
-    await tx.couponRedemption.create({
-      data: {
-        couponId: args.couponId, orderId: args.orderId,
-        phone: args.phone, discountUsdCents: args.discountUsdCents,
-      },
-    });
-    await tx.coupon.update({
-      where: { id: args.couponId },
-      data: { usedCount: { increment: 1 } },
-    });
+  /**
+   * عمليتا الاستخدام تُعادان لتُضمّا إلى دفعة إنشاء الطلب لا لتُنفَّذا هنا:
+   * الاستخدام يُسجَّل مع الطلب أو لا يُسجَّل. لو نُفِّذ على حدة لأمكن أن
+   * يُستهلك الكوبون ثم يفشل إنشاء الطلب، فيخسر صاحبه رمزاً لم يشترِ به.
+   */
+  redeemOps(args: { couponId: string; orderId: string; phone: string; discountUsdCents: number }) {
+    return [
+      this.prisma.couponRedemption.create({
+        data: {
+          couponId: args.couponId, orderId: args.orderId,
+          phone: args.phone, discountUsdCents: args.discountUsdCents,
+        },
+      }),
+      this.prisma.coupon.update({
+        where: { id: args.couponId },
+        data: { usedCount: { increment: 1 } },
+      }),
+    ];
   }
 
   /**
@@ -317,16 +325,18 @@ export class CouponsService {
     };
 
     const existing = await this.prisma.bundle.findUnique({ where: { code: b.code } });
-    const row = await this.prisma.$transaction(async (tx) => {
-      const bundle = existing
-        ? await tx.bundle.update({ where: { id: existing.id }, data })
-        : await tx.bundle.create({ data: { ...data, code: b.code } });
-      await tx.bundleItem.deleteMany({ where: { bundleId: bundle.id } });
-      await tx.bundleItem.createMany({
-        data: items.map((i) => ({ bundleId: bundle.id, variantSku: i.sku, qty: i.qty })),
-      });
-      return bundle;
-    });
+    // المعرّف يُولَّد هنا لا في القاعدة: الدفعة تحتاجه قبل أن تُنفَّذ
+    const bundleId = existing?.id ?? randomUUID();
+    await runBatch(this.prisma, [
+      existing
+        ? this.prisma.bundle.update({ where: { id: bundleId }, data })
+        : this.prisma.bundle.create({ data: { ...data, id: bundleId, code: b.code } }),
+      this.prisma.bundleItem.deleteMany({ where: { bundleId } }),
+      this.prisma.bundleItem.createMany({
+        data: items.map((i) => ({ bundleId, variantSku: i.sku, qty: i.qty })),
+      }),
+    ]);
+    const row = { code: b.code, priceUsdCents: data.priceUsdCents };
 
     return { code: row.code, savedUsdCents: list - row.priceUsdCents, created: !existing };
   }
@@ -343,7 +353,7 @@ export class CouponsService {
       code: c.code, type: c.type, value: c.value,
       maxDiscountUsdCents: c.maxDiscountUsdCents,
       minSubtotalUsdCents: c.minSubtotalUsdCents,
-      categorySlugs: c.categorySlugs,
+      categorySlugs: strList(c.categorySlugs),
       startsAt: c.startsAt, endsAt: c.endsAt,
       usedCount: c.usedCount, usageLimitTotal: c.usageLimitTotal,
       usageLimitPerCustomer: c.usageLimitPerCustomer,

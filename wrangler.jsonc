@@ -13,6 +13,27 @@
   // Prisma ومحوّل pg يحتاجان واجهات Node داخل الـWorker
   "compatibility_flags": ["nodejs_compat"],
 
+  // قاعدة البيانات: ربطٌ لا رابط اتصال — القاعدة لا تُعرَّض للإنترنت أصلاً
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "talisham",
+      "database_id": "d46eb676-f8fd-4f1e-9bca-894d500d4c93",
+      "migrations_dir": "apps/api/prisma/migrations"
+    }
+  ],
+
+  // رموز الدخول ومفاتيح التفرّد وعدّادات الحدّ: عزلةُ Worker تُهدَم بلا
+  // إشعار، فالعدّاد في ذاكرتها ليس عدّاداً
+  "kv_namespaces": [
+    { "binding": "KV", "id": "d1f087f3301147dd89763f412b01b30b" }
+  ],
+
+  // صور المنتجات — تُخدَم من /media/* على الأصل نفسه
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "talisham-media" }
+  ],
+
   "assets": {
     "directory": "./dist-worker",
     "binding": "ASSETS",
@@ -40,7 +61,6 @@
   ]
 
   // الأسرار تُضبط خارج الملف ولا تُكتب فيه أبداً:
-  //   npx wrangler secret put DATABASE_URL
   //   npx wrangler secret put JWT_SECRET
   //   npx wrangler secret put WHATSAPP_PROVIDER_TOKEN
 }

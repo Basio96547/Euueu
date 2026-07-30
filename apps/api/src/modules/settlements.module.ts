@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
@@ -35,13 +36,16 @@ export class SettlementsService {
    * وتزيد المجاميع ذرياً. الربط لحظة التحصيل لا في تقرير ليلي،
    * وإلا بقي طلبٌ يتيماً كلما تعطّلت المهمة المجدولة ليلة واحدة.
    */
-  async attach(
-    tx: Prisma.TransactionClient,
-    args: {
-      orderId: string; collectorId: string; collectorType: 'COURIER' | 'TRANSPORT_OFFICE';
-      expectedSyp: bigint; collectedSyp: bigint; roundingDiffSyp: number; at: Date;
-    },
-  ) {
+  /**
+   * صفّ التسوية لليوم — يُعاد كعمليات تُضمّ إلى دفعة التحصيل.
+   *
+   * الربط داخل الدفعة نفسها شرط: طلبٌ حُصِّل ولم يدخل صفّ يومه مالٌ بلا
+   * دفتر، ولن يُكتشف إلا حين لا يتطابق الصندوق آخر الشهر.
+   */
+  async attachOps(args: {
+    orderId: string; collectorId: string; collectorType: 'COURIER' | 'TRANSPORT_OFFICE';
+    expectedSyp: bigint; collectedSyp: bigint; roundingDiffSyp: number; at: Date;
+  }) {
     const day = this.dayOf(args.at);
     const bp = await this.commissionRate();
     const commission = (args.collectedSyp * BigInt(bp)) / 10_000n;
@@ -50,62 +54,62 @@ export class SettlementsService {
        الإضافة الصامتة إلى صفٍّ مُقفَل أسوأ الاحتمالات: الدفتر يتغيّر
        بعد أن وُقِّع عليه، فلا الرقم القديم صحيح ولا الجديد مُراجَع.
        وإعادة الفتح تُظهر الأمر لمن أقفل بدل أن تخفيه عنه. */
-    const existing = await tx.cashSettlement.findUnique({
-      where: {
-        collectorType_collectorId_settlementDate: {
-          collectorType: args.collectorType, collectorId: args.collectorId, settlementDate: day,
-        },
-      },
-    });
-    const reopens = existing && existing.state !== 'OPEN';
-
-    const row = await tx.cashSettlement.upsert({
-      where: {
-        collectorType_collectorId_settlementDate: {
-          collectorType: args.collectorType, collectorId: args.collectorId, settlementDate: day,
-        },
-      },
-      update: {
-        ordersCount: { increment: 1 },
-        expectedAmountSyp: { increment: args.expectedSyp },
-        collectedAmountSyp: { increment: args.collectedSyp },
-        varianceSyp: { increment: args.collectedSyp - args.expectedSyp },
-        roundingDiffSyp: { increment: args.roundingDiffSyp },
-        deliveryCommissionSyp: { increment: commission },
-        ...(reopens
-          ? {
-              state: 'OPEN' as const,
-              reconciledBy: null, reconciledAt: null, settledAt: null,
-              note: `أُعيد فتحها: وصل تحصيل بعد إقفالها بحالة ${existing!.state}`,
-            }
-          : {}),
-      },
-      create: {
+    const key = {
+      collectorType_collectorId_settlementDate: {
         collectorType: args.collectorType, collectorId: args.collectorId, settlementDate: day,
-        ordersCount: 1,
-        expectedAmountSyp: args.expectedSyp,
-        collectedAmountSyp: args.collectedSyp,
-        varianceSyp: args.collectedSyp - args.expectedSyp,
-        roundingDiffSyp: args.roundingDiffSyp,
-        deliveryCommissionSyp: commission,
       },
-    });
+    };
+    const existing = await this.prisma.cashSettlement.findUnique({ where: key });
+    const reopens = Boolean(existing && existing.state !== 'OPEN');
 
-    await tx.order.update({
-      where: { id: args.orderId },
-      data: { settlementId: row.id, collectorType: args.collectorType },
-    });
+    // المعرّف يُولَّد هنا ليُربط به الطلب في العملية نفسها
+    const settlementId = existing?.id ?? randomUUID();
+
+    const ops: any[] = [
+      this.prisma.cashSettlement.upsert({
+        where: key,
+        update: {
+          ordersCount: { increment: 1 },
+          expectedAmountSyp: { increment: args.expectedSyp },
+          collectedAmountSyp: { increment: args.collectedSyp },
+          varianceSyp: { increment: args.collectedSyp - args.expectedSyp },
+          roundingDiffSyp: { increment: args.roundingDiffSyp },
+          deliveryCommissionSyp: { increment: commission },
+          ...(reopens
+            ? {
+                state: 'OPEN' as const,
+                reconciledBy: null, reconciledAt: null, settledAt: null,
+                note: `أُعيد فتحها: وصل تحصيل بعد إقفالها بحالة ${existing!.state}`,
+              }
+            : {}),
+        },
+        create: {
+          id: settlementId,
+          collectorType: args.collectorType, collectorId: args.collectorId, settlementDate: day,
+          ordersCount: 1,
+          expectedAmountSyp: args.expectedSyp,
+          collectedAmountSyp: args.collectedSyp,
+          varianceSyp: args.collectedSyp - args.expectedSyp,
+          roundingDiffSyp: args.roundingDiffSyp,
+          deliveryCommissionSyp: commission,
+        },
+      }),
+      this.prisma.order.update({
+        where: { id: args.orderId },
+        data: { settlementId, collectorType: args.collectorType },
+      }),
+    ];
 
     if (reopens) {
-      await tx.auditLog.create({
+      ops.push(this.prisma.auditLog.create({
         data: {
-          action: 'settlement.reopen', entityType: 'cash_settlements', entityId: row.id,
+          action: 'settlement.reopen', entityType: 'cash_settlements', entityId: settlementId,
           diff: { from: existing!.state, orderId: args.orderId, addedSyp: Number(args.collectedSyp) },
         },
-      });
+      }));
     }
 
-    return row;
+    return ops;
   }
 
   async list(state?: string, date?: string) {

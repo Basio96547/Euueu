@@ -1,5 +1,7 @@
 import { buildDeps, createApp, type Deps } from './http/app.js';
 import { useCloudflareKv, type CfKvNamespace } from './common/kv.js';
+import type { D1Binding } from './common/prisma.service.js';
+import type { R2Binding } from './modules/storage.js';
 
 /**
  * تالي شام — Worker واحد يخدم كل شيء.
@@ -19,25 +21,24 @@ import { useCloudflareKv, type CfKvNamespace } from './common/kv.js';
 
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  DATABASE_URL?: string;
+  /** ربط قاعدة D1 — لا رابط اتصال ولا كلمة سرّ */
+  DB?: D1Binding;
+  /** حاوية صور المنتجات على R2 */
+  MEDIA?: R2Binding;
   KV?: CfKvNamespace;
   JWT_SECRET?: string;
   [key: string]: unknown;
 }
 
 /**
- * اتصالٌ لكل طلب.
+ * عميلٌ لكل طلب.
  *
- * التجميع بين الطلبات هو الغريزة الصحيحة على خادم دائم، وهو خطأ هنا:
- * كائنات الإدخال والإخراج في workerd لا تعبر حدود الطلب، فاتصالٌ فُتح
- * في طلبٍ ثم استُعمل في التالي يُعلَّق حتى يقتله وقت التشغيل — وهو ما
- * كان يُنتج نجاحاً وفشلاً بالتناوب في كل مسار يمسّ القاعدة.
- *
- * الثمن اتصالٌ جديد لكل طلب، ويُخفَّض لاحقاً بـHyperdrive بلا تغيير
- * سطر واحد هنا: يكفي أن يشير DATABASE_URL إلى ربط Hyperdrive.
+ * الربط `env.DB` صالح داخل الطلب الذي جاء معه، ولا يُخزَّن بين الطلبات:
+ * كائنات وقت التشغيل في workerd لا تعبر حدود الطلب. والبناء رخيص هنا
+ * لأن D1 بلا اتصال يُفتح أصلاً — لا مصافحة ولا تجمّع.
  */
 function api(env: Env) {
-  const deps = buildDeps(String(env.DATABASE_URL ?? ''));
+  const deps = buildDeps(env.DB!, env.MEDIA);
   return { deps, app: createApp(deps, { ...env, RUNTIME: 'cloudflare-worker' }) };
 }
 
@@ -70,27 +71,37 @@ export default {
     const path = new URL(request.url).pathname;
 
     if (path.startsWith('/api/v1')) {
-      if (!env.DATABASE_URL) {
+      if (!env.DB) {
         /* الصمت هنا خطر: بلا قاعدة تعمل الواجهة كأنها موجودة وتفشل
            فشلاً غامضاً في كل شاشة. الرسالة تقول ما ينقص بالضبط. */
         return Response.json({
           error: {
-            code: 'DATABASE_NOT_CONFIGURED',
+            code: 'DATABASE_NOT_BOUND',
             message: {
-              ar: 'قاعدة البيانات غير مضبوطة على هذا الـWorker — اضبط السرّ DATABASE_URL',
-              en: 'DATABASE_URL secret is not set on this Worker',
+              ar: 'ربط قاعدة D1 غير موجود على هذا الـWorker — راجع d1_databases في wrangler.jsonc',
+              en: 'D1 binding (DB) is missing on this Worker',
             },
           },
         }, { status: 503 });
       }
       useCloudflareKv(env.KV);
-      const { deps, app } = api(env);
-      try {
-        return await app.fetch(request, env, ctx);
-      } finally {
-        // الإغلاق بعد إرسال الجواب: تركُه مفتوحاً يستهلك اتصالات القاعدة
-        ctx.waitUntil(deps.prisma.$disconnect().catch(() => {}));
-      }
+      const { app } = api(env);
+      return app.fetch(request, env, ctx);
+    }
+
+    /* الصور من R2 مباشرةً: روابطها مخزَّنة في القاعدة منذ رفعها، فتبقى
+       ثابتة مهما تبدّلت طبقة التخزين تحتها. */
+    if (path.startsWith('/media/')) {
+      if (!env.MEDIA) return new Response('لا حاوية صور مربوطة', { status: 503 });
+      const obj = await env.MEDIA.get(path.slice('/media/'.length));
+      if (!obj) return new Response('غير موجودة', { status: 404 });
+      return new Response(obj.body as BodyInit, {
+        headers: {
+          'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+          // الاسم بصمةُ المحتوى، فالتغيير يعني رابطاً جديداً — والتخزين أبديّ
+          'cache-control': 'public, max-age=31536000, immutable',
+        },
+      });
     }
 
     if (path === '/app' || path.startsWith('/app/')) return spa(env, request, '/app');
@@ -105,15 +116,14 @@ export default {
    * بلا تحرير للحجوزات المنتهية يقول المتجر «نفدت» ورفّه ممتلئ.
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    if (!env.DATABASE_URL) {
-      console.error('[cron] DATABASE_URL غير مضبوط — تُخطّى المهمة');
+    if (!env.DB) {
+      console.error('[cron] ربط D1 غير موجود — تُخطّى المهمة');
       return;
     }
     useCloudflareKv(env.KV);
     const { deps } = api(env);
 
     ctx.waitUntil((async () => {
-      try {
         // كل دقيقة: تحرير الحجوزات المنتهية
         const swept = await deps.sweeper.sweep().catch((e) => {
           console.error('[cron] الكنّاس:', e);
@@ -143,9 +153,6 @@ export default {
           });
           if (del?.deleted) console.log(`[cron] نُفِّذ حذف ${del.deleted} حساباً`);
         }
-      } finally {
-        await deps.prisma.$disconnect().catch(() => {});
-      }
     })());
   },
 };

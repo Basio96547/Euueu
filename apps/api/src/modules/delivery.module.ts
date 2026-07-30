@@ -1,6 +1,7 @@
 import { PrismaService } from '../common/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Errors } from '../common/errors.js';
+import { strList } from '../common/json-list.js';
 import { normalizeAr } from '../common/arabic.js';
 
 
@@ -182,7 +183,7 @@ export class DeliveryService {
     return rows.map((z) => ({
       code: z.code, name: z.name,
       governorate: z.governorate, city: z.city,
-      neighborhoods: z.neighborhoods,
+      neighborhoods: strList(z.neighborhoods),
       zoneType: z.zoneType,
       surchargeUsdCents: z.surchargeUsdCents,
       slaHours: z.slaHours,
@@ -287,7 +288,7 @@ export class DeliveryService {
     if (!target) return null;
 
     for (const z of zones) {
-      for (const n of z.neighborhoods) {
+      for (const n of strList(z.neighborhoods)) {
         const norm = normalizeAr(n);
         // احتواء في الاتجاهين: «المزة» تطابق «المزة فيلات غربية» وبالعكس
         if (norm && (target.includes(norm) || norm.includes(target))) return z;

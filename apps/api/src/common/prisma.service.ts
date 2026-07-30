@@ -1,22 +1,31 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaD1 } from '@prisma/adapter-d1';
 
 /**
- * عميل قاعدة البيانات.
+ * عميل قاعدة البيانات — Cloudflare D1.
  *
- * المحرك الثنائي الأصلي لا يعمل داخل Cloudflare Worker، فالعميل يُبنى
- * على محوّل سائق (`@prisma/adapter-pg`) ومترجم استعلامات بلا Rust.
- * المخطَّط والاستعلامات والمحفِّزات كما هي حرفياً — التغيير في طريقة
- * الاتصال لا في لغة السؤال.
+ * لا رابط اتصال ولا منفذ ولا كلمة سرّ: D1 يصل عبر رابط في بيئة الـWorker
+ * (`env.DB`). وهذا يعني أن القاعدة لا تُعرَّض للإنترنت أصلاً — لا سطح
+ * هجوم ولا جدار ناري يُضبط ولا اتصالٌ يُعدّ.
  *
- * `PrismaService` بقي اسماً للنوع حتى لا تتغيّر توقيعات عشرين وحدة
- * لأجل تبديل طبقة نقل.
+ * والثمن مدفوع في مكان آخر وموثَّق حيث يقع: لا معاملات تفاعلية (انظر
+ * `common/batch.ts`)، ولا أنواع معدودة (قيود CHECK بدلها)، ولا محفِّزات
+ * مؤجَّلة (الفحص عند ختم كل عملية مخزون).
+ *
+ * `PrismaService` بقي اسماً للنوع حتى لا تتغيّر توقيعات عشرين وحدة.
  */
 export type PrismaService = PrismaClient;
 
-export function makePrisma(connectionString: string): PrismaClient {
-  if (!connectionString) {
-    throw new Error('DATABASE_URL غير مضبوط — لا إقلاع بلا قاعدة بيانات.');
+/** الشكل الأدنى من ربط D1 — بلا استيراد أنواع Cloudflare في شيفرة مشتركة */
+export interface D1Binding {
+  prepare(query: string): unknown;
+  batch(statements: unknown[]): Promise<unknown>;
+  exec(query: string): Promise<unknown>;
+}
+
+export function makePrisma(db: D1Binding): PrismaClient {
+  if (!db) {
+    throw new Error('ربط قاعدة D1 غير موجود — لا إقلاع بلا قاعدة بيانات.');
   }
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  return new PrismaClient({ adapter: new PrismaD1(db as never) });
 }

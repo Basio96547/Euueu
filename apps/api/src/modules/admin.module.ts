@@ -3,6 +3,7 @@ import { OrdersService } from './orders.module.js';
 import { NotificationsService } from './notifications.service.js';
 import { ReservationSweeper } from './reservations.sweeper.js';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 
 type Outcome = 'CONFIRMED' | 'NO_ANSWER' | 'RESCHEDULE' | 'ADDRESS_FIXED' | 'CANCELLED';
 
@@ -63,22 +64,22 @@ export class AdminService {
         if (!reserved && available < it.qty) throw Errors.outOfStock(it.variant.publicId, available);
       }
 
-      const updated = await this.prisma.$transaction(async (tx) => {
-        const o = await tx.order.update({
+      await runBatch(this.prisma, [
+        this.prisma.order.update({
           where: { id: order.id },
           data: {
             status: 'PROCESSING', confirmedAt: new Date(),
             confirmationNotes: b.notes ?? 'WHATSAPP_SELF_CONFIRM',
           },
-        });
-        await tx.orderStatusHistory.create({
+        }),
+        this.prisma.orderStatusHistory.create({
           data: {
             orderId: order.id, fromStatus: 'PENDING_CONFIRMATION', toStatus: 'PROCESSING',
             actorType: 'OPS', source: 'ADMIN',
           },
-        });
-        return o;
-      });
+        }),
+      ]);
+      const updated = { orderNo: order.orderNo, status: 'PROCESSING' };
 
       await this.notify.send({
         type: 'order.confirmed', level: 'P1', to: order.shippingAddress.phone, entityId: no,
@@ -193,22 +194,22 @@ export class AdminService {
         'Release existing reservations first');
     }
 
-    const cleared = await this.prisma.$transaction(async (tx) => {
-      const ids = product.variants.map((v) => v.id);
-      const before = product.variants.flatMap((v) => v.levels).reduce((a, l) => a + l.onHand, 0);
-      await tx.inventoryLevel.updateMany({
+    const ids = product.variants.map((v) => v.id);
+    const cleared = product.variants.flatMap((v) => v.levels).reduce((a, l) => a + l.onHand, 0);
+
+    await runBatch(this.prisma, [
+      this.prisma.inventoryLevel.updateMany({
         where: { variantId: { in: ids } },
         data: { onHand: 0, version: { increment: 1 } },
-      });
-      await tx.product.update({ where: { id: product.id }, data: { isDemo: false } });
-      await tx.auditLog.create({
+      }),
+      this.prisma.product.update({ where: { id: product.id }, data: { isDemo: false } }),
+      this.prisma.auditLog.create({
         data: {
           action: 'catalog.promote', entityType: 'products', entityId: product.id,
-          diff: { slug, isDemo: { from: true, to: false }, demoStockCleared: before },
+          diff: { slug, isDemo: { from: true, to: false }, demoStockCleared: cleared },
         },
-      });
-      return before;
-    });
+      }),
+    ]);
 
     return {
       data: {
@@ -297,25 +298,27 @@ export class AdminService {
   }
 
   private async release(orderId: string, to: 'CANCELLED') {
-    await this.prisma.$transaction(async (tx) => {
-      const holds = await tx.inventoryReservation.findMany({ where: { orderId } });
-      for (const h of holds) {
-        await tx.inventoryLevel.updateMany({
-          where: { variantId: h.variantId, warehouseId: h.warehouseId },
-          data: { reserved: { decrement: h.qty }, version: { increment: 1 } },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            variantId: h.variantId, warehouseId: h.warehouseId,
-            reason: 'RELEASE', qtyDelta: h.qty, refType: 'order', refId: orderId,
-          },
-        });
-      }
-      await tx.inventoryReservation.deleteMany({ where: { orderId } });
-      await tx.order.update({ where: { id: orderId }, data: { status: to } });
-      await tx.orderStatusHistory.create({
-        data: { orderId, toStatus: to, actorType: 'SYSTEM', source: 'SYSTEM' },
-      });
-    });
+    const holds = await this.prisma.inventoryReservation.findMany({ where: { orderId } });
+
+    const writes: any[] = [];
+    for (const h of holds) {
+      writes.push(this.prisma.inventoryLevel.updateMany({
+        where: { variantId: h.variantId, warehouseId: h.warehouseId },
+        data: { reserved: { decrement: h.qty }, version: { increment: 1 } },
+      }));
+      writes.push(this.prisma.inventoryMovement.create({
+        data: {
+          variantId: h.variantId, warehouseId: h.warehouseId,
+          reason: 'RELEASE', qtyDelta: h.qty, refType: 'order', refId: orderId,
+        },
+      }));
+    }
+    writes.push(this.prisma.inventoryReservation.deleteMany({ where: { orderId } }));
+    writes.push(this.prisma.order.update({ where: { id: orderId }, data: { status: to } }));
+    writes.push(this.prisma.orderStatusHistory.create({
+      data: { orderId, toStatus: to, actorType: 'SYSTEM', source: 'SYSTEM' },
+    }));
+
+    await runBatch(this.prisma, writes);
   }
 }

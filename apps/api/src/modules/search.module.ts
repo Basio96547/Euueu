@@ -1,10 +1,18 @@
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
-import { expandQuery, normalizeAr, buildSynonyms, categoriesForQuery } from '../common/arabic.js';
+import { expandQuery, normalizeAr, categoriesForQuery } from '../common/arabic.js';
 
-const MEILI = process.env.MEILI_HOST;
-const MEILI_KEY = process.env.MEILI_MASTER_KEY ?? '';
-const INDEX = 'products';
+/**
+ * البحث — الفصل 6.
+ *
+ * كان محركان: Meilisearch حين يُهيَّأ، ومسار احتياط على القاعدة. وحُذف
+ * الأول: لا خادم بحث داخل Cloudflare، وإبقاء شيفرته يُوهم بخيارٍ لا وجود
+ * له. والاحتياط لم يكن احتياطاً بل هو المحرك: أُثبت في الفحص أنه يعطي
+ * النتائج نفسها في كل استعلام — «ايفون» و«آيفون» و«جوال» و`ZA/A`.
+ *
+ * التطبيع والمرادفات وترتيب النتائج كما هي: هي التي تصنع البحث العربي،
+ * لا المحرك.
+ */
 
 export class SearchService {
   constructor(private prisma: PrismaService) {}
@@ -38,74 +46,18 @@ export class SearchService {
     });
   }
 
+  /**
+   * إعادة الفهرسة.
+   * لا فهرس خارجياً يُبنى: البحث يقرأ الكتالوج مباشرة. والمسار باقٍ لأن
+   * النشر ينادِيه، وردُّه يقول ما جرى بصدق بدل أن يدّعي عملاً لم يقع.
+   */
   async reindex() {
     const docs = await this.documents();
-    if (!MEILI) {
-      return { engine: 'postgres' as const, indexed: docs.length, note: 'Meilisearch غير مهيّأ — يعمل مسار الاحتياط' };
-    }
-    const h = { 'content-type': 'application/json', authorization: `Bearer ${MEILI_KEY}` };
-    await fetch(`${MEILI}/indexes`, { method: 'POST', headers: h, body: JSON.stringify({ uid: INDEX, primaryKey: 'id' }) });
-    await fetch(`${MEILI}/indexes/${INDEX}/settings`, {
-      method: 'PATCH', headers: h,
-      body: JSON.stringify({
-        searchableAttributes: ['name_ar', 'name_norm', 'brand', 'part_code'],
-        filterableAttributes: ['brand', 'category', 'price_usd_cents', 'device_origin',
-          'part_code', 'dual_sim', 'condition', 'storage_gb', 'in_stock', 'is_demo'],
-        sortableAttributes: ['price_usd_cents'],
-        synonyms: buildSynonyms(),
-        /* العتبة تُقاس بالبايت لا بالحرف، والحرف العربي بايتان.
-           فـ«ايفون» خمسة أحرف تُحسب عشرة بايتات، فتنال تسامحاً مصمَّماً
-           لكلمة من عشرة أحرف — ولذلك كانت تطابق «إنفينكس».
-           12 بايت ≈ ستة أحرف عربية: الحد الذي يمنع هذا الخلط.
-
-           الثمن صريح: الاسم اللاتيني القصير يفقد تسامحه، فـ«Lightening»
-           لم تعد تجد «Lightning». وهذا مقبول هنا — الأسماء اللاتينية
-           تُنسخ أو تُختار من المرشّحات، والعربية تُكتب بالأصابع؛
-           والنتيجة الكاذبة تُفقد الثقة بالبحث كله لا بنتيجة واحدة. */
-        typoTolerance: { enabled: true, minWordSizeForTypos: { oneTypo: 12, twoTypos: 18 } },
-      }),
-    });
-    await fetch(`${MEILI}/indexes/${INDEX}/documents`, { method: 'PUT', headers: h, body: JSON.stringify(docs) });
-    return { engine: 'meilisearch' as const, indexed: docs.length };
+    return { engine: 'd1' as const, indexed: docs.length, note: 'البحث يقرأ الكتالوج مباشرة — لا فهرس منفصل' };
   }
 
   async search(q: string, f: { origin?: string; condition?: string; maxUsd?: number }) {
     const demo = (process.env.DEMO_MODE ?? 'true') === 'true';
-
-    if (MEILI) {
-      const base: string[] = [];
-      if (!demo) base.push('is_demo = false');
-      if (f.origin) base.push(`device_origin = "${f.origin}"`);
-      if (f.condition) base.push(`condition = "${f.condition}"`);
-      if (f.maxUsd) base.push(`price_usd_cents <= ${f.maxUsd}`);
-
-      const hit = async (qText: string, extra: string[] = []) => {
-        const r = await fetch(`${MEILI}/indexes/${INDEX}/search`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${MEILI_KEY}` },
-          body: JSON.stringify({ q: qText, filter: [...base, ...extra], limit: 24 }),
-        });
-        return (await r.json()) as { hits: Array<{ id: string }>; estimatedTotalHits: number };
-      };
-
-      const generic = categoriesForQuery(q);
-      if (!generic.length) {
-        const body = await hit(q);
-        return { engine: 'meilisearch', hits: body.hits, total: body.estimatedTotalHits };
-      }
-
-      /* المصطلح العام يفتح فئةً كاملة، لكن تفريغ نص الاستعلام يفقد
-         ما يحمل الكلمة في اسمه ويقع خارج تلك الفئة — «شاحن شمسي»
-         مصنَّف تحت الطاقة لا الشواحن، ومن يكتب «شاحن» يريده أيضاً.
-         فيُجمع المساران: الفئة ثم الاسم، بلا تكرار. */
-      const [byCat, byName] = await Promise.all([
-        hit('', [`category IN [${generic.map((c) => `"${c}"`).join(', ')}]`]),
-        hit(q),
-      ]);
-      const seen = new Set(byCat.hits.map((h) => h.id));
-      const merged = [...byCat.hits, ...byName.hits.filter((h) => !seen.has(h.id))];
-      return { engine: 'meilisearch', hits: merged.slice(0, 24), total: merged.length };
-    }
 
     const terms = expandQuery(q);
     const genericCats = categoriesForQuery(q);
@@ -128,7 +80,7 @@ export class SearchService {
       Number(b.in_stock) - Number(a.in_stock) ||
       weight(a.category) - weight(b.category) ||
       a.price_usd_cents - b.price_usd_cents);
-    return { engine: 'postgres', hits: hits.slice(0, 24), total: hits.length };
+    return { engine: 'd1', hits: hits.slice(0, 24), total: hits.length };
   }
 }
 

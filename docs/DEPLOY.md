@@ -22,63 +22,65 @@ pnpm run build:worker     # يبني الأربعة ويجمعها في dist-wor
 npx wrangler deploy       # أو ادفع إلى main فيتولّى deploy.yml النشر
 ```
 
-## ما ينقص لتشتغل الواجهة البرمجية: قاعدة بيانات
+## قاعدة البيانات: D1
 
-الـWorker يعمل الآن، والصفحات الساكنة والتطبيقان يُخدَمون منه. لكن أي شاشة
-تحتاج بيانات (السلة، الدخول، الطلبات، اللوحة) تحتاج **PostgreSQL يصل إليه
-الـWorker عبر TCP**. وبلا `DATABASE_URL` يردّ المسار بـ`503` ورسالةٍ صريحة
-تقول ما ينقص بالضبط — لا فشلاً غامضاً.
+القاعدة **ربطٌ لا رابط اتصال**: لا منفذ مفتوح على الإنترنت، ولا جدار ناري
+يُضبط، ولا كلمة سرّ تُدوَّر. الربط في `wrangler.jsonc`:
 
-### لماذا PostgreSQL لا D1
-
-D1 قاعدة SQLite داخل Cloudflare، وهي مغرية لأن كل شيء يبقى في مكان واحد.
-والثمن الذي لا يُدفع مرة واحدة:
-
-- **لا معاملات تفاعلية.** محوّل D1 في Prisma لا يدعم `$transaction` بدالّة.
-  ومنطق المخزون كله مبني عليها: اقرأ المتاح ← اخصم ← اكتب في الدفتر، في
-  معاملة واحدة. فكّها يعيد بالضبط العيوب الأربعة التي كشفها الفحص وأُصلحت:
-  ثلاثة زبائن يظنّون آخر جهاز لهم، وخصمٌ مضاعف، وبيعُ ما سُلّم فعلاً.
-- **لا محفِّزات كالمكتوبة.** محفِّز تطابق المخزون هو الحارس الأخير الذي رفض
-  «انحراف مخزون: 1 وحدة بحالة IN_STOCK مقابل on_hand = 8». نقله إلى الشيفرة
-  يجعله رجاءً لا قيداً.
-- **لا أنواع معدودة.** ثلاثون `ENUM` في 43 نموذجاً تصير نصوصاً حرّة.
-
-فإن أُريد D1 رغم ذلك فهو قرارٌ يُتخذ بعِلم: يعني إعادة كتابة طبقة البيانات
-وفقدان الثوابت التي تمنع بيع ما لا يُملَك.
-
-### الخيار العملي: Postgres مُدار بطبقة مجانية
-
-أي مزوّد يعطي رابط اتصال TCP يعمل — Neon أو Supabase أو Prisma Postgres.
-الخطوات واحدة:
-
-```bash
-# 1) أنشئ القاعدة عند المزوّد وانسخ رابط الاتصال
-# 2) طبّق الهجرات عليها من جهازك
-cd apps/api
-DATABASE_URL="postgresql://…" npx prisma migrate deploy
-DATABASE_URL="postgresql://…" pnpm run seed        # اختياري: بذرة الكتالوج
-
-# 3) اضبط السرّ على الـWorker (لا يُكتب في أي ملف)
-npx wrangler secret put DATABASE_URL
-npx wrangler secret put JWT_SECRET                  # نصّ عشوائي طويل
+```jsonc
+"d1_databases": [
+  { "binding": "DB", "database_name": "talisham",
+    "database_id": "…", "migrations_dir": "apps/api/prisma/migrations" }
+]
 ```
 
-بعدها `https://talisham.com/api/v1/ready` يردّ `200`.
+### الترحيل والبذر
 
-**Hyperdrive لاحقاً:** الـWorker يفتح اتصالاً لكل طلب (كائنات الشبكة في
-workerd لا تعبر حدود الطلب، وتجميعها بينها يُعلِّق الطلب التالي). لتقليل زمن
-الاتصال أنشئ ربط Hyperdrive واجعل `DATABASE_URL` يشير إليه — بلا تغيير سطر
-واحد في الشيفرة.
+```bash
+# محلياً
+pnpm run db:migrate:local
+pnpm run db:seed
+
+# على الإنتاج (يجري آلياً مع كل نشر إلى main)
+pnpm run db:migrate
+pnpm run db:seed:remote        # مرة واحدة عند الإطلاق
+```
+
+الترحيل **قبل** النشر لا بعده: نصٌّ جديد يقرأ عموداً لم يُنشأ بعدُ يفشل عند
+أول طلب، وترتيب خطوات `deploy.yml` يمنع تلك النافذة.
+
+### تعديل المخطَّط
+
+```bash
+# 1) عدّل prisma/schema.prisma
+# 2) ولّد الترحيل واحقن فيه القيود والمحفِّزات
+cd apps/api && pnpm run migration:new
+# 3) سمِّ ملف الترحيل بتاريخه وضعه في مجلده تحت prisma/migrations/
+```
+
+الحقن خطوة صريحة لأن SQLite لا يقبل إضافة `CHECK` إلى جدول قائم: القيد
+يجب أن يولد مع الجدول. والمصدر `prisma/enums.json` وقائمة القيود المكتوبة
+في `prisma/apply-constraints.mjs`.
+
+### ما يجب معرفته عن SQLite هنا
+
+| الفرق | ما فُعل | أين |
+| --- | --- | --- |
+| لا معاملات تفاعلية | كل الكتابات دفعات ذرّية، والحَكَم قيود القاعدة | `src/common/batch.ts` |
+| لا محفِّزات مؤجَّلة | الفحص عند تحديث `version` في `inventory_levels`، والترتيب جزء من العقد | `prisma/sql/constraints.sql` |
+| لا أنواع معدودة | 62 قيد `CHECK` مولَّد من الأنواع | `prisma/apply-constraints.mjs` |
+| `GLOB` الطويل مرفوض | فحص بنيوي بـ`substr` وصنفٍ منفيّ واحد | نفسه |
 
 ## الأسرار
 
 | السرّ | لماذا | بدونه |
 | --- | --- | --- |
-| `DATABASE_URL` | القاعدة | كل مسار بيانات يردّ 503 |
 | `JWT_SECRET` | توقيع الجلسات | مفتاح تطوير معروف — لا يُترك في الإنتاج |
 | `WHATSAPP_PROVIDER_TOKEN` + `WHATSAPP_PHONE_ID` | رسائل واتساب الفعلية | الرسائل تُكتب في السجل بدل إرسالها |
 | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` | إشعارات المتصفح | زر التفعيل يعمل ولا يصل شيء |
-| `S3_ENDPOINT` + مفاتيحه (أو ربط R2) | صور المنتجات | الرفع يفشل: لا قرص محلياً في Worker |
+
+القاعدة والتخزين والمخزن المؤقت **روابط لا أسرار**: `DB` و`MEDIA` و`KV`
+معرَّفة في `wrangler.jsonc`، ولا مفتاح يُدار لأيٍّ منها.
 
 ```bash
 npx wrangler secret put WHATSAPP_PROVIDER_TOKEN
@@ -109,21 +111,21 @@ npx wrangler secret put WHATSAPP_PROVIDER_TOKEN
 # الموقع وحده — يعمل من بذرة الكتالوج بلا قاعدة بيانات
 pnpm --filter @talisham/site dev
 
-# الواجهة على Node (نفس شيفرة الـWorker)
-pnpm --filter @talisham/api dev
-
-# الـWorker كاملاً كما يعمل في الإنتاج
-pnpm run build:worker && pnpm run worker:dev
+# كل شيء كما يعمل في الإنتاج
+pnpm run build:worker
+pnpm run db:migrate:local && pnpm run db:seed
+pnpm run worker:dev
 ```
 
 للـWorker محلياً أنشئ `.dev.vars` (مُستبعَد من Git):
 
 ```
-DATABASE_URL=postgresql://postgres@127.0.0.1:5432/talisham
 JWT_SECRET=dev_only
 NODE_ENV=development
 RATE_LIMIT_FACTOR=100
 ```
+
+ولا رابط قاعدة فيه: `wrangler dev --local` يهيّئ D1 محلية من الترحيلات نفسها.
 
 `RATE_LIMIT_FACTOR` يرفع سقف الحدود في التطوير وحده — ويُتجاهَل في الإنتاج
 مهما ضُبط، فالقاعدة هناك ليست محلّ تفاوض.
@@ -141,8 +143,9 @@ API_BASE=http://127.0.0.1:8787/api/v1 pnpm run test:e2e
 
 | المكوّن | البديل |
 | --- | --- |
-| Meilisearch | المسار الاحتياطي على PostgreSQL يعطي النتائج نفسها؛ ويُربط محرك مُستضاف لاحقاً بضبط `MEILI_HOST` |
-| الصور على القرص المحلي | R2 أو أي تخزين متوافق مع S3 |
-| Redis | Cloudflare KV هو السائق داخل Worker |
+| Meilisearch | حُذف — البحث يقرأ الكتالوج مباشرة، وأُثبت في الفحص أنه يعطي النتائج نفسها في كل استعلام |
+| الصور على القرص المحلي | حاوية R2 مربوطة، وتُخدَم من `/media/*` على الأصل نفسه |
+| Redis | Cloudflare KV |
+| خادم Node | لا وجود له: منفَّذ واحد لِما يُختبَر ولِما يُنشَر |
 
 </div>

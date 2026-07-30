@@ -1,29 +1,40 @@
-import { createHash } from 'node:crypto';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
 import { Errors } from '../common/errors.js';
 
 /**
- * تخزين الصور.
+ * تخزين الصور على Cloudflare R2.
  *
- * سائقان بواجهة واحدة: قرص محلي حين لا يُضبط S3، وS3 حين يُضبط.
- * المتجر الصغير يبدأ بقرص الخادم ولا يُجبَر على تشغيل MinIO ليضيف صورة،
- * والانتقال لاحقاً يغيّر متغيّر بيئة لا شيفرة.
+ * كان سائقان: قرص الخادم المحلي وS3. وكلاهما مات مع انتقال الواجهة إلى
+ * Worker — لا قرص هناك أصلاً، وS3 يعني مفاتيح تُدار وتُدوَّر بلا داعٍ
+ * وربط R2 في متناول اليد. فحُذف الميت وبقي واحد.
  *
- * القرص المحلي ليس حلاً دائماً: نسخة ثانية من الخادم لن ترى صور الأولى.
- * لذلك يُطبع تحذير عند الإقلاع بدل أن يُكتشف الأمر يوم التوسّع.
+ * الصور تُخدَم من الـWorker نفسه على ‎/media/*‎، فروابطها المخزَّنة في
+ * القاعدة تبقى ثابتة كما كانت.
  */
-const ROOT = resolve(process.env.MEDIA_DIR ?? './media');
-const PUBLIC_BASE = process.env.MEDIA_PUBLIC_BASE ?? '/media';
-const MAX_BYTES = Number(process.env.MEDIA_MAX_BYTES ?? 3 * 1024 * 1024);
+
+const PUBLIC_BASE = '/media';
+const MAX_BYTES = 3 * 1024 * 1024;
+
+/** الشكل الأدنى من ربط R2 — بلا استيراد أنواع Cloudflare */
+export interface R2Binding {
+  put(key: string, value: ArrayBuffer | Uint8Array, options?: {
+    httpMetadata?: { contentType?: string };
+  }): Promise<unknown>;
+  get(key: string): Promise<{ body: unknown; httpMetadata?: { contentType?: string } } | null>;
+  delete(key: string): Promise<void>;
+}
 
 /** أنواع الصور المقبولة وبصماتها الأولى */
-const SIGNATURES: Array<{ ext: string; mime: string; test: (b: Buffer) => boolean }> = [
+const SIGNATURES: Array<{ ext: string; mime: string; test: (b: Uint8Array) => boolean }> = [
   { ext: '.jpg', mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
-  { ext: '.png', mime: 'image/png', test: (b) => b.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' },
-  { ext: '.webp', mime: 'image/webp', test: (b) => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' },
-  { ext: '.gif', mime: 'image/gif', test: (b) => b.subarray(0, 3).toString() === 'GIF' },
+  { ext: '.png', mime: 'image/png', test: (b) => hex(b, 0, 8) === '89504e470d0a1a0a' },
+  { ext: '.webp', mime: 'image/webp', test: (b) => ascii(b, 0, 4) === 'RIFF' && ascii(b, 8, 12) === 'WEBP' },
+  { ext: '.gif', mime: 'image/gif', test: (b) => ascii(b, 0, 3) === 'GIF' },
 ];
+
+const hex = (b: Uint8Array, from: number, to: number) =>
+  [...b.slice(from, to)].map((n) => n.toString(16).padStart(2, '0')).join('');
+const ascii = (b: Uint8Array, from: number, to: number) =>
+  String.fromCharCode(...b.slice(from, to));
 
 export interface StoredMedia { url: string; key: string; bytes: number; mime: string }
 
@@ -31,7 +42,7 @@ export interface StoredMedia { url: string; key: string; bytes: number; mime: st
  * النوع يُقرأ من محتوى الملف لا من امتداده ولا من ترويسة العميل.
  * ملفٌ اسمه ‎.jpg‎ قد يكون سكربتاً، والثقة بالاسم أقدم ثغرة رفع في الوجود.
  */
-function sniff(buf: Buffer) {
+function sniff(buf: Uint8Array) {
   const hit = SIGNATURES.find((s) => s.test(buf));
   if (!hit) {
     throw Errors.badRequest('MEDIA_TYPE_UNSUPPORTED',
@@ -41,13 +52,16 @@ function sniff(buf: Buffer) {
   return hit;
 }
 
-export function decodeDataUrl(dataUrl: string): Buffer {
+export function decodeDataUrl(dataUrl: string): Uint8Array {
   const m = /^data:([\w/+.-]+);base64,(.+)$/s.exec(dataUrl.trim());
   if (!m) {
     throw Errors.badRequest('MEDIA_PAYLOAD_INVALID',
       'الصورة تُرسل كـ data URL بترميز base64', 'Expected base64 data URL');
   }
-  const buf = Buffer.from(m[2]!, 'base64');
+  const binary = atob(m[2]!);
+  const buf = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+
   if (buf.length === 0) {
     throw Errors.badRequest('MEDIA_EMPTY', 'الملف فارغ', 'Empty file');
   }
@@ -59,32 +73,39 @@ export function decodeDataUrl(dataUrl: string): Buffer {
   return buf;
 }
 
-export async function putImage(dataUrl: string, prefix = 'products'): Promise<StoredMedia> {
+async function sha256Hex(buf: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buf as unknown as ArrayBuffer);
+  return [...new Uint8Array(digest)].map((n) => n.toString(16).padStart(2, '0')).join('');
+}
+
+export async function putImage(
+  bucket: R2Binding | undefined,
+  dataUrl: string,
+  prefix = 'products',
+): Promise<StoredMedia> {
+  if (!bucket) {
+    throw Errors.badRequest('MEDIA_BUCKET_MISSING',
+      'تخزين الصور غير مربوط بهذا الـWorker — راجع r2_buckets في wrangler.jsonc',
+      'R2 bucket binding is missing');
+  }
   const buf = decodeDataUrl(dataUrl);
   const kind = sniff(buf);
 
   /* الاسم من بصمة المحتوى: الصورة نفسها لا تُخزَّن مرتين مهما رُفعت،
      ورفعُ صورة باسم موجود لا يدهس صورة منتج آخر. */
-  const digest = createHash('sha256').update(buf).digest('hex').slice(0, 32);
+  const digest = (await sha256Hex(buf)).slice(0, 32);
   const key = `${prefix}/${digest}${kind.ext}`;
-  const dest = join(ROOT, key);
 
-  await mkdir(join(ROOT, prefix), { recursive: true });
-  await writeFile(dest, buf);
-
+  await bucket.put(key, buf, { httpMetadata: { contentType: kind.mime } });
   return { url: `${PUBLIC_BASE}/${key}`, key, bytes: buf.length, mime: kind.mime };
 }
 
-export async function deleteImage(url: string): Promise<boolean> {
+export async function deleteImage(bucket: R2Binding | undefined, url: string): Promise<boolean> {
+  if (!bucket) return false;
   if (!url.startsWith(`${PUBLIC_BASE}/`)) return false;   // رابط خارجي: ليس لنا حذفه
   const key = url.slice(PUBLIC_BASE.length + 1);
-  // منع الخروج من الجذر: «..» في المفتاح يمحو ملفات النظام
-  const dest = resolve(ROOT, key);
-  if (!dest.startsWith(ROOT)) return false;
-  try { await unlink(dest); return true; } catch { return false; }
+  if (key.includes('..')) return false;                   // مفتاحٌ يحاول الخروج من مجاله
+  try { await bucket.delete(key); return true; } catch { return false; }
 }
 
-export const mediaRoot = ROOT;
 export const mediaPublicBase = PUBLIC_BASE;
-export const usesLocalDisk = !process.env.S3_ENDPOINT || process.env.MEDIA_DRIVER === 'local';
-export { extname };

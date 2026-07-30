@@ -13,7 +13,16 @@
 # العنوان قابل للضبط: الفحص نفسه يُشغَّل على Node محلياً وعلى الـWorker
 #   API_BASE=http://127.0.0.1:8790/api/v1 bash scripts/e2e.sh
 API=${API_BASE:-http://localhost:4000/api/v1}
-PSQL=${PSQL_CMD:-"psql -h /tmp -U postgres -d talisham -t"}
+# قراءة القاعدة للتأكّد من الأثر لا من الجواب: الواجهة قد تقول «تمّ»
+# والدفتر لا يوافقها. D1 يُقرأ بأداته، محلياً افتراضاً و‎--remote‎ عند الحاجة.
+D1_ENV=${D1_ENV:---local}
+dbq() { npx wrangler d1 execute talisham "$D1_ENV" --command="$1" --json 2>/dev/null \
+  | python3 -c "import json,sys
+try:
+    r=json.load(sys.stdin)[0]['results']
+    print(' '.join(str(v) for row in r for v in row.values()))
+except Exception:
+    print('')"; }
 SKU=SMA35-128-NVY-GULF
 ok(){ printf '  \033[32m✓\033[0m %s\n' "$1"; }
 no(){ printf '  \033[31m✗\033[0m %s — %s\n' "$1" "$2"; }
@@ -144,7 +153,7 @@ curl -s -X POST "$API/admin/returns/$RN/transition" -H "$AH" -H 'content-type: a
 chk "IMEI غير مطابق يرفض الإرجاع" "$(curl -s -X POST "$API/admin/returns/$RN/transition" -H "$AH" -H 'content-type: application/json' -d '{"to":"INSPECTED","imei":"356938035643809"}')" 'IMEI_MISMATCH'
 
 echo ""
-echo "  المخزون بعد الرفض: $($PSQL -c "select 'on_hand='||on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU';"|tr -d ' ')"
+echo "  المخزون بعد الرفض: on_hand=$(dbq "select on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU'")"
 
 echo "══ إرجاع ناجح: IMEI مطابق ← إعادة للرفّ ← استرداد ══"
 C2=$(curl -s -X POST $API/carts|grep -o '"cartToken":"[^"]*"'|cut -d'"' -f4)
@@ -156,8 +165,8 @@ curl -s -X POST "$API/admin/orders/$N2/confirm" -H "$AH" -H 'content-type: appli
 curl -s -X POST "$API/courier/orders/$N2/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$N2/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"OUT_FOR_DELIVERY"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$N2/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: f2-$RANDOM" -d "{\"amountSyp\":$D2}" >/dev/null
-BEFORE=$($PSQL -c "select on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU';"|tr -d ' ')
-IMEI=$($PSQL -c "select du.imei from device_units du join order_items oi on oi.id=du.order_item_id join orders o on o.id=oi.order_id where o.order_no='$N2';"|tr -d ' ')
+BEFORE=$(dbq "select on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU'")
+IMEI=$(dbq "select du.imei from device_units du join order_items oi on oi.id=du.order_item_id join orders o on o.id=oi.order_id where o.order_no='$N2'")
 echo "  المخزون بعد البيع: $BEFORE · IMEI المُباع: $IMEI"
 R2=$(curl -s -X POST $API/returns -H "$UH" -H 'content-type: application/json' -d "{\"orderNo\":\"$N2\",\"reason\":\"DEFECTIVE\",\"imei\":\"$IMEI\"}")
 RN2=$(echo "$R2"|grep -o 'RT-[0-9-]*')
@@ -165,17 +174,17 @@ for st in APPROVED PICKUP_SCHEDULED RECEIVED; do
   curl -s -X POST "$API/admin/returns/$RN2/transition" -H "$AH" -H 'content-type: application/json' -d "{\"to\":\"$st\"}" >/dev/null; done
 chk "الفحص بـIMEI مطابق" "$(curl -s -X POST "$API/admin/returns/$RN2/transition" -H "$AH" -H 'content-type: application/json' -d "{\"to\":\"INSPECTED\",\"imei\":\"$IMEI\",\"note\":\"العلبة كاملة\"}")" '"imeiMatched":true'
 chk "الاكتمال" "$(curl -s -X POST "$API/admin/returns/$RN2/transition" -H "$AH" -H 'content-type: application/json' -d '{"to":"COMPLETED"}')" '"state":"COMPLETED"'
-AFTER=$($PSQL -c "select on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU';"|tr -d ' ')
+AFTER=$(dbq "select on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU'")
 if [ "$AFTER" -eq $((BEFORE+1)) ]; then ok "الجهاز عاد للرفّ ($BEFORE ← $AFTER)"; else no "الرفّ" "$BEFORE ← $AFTER"; fi
-chk "الوحدة عادت IN_STOCK" "$($PSQL -c "select state from device_units where imei='$IMEI';")" 'IN_STOCK'
+chk "الوحدة عادت IN_STOCK" "$(dbq "select state from device_units where imei='$IMEI'")" 'IN_STOCK'
 chk "أُنشئ استرداد" "$(curl -s "$API/returns/$RN2")" '"amountSyp"'
 chk "الصرف قبل الاكتمال ممنوع لطلب آخر" "$(curl -s -X POST "$API/admin/returns/$RN/disburse" -H "$AH" -H 'content-type: application/json' -d '{}')" 'NOT_FOUND\|RETURN_NOT_COMPLETED'
 chk "صرف النقد" "$(curl -s -X POST "$API/admin/returns/$RN2/disburse" -H "$AH" -H 'content-type: application/json' -d '{"note":"نقداً من المعرض"}')" 'DISBURSED'
 chk "الصرف مرتين ممنوع" "$(curl -s -X POST "$API/admin/returns/$RN2/disburse" -H "$AH" -H 'content-type: application/json' -d '{}')" 'INVALID_TRANSITION'
-chk "حالة الطلب صارت RETURNED" "$($PSQL -c "select status||' '||payment_status from orders where order_no='$N2';")" 'RETURNED REFUNDED'
+chk "حالة الطلب صارت RETURNED" "$(dbq "select status, payment_status from orders where order_no='$N2'")" 'RETURNED REFUNDED'
 
 echo "══ سلامة الثوابت ══"
-DRIFT=$($PSQL -c "select count(*) from inventory_levels l where l.reserved <> coalesce((select sum(qty) from inventory_reservations r where r.variant_id=l.variant_id and r.warehouse_id=l.warehouse_id),0);"|tr -d ' ')
+DRIFT=$(dbq "select count(*) from inventory_levels l where l.reserved <> coalesce((select sum(qty) from inventory_reservations r where r.variant_id=l.variant_id and r.warehouse_id=l.warehouse_id),0)")
 [ "$DRIFT" = "0" ] && ok "لا انحراف في عدّاد الحجز" || no "انحراف الحجز" "$DRIFT"
-MIS=$($PSQL -c "select count(*) from inventory_levels l where (select count(*) from device_units d where d.variant_id=l.variant_id and d.warehouse_id=l.warehouse_id and d.state='IN_STOCK')>0 and (select count(*) from device_units d where d.variant_id=l.variant_id and d.warehouse_id=l.warehouse_id and d.state='IN_STOCK') <> l.on_hand;"|tr -d ' ')
+MIS=$(dbq "select count(*) from inventory_levels l where (select count(*) from device_units d where d.variant_id=l.variant_id and d.warehouse_id=l.warehouse_id and d.state='IN_STOCK')>0 and (select count(*) from device_units d where d.variant_id=l.variant_id and d.warehouse_id=l.warehouse_id and d.state='IN_STOCK') <> l.on_hand")
 [ "$MIS" = "0" ] && ok "الوحدات تطابق on_hand" || no "تطابق الوحدات" "$MIS"

@@ -2,6 +2,7 @@ import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CouponsService } from './coupons.module.js';
 import { Errors } from '../common/errors.js';
+import { runBatch } from '../common/batch.js';
 import { cashDue } from '../common/money.js';
 import { randomUUID } from 'node:crypto';
 
@@ -58,61 +59,71 @@ export class CartService {
     const level = variant.levels[0];
     if (!level) throw Errors.outOfStock(variant.publicId, 0);
 
-    await this.prisma.$transaction(async (tx) => {
-      const held = await tx.inventoryReservation.findFirst({
-        where: { cartId: cart.id, variantId: variant.id, kind: 'SOFT_HOLD' },
-      });
-      const mine = held?.qty ?? 0;
-
-      // المتاح لهذه السلّة يشمل ما تحجزه هي أصلاً — وإلا مُنعت من زيادة كميتها بنفسها
-      const fresh = await tx.inventoryLevel.findFirst({
-        where: { variantId: variant.id, warehouseId: level.warehouseId },
-      });
-      const available = (fresh?.onHand ?? 0) - (fresh?.reserved ?? 0) + mine;
-      if (qty > available) throw Errors.outOfStock(variant.publicId, available);
-
-      const delta = qty - mine;
-      const expiresAt = new Date(Date.now() + SOFT_HOLD_MINUTES * 60_000);
-
-      if (qty === 0) {
-        await tx.cartItem.deleteMany({ where: { cartId: cart.id, variantId: variant.id } });
-        if (held) await tx.inventoryReservation.delete({ where: { id: held.id } });
-      } else {
-        await tx.cartItem.upsert({
-          where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
-          update: { qty },
-          create: {
-            cartId: cart.id, variantId: variant.id, qty,
-            unitPriceSnapshotUsdCents: variant.priceUsdCents,
-          },
-        });
-        // أي تفاعل مع السلة يجدّد المهلة — الزبون الحيّ لا يُسحب من تحته
-        if (held) await tx.inventoryReservation.update({ where: { id: held.id }, data: { qty, expiresAt } });
-        else {
-          await tx.inventoryReservation.create({
-            data: {
-              variantId: variant.id, warehouseId: level.warehouseId, kind: 'SOFT_HOLD',
-              qty, cartId: cart.id, expiresAt,
-            },
-          });
-        }
-      }
-
-      if (delta !== 0) {
-        await tx.inventoryLevel.updateMany({
-          where: { variantId: variant.id, warehouseId: level.warehouseId },
-          data: { reserved: { increment: delta }, version: { increment: 1 } },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            variantId: variant.id, warehouseId: level.warehouseId,
-            reason: delta > 0 ? 'RESERVE' : 'RELEASE',
-            qtyDelta: -delta,                 // سالب يخصم من المتاح، موجب يعيده
-            refType: 'cart', refId: cart.id,
-          },
-        });
-      }
+    const held = await this.prisma.inventoryReservation.findFirst({
+      where: { cartId: cart.id, variantId: variant.id, kind: 'SOFT_HOLD' },
     });
+    const mine = held?.qty ?? 0;
+
+    // المتاح لهذه السلّة يشمل ما تحجزه هي أصلاً — وإلا مُنعت من زيادة كميتها بنفسها
+    const fresh = await this.prisma.inventoryLevel.findFirst({
+      where: { variantId: variant.id, warehouseId: level.warehouseId },
+    });
+    const available = (fresh?.onHand ?? 0) - (fresh?.reserved ?? 0) + mine;
+    if (qty > available) throw Errors.outOfStock(variant.publicId, available);
+
+    const delta = qty - mine;
+    const expiresAt = new Date(Date.now() + SOFT_HOLD_MINUTES * 60_000);
+
+    /* الكتابات دفعةً واحدة.
+     *
+     * القراءة أعلاه تعطي رسالة خطأ مفهومة، وهي وحدها لا تكفي: بين
+     * القراءة والكتابة تمرّ سلّة أخرى. الحَكَم هو القاعدة — قيد
+     * `reserved <= on_hand` ومحفِّزه — والدفعة ذرّية فترتدّ كاملةً إن
+     * رُفضت. فما يصل الرفّ لا يُباع مرتين، ولو تسابق عليه اثنان.
+     */
+    const writes: any[] = [];
+
+    if (qty === 0) {
+      writes.push(this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, variantId: variant.id } }));
+      if (held) writes.push(this.prisma.inventoryReservation.delete({ where: { id: held.id } }));
+    } else {
+      writes.push(this.prisma.cartItem.upsert({
+        where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
+        update: { qty },
+        create: {
+          cartId: cart.id, variantId: variant.id, qty,
+          unitPriceSnapshotUsdCents: variant.priceUsdCents,
+        },
+      }));
+      // أي تفاعل مع السلة يجدّد المهلة — الزبون الحيّ لا يُسحب من تحته
+      if (held) {
+        writes.push(this.prisma.inventoryReservation.update({ where: { id: held.id }, data: { qty, expiresAt } }));
+      } else {
+        writes.push(this.prisma.inventoryReservation.create({
+          data: {
+            variantId: variant.id, warehouseId: level.warehouseId, kind: 'SOFT_HOLD',
+            qty, cartId: cart.id, expiresAt,
+          },
+        }));
+      }
+    }
+
+    if (delta !== 0) {
+      writes.push(this.prisma.inventoryLevel.updateMany({
+        where: { variantId: variant.id, warehouseId: level.warehouseId },
+        data: { reserved: { increment: delta }, version: { increment: 1 } },
+      }));
+      writes.push(this.prisma.inventoryMovement.create({
+        data: {
+          variantId: variant.id, warehouseId: level.warehouseId,
+          reason: delta > 0 ? 'RESERVE' : 'RELEASE',
+          qtyDelta: -delta,                 // سالب يخصم من المتاح، موجب يعيده
+          refType: 'cart', refId: cart.id,
+        },
+      }));
+    }
+
+    await runBatch(this.prisma, writes, () => Errors.outOfStock(variant.publicId, available));
 
     return this.summary(token);
   }
