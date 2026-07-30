@@ -65,10 +65,21 @@ export class CourierService {
     return { data: { orderNo: no, status: b.to } };
   }
 
-  /** تسجيل التحصيل النقدي — occurred_at من جهاز المندوب، received_at من الخادم */
+  /**
+   * تسجيل التحصيل النقدي — occurred_at من جهاز المندوب، received_at من الخادم.
+   *
+   * و`imeis` أرقامُ الأجهزة التي سُلِّمت فعلاً. كانت الوحدات تُختار
+   * بترتيب معرّفها: أوّلُ ما في الرفّ يُختَم «مبيعاً» ويُربط بالسطر، أياً
+   * كان الجهاز الذي وُضع في يد الزبون. فالكفالة تُفعَّل على غير جهازه،
+   * والتحقّق العام بالـIMEI يقول «غير موجود» لجهازٍ بِيع فعلاً، والمرتجع
+   * يُرفض لأن رقمه لا يطابق المسجَّل.
+   *
+   * وهذه ليست دقّةً محاسبية: في سوقٍ أكثرُه مستورَد يدوياً، رقمُ الجهاز
+   * هو الكفالة كلّها.
+   */
   async collect(
     no: string,
-    b: { amountSyp: number; occurredAt?: string; deviceId?: string; reasonCode?: string },
+    b: { amountSyp: number; occurredAt?: string; deviceId?: string; reasonCode?: string; imeis?: string[] },
     req: { user?: { sub: string } },
     key?: string,
   ) {
@@ -157,18 +168,60 @@ export class CourierService {
          WHERE variant_id = ${h.variantId} AND warehouse_id = ${h.warehouseId}`);
     }
 
+    /* أرقامٌ مُدخَلة: تُطابَق بالجهاز لا بالترتيب. والمطابقة قبل أي كتابة،
+       فرقمٌ واحد خاطئ يُسقط التحصيل كلّه ولا يُسلّم نصفه. */
+    const given = (b.imeis ?? []).map((x) => String(x).replace(/\D/g, '')).filter(Boolean);
+    const claimed = new Map<string, { id: string; variantId: string }>();
+    for (const imei of given) {
+      const u = await this.prisma.deviceUnit.findUnique({
+        where: { imei }, select: { id: true, variantId: true, state: true },
+      });
+      if (!u) {
+        throw Errors.badRequest('IMEI_UNKNOWN',
+          `الرقم ${imei} غير مسجَّل في المخزون`, `IMEI ${imei} not in stock`);
+      }
+      if (u.state !== 'IN_STOCK') {
+        throw Errors.badRequest('IMEI_NOT_AVAILABLE',
+          `الجهاز ${imei} ليس على الرفّ (حالته ${u.state})`, `IMEI ${imei} is not IN_STOCK`);
+      }
+      if (!items.some((it) => it.variantId === u.variantId)) {
+        throw Errors.badRequest('IMEI_WRONG_VARIANT',
+          `الجهاز ${imei} ليس من أصناف هذا الطلب`, `IMEI ${imei} is not in this order`);
+      }
+      claimed.set(imei, { id: u.id, variantId: u.variantId });
+    }
+
+    /*
+      الأصناف المسلسلة تلزمها أرقامها.
+      ترك السلوك القديم احتياطاً كان يُبقي الثغرة مفتوحة لمن ينادي الواجهة
+      مباشرة: مندوبٌ يتخطّى الشاشة، أو تكاملٌ لاحق. والقاعدة أن ما لا
+      يُقبل من الواجهة لا يُقبل من غيرها.
+      والشرط على الصنف المسلسل وحده: ملحقٌ بلا وحدات مرقَّمة لا رقم له.
+    */
+    for (const item of items) {
+      const serialized = await this.prisma.deviceUnit.count({
+        where: { variantId: item.variantId, state: 'IN_STOCK' },
+      });
+      if (!serialized) continue;
+      const forItem = [...claimed.values()].filter((u) => u.variantId === item.variantId).length;
+      if (forItem < item.qty) {
+        throw Errors.badRequest('IMEI_REQUIRED',
+          `أدخل رقم كل جهاز تسلّمه (المطلوب ${item.qty}، أُدخل ${forItem})`,
+          `IMEI required for each serialized unit (${item.qty} needed, ${forItem} given)`);
+      }
+    }
+
     for (const item of items) {
       const wh = holds.find((h) => h.variantId === item.variantId)?.warehouseId
         ?? (await this.prisma.inventoryLevel.findFirst({ where: { variantId: item.variantId } }))?.warehouseId;
       if (!wh) continue;
 
-      /* المتغيّر المسلسل: تُختار وحدات بعينها وتُختم SOLD وتُربط بالسطر.
-         الاختيار يقع قبل الدفعة، والختم داخلها — فإن تغيّر المخزون بينهما
-         رفض المحفِّز الدفعة كاملةً عند ضبط العدّاد. */
-      const units = await this.prisma.deviceUnit.findMany({
-        where: { variantId: item.variantId, warehouseId: wh, state: 'IN_STOCK' },
-        orderBy: { id: 'asc' }, take: item.qty,
-      });
+      /* المتغيّر المسلسل: الوحدة التي أدخل المندوب رقمها هي التي تُختَم
+         «مبيعة» وتُربط بالسطر — لا أوّل ما في الرفّ. */
+      const units = [...claimed.values()]
+        .filter((u) => u.variantId === item.variantId)
+        .slice(0, item.qty)
+        .map((u) => ({ id: u.id }));
       for (const [i, u] of units.entries()) {
         writes.push(this.prisma.deviceUnit.update({
           where: { id: u.id },

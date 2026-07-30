@@ -148,12 +148,43 @@ async function liveFx(env: Env): Promise<Fx | null> {
   }
 }
 
-/** يستبدل محتوى وسم fx-boot وحده — لا يمسّ بقية الصفحة */
+/**
+ * الليرة تُحسب على الحافة لا في المتصفح.
+ *
+ * كان وسم السعر يخرج **فارغاً** من الخادم ويُملأ بنصٍّ في المتصفح. أي أن
+ * زائراً بلا جافاسكربت — ومحرّك البحث حين يفهرس أول مرة — يرى بطاقة
+ * منتجٍ بلا سعر. متجرٌ لا سعر فيه ليس متجراً، وصفحةٌ تُفهرَس بلا سعرها
+ * تخسر أهمّ ما يُبحث عنه.
+ *
+ * والحساب هنا لا في البناء: البناء يقع مرةً والسعر يتحرّك يومياً، فرقمٌ
+ * مطبوعٌ وقت البناء يكون سعرَ أمس. أمّا هنا فالسعر سعرُ اللحظة.
+ *
+ * والمعادلة مطابقة لـ`packages/ui/money.ts` بالضرورة: الليرة الجديدة
+ * تُقرَّب لأقرب عشر ليرات. واختلافُ نسخةٍ عن أخرى يعني رقمين لمنتجٍ واحد.
+ */
+const CASH_STEP = 10;
+
+function sypText(cents: number, rate: number): string {
+  const syp = Math.round((cents * rate) / 100 / CASH_STEP) * CASH_STEP;
+  return `${syp.toLocaleString('en-US')} ل.س`;
+}
+
+const usdText = (cents: number) =>
+  `${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+
 function injectFx(res: Response, fx: Fx): Response {
   return new HTMLRewriter()
     .on('script#fx-boot', {
       element(el) {
         el.setInnerContent(`window.__FX__=${JSON.stringify(fx)};`, { html: true });
+      },
+    })
+    /* `data-alt` هو الوسم الذي يعرض العملة الأخرى — والافتراضي ليرة */
+    .on('[data-usd]', {
+      element(el) {
+        const cents = Number(el.getAttribute('data-usd'));
+        if (!Number.isFinite(cents)) return;
+        el.setInnerContent(el.hasAttribute('data-alt') ? usdText(cents) : sypText(cents, fx.rate));
       },
     })
     .transform(res);

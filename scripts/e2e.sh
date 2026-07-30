@@ -83,6 +83,13 @@ PYIN
   echo "  (هُيِّئ المخزون: +$N)"
 fi
 
+
+# رقم جهازٍ متاح على الرفّ للصنف المستعمل في الفحص.
+# التحصيل صار يلزمه رقم كل جهاز يُسلَّم: كان الخادم يختار من الرفّ بترتيب
+# المعرّف أياً كان الجهاز الذي وُضع في يد الزبون، فتُفعَّل الكفالة على
+# غير جهازه. والفحص يمرّ من حيث يمرّ المندوب.
+onshelf() { dbq "select du.imei from device_units du join product_variants v on v.id=du.variant_id where v.sku='$SKU' and du.state='IN_STOCK' limit 1"; }
+
 echo "══ الكوبونات ══"
 R=$(curl -s -X POST $API/admin/coupons -H "$AH" -H 'content-type: application/json' \
  -d '{"code":"sham10","type":"PERCENTAGE","value":10,"maxDiscountUsdCents":2500,"minSubtotalUsdCents":8000,"usageLimitPerCustomer":1}')
@@ -124,9 +131,14 @@ curl -s -X POST "$API/admin/orders/$NO/confirm" -H "$AH" -H 'content-type: appli
 curl -s -X POST "$API/courier/orders/$NO/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$NO/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"OUT_FOR_DELIVERY"}' >/dev/null
 
-chk "تحصيل أكثر من المستحق مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: over-$RANDOM" -d "{\"amountSyp\":$((DUE+1000))}")" 'OVERCOLLECTION'
-chk "تحصيل جزئي بلا سبب مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: part-$RANDOM" -d "{\"amountSyp\":$((DUE-50000))}")" 'PARTIAL_REASON_REQUIRED'
-chk "التحصيل الكامل" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: full-$RANDOM" -d "{\"amountSyp\":$DUE}")" 'COLLECTED'
+IM=$(onshelf)
+chk "تحصيل بلا رقم جهاز مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: noimei-$RANDOM" -d "{\"amountSyp\":$DUE}")" 'IMEI_REQUIRED'
+chk "رقم جهاز غير مسجَّل مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: badimei-$RANDOM" -d "{\"amountSyp\":$DUE,\"imeis\":[\"999999999999999\"]}")" 'IMEI_UNKNOWN'
+chk "تحصيل أكثر من المستحق مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: over-$RANDOM" -d "{\"amountSyp\":$((DUE+1000)),\"imeis\":[\"$IM\"]}")" 'OVERCOLLECTION'
+chk "تحصيل جزئي بلا سبب مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: part-$RANDOM" -d "{\"amountSyp\":$((DUE-500)),\"imeis\":[\"$IM\"]}")" 'PARTIAL_REASON_REQUIRED'
+chk "التحصيل الكامل برقم الجهاز" "$(curl -s -X POST "$API/courier/orders/$NO/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: full-$RANDOM" -d "{\"amountSyp\":$DUE,\"imeis\":[\"$IM\"]}")" 'COLLECTED'
+# الجهاز المسجَّل على السطر هو الذي أُدخل رقمه، لا أوّل ما في الرفّ
+chk "الجهاز المسجَّل هو المُدخَل" "$(dbq "select du.imei from device_units du join order_items oi on oi.id=du.order_item_id join orders o on o.id=oi.order_id where o.order_no='$NO'")" "$IM"
 
 echo "══ التسوية ══"
 S=$(curl -s "$API/admin/settlements" -H "$AH")
@@ -164,7 +176,8 @@ N2=$(echo "$O2"|grep -o '"orderNo":"[^"]*"'|cut -d'"' -f4); D2=$(echo "$O2"|grep
 curl -s -X POST "$API/admin/orders/$N2/confirm" -H "$AH" -H 'content-type: application/json' -d '{"outcome":"CONFIRMED"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$N2/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}' >/dev/null
 curl -s -X POST "$API/courier/orders/$N2/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"OUT_FOR_DELIVERY"}' >/dev/null
-curl -s -X POST "$API/courier/orders/$N2/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: f2-$RANDOM" -d "{\"amountSyp\":$D2}" >/dev/null
+I2=$(onshelf)
+curl -s -X POST "$API/courier/orders/$N2/collect" -H "$CH" -H 'content-type: application/json' -H "idempotency-key: f2-$RANDOM" -d "{\"amountSyp\":$D2,\"imeis\":[\"$I2\"]}" >/dev/null
 BEFORE=$(dbq "select on_hand from inventory_levels l join product_variants v on v.id=l.variant_id where v.sku='$SKU'")
 IMEI=$(dbq "select du.imei from device_units du join order_items oi on oi.id=du.order_item_id join orders o on o.id=oi.order_id where o.order_no='$N2'")
 echo "  المخزون بعد البيع: $BEFORE · IMEI المُباع: $IMEI"

@@ -34,6 +34,63 @@ const GOV_AR: Record<string, string> = {
   HOMS: 'حمص', HAMA: 'حماة', LATAKIA: 'اللاذقية', TARTUS: 'طرطوس',
 };
 
+/**
+ * صفّ التحصيل: أرقام الأجهزة قبل المال.
+ *
+ * الرقم يُقرأ من علبة الجهاز أو بطلب *#06# عليه، ويُدخَل لكل قطعة في
+ * الطلب. والزرّ لا يعمل حتى تكتمل — لأن تحصيلاً بلا أرقام يعني كفالةً
+ * على جهازٍ آخر، ولا يُكتشف الخطأ إلا يوم يعود الزبون بعطل.
+ *
+ * ولوحة أرقام لا حروف: المندوب يُدخلها على باب البيت بيدٍ واحدة.
+ */
+function CollectRow({ task, onCollect, onFail }: {
+  task: CourierTask;
+  onCollect: (t: CourierTask, imeis: string[]) => void;
+  onFail: () => void;
+}) {
+  const n = Math.max(1, task.itemCount);
+  const [imeis, setImeis] = useState<string[]>(() => Array(n).fill(''));
+  const clean = imeis.map((x) => x.replace(/\D/g, ''));
+  /* خمس عشرة خانة هو طول IMEI القياسي — والقصير خطأُ إدخالٍ لا رقمٌ آخر */
+  const ready = clean.every((x) => x.length >= 14 && x.length <= 17);
+
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {imeis.map((v, i) => (
+          <div className="field" key={i}>
+            <label htmlFor={`imei-${task.orderNo}-${i}`}>
+              رقم الجهاز {n > 1 ? `${i + 1} من ${n}` : ''} (IMEI)
+            </label>
+            <input
+              id={`imei-${task.orderNo}-${i}`}
+              value={v}
+              inputMode="numeric"
+              dir="ltr"
+              autoComplete="off"
+              placeholder="١٥ رقماً — من العلبة أو ‎*#06#‎"
+              onChange={(e) => {
+                const next = [...imeis];
+                next[i] = e.target.value;
+                setImeis(next);
+              }}
+            />
+          </div>
+        ))}
+        {!ready && <span className="hint">أدخل رقم كل جهاز تسلّمه للزبون قبل قبض المبلغ.</span>}
+      </div>
+      <div className="acts">
+        <Btn
+          label={`حصّلت ${fmtSyp(task.cashDueSyp)}`}
+          disabled={!ready}
+          onClick={async () => onCollect(task, clean)}
+        />
+        <Btn label="تعذّر التسليم" kind="btn--danger" onClick={async () => onFail()} />
+      </div>
+    </div>
+  );
+}
+
 function Btn(props: { label: string; onClick: () => Promise<void>; kind?: string; disabled?: boolean }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -301,9 +358,15 @@ function Courier() {
   const step = (no: string, to: string) =>
     act(no, `/courier/orders/${no}/status`, { to }, `${no}: ${STATUS_AR[to] ?? to}`);
 
-  const collect = (t: CourierTask) =>
+  /*
+    أرقام الأجهزة تُدخَل قبل التحصيل.
+    كان الخادم يختار من الرفّ بترتيب المعرّف أياً كان الجهاز الذي وُضع في
+    يد الزبون — فتُفعَّل الكفالة على غير جهازه، ويُرفض مرتجعه لأن رقمه لا
+    يطابق المسجَّل. والرقم يُقرأ من علبة الجهاز أو بطلب ‎*#06#‎ عليه.
+  */
+  const collect = (t: CourierTask, imeis: string[]) =>
     act(t.orderNo, `/courier/orders/${t.orderNo}/collect`,
-      { amountSyp: t.cashDueSyp }, `تحصيل ${fmtSyp(t.cashDueSyp)} — ${t.orderNo}`);
+      { amountSyp: t.cashDueSyp, imeis }, `تحصيل ${fmtSyp(t.cashDueSyp)} — ${t.orderNo}`);
 
   return (
     <>
@@ -373,10 +436,7 @@ function Courier() {
             {t.status === 'PROCESSING' && <Btn label="استلمت الشحنة" onClick={async () => step(t.orderNo, 'SHIPPED')} />}
             {t.status === 'SHIPPED' && <Btn label="خرجت للتوصيل" onClick={async () => step(t.orderNo, 'OUT_FOR_DELIVERY')} />}
             {t.status === 'OUT_FOR_DELIVERY' && (
-              <>
-                <Btn label={`حصّلت ${fmtSyp(t.cashDueSyp)}`} onClick={async () => collect(t)} />
-                <Btn label="تعذّر التسليم" kind="btn--danger" onClick={async () => step(t.orderNo, 'DELIVERY_FAILED')} />
-              </>
+              <CollectRow task={t} onCollect={collect} onFail={() => step(t.orderNo, 'DELIVERY_FAILED')} />
             )}
           </div>
         </div>
