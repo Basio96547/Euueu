@@ -59,16 +59,50 @@ export interface VisualPercept {
 }
 
 export interface VisualCortexState {
-  /** عدد الأنظار — لا أوزان: هذا الفص مُوَلَّد لا متعلَّم، انظر أسفل الملف */
   glances: number;
+  /** نوى الميول كما تشكّلت بما رآه — طولها ORIENTATIONS × 25 */
+  kernels?: number[][];
 }
+
+/* ————— الفترة الحرجة: عينٌ تتشكّل بما تراه —————
+ *
+ * كانت نوى الميول ثابتةً من الميلاد، وهذا خطأ بيولوجي لا تبسيط: حقول V1
+ * الاستقبالية تُولَد مبدئيةً ثم **تتشكّل بالتجربة** في فترة حرجة. والقطّ الذي
+ * يُربّى بين خطوط أفقية وحدها لا يرى العمودي أبداً بعدها، لأن خلاياه لم تتشكّل
+ * على ما لم يره.
+ *
+ * والقاعدة هنا هيبية محلية خالصة — قاعدة أوجا:
+ *
+ *   Δw = η · y · (x − y · w)
+ *
+ * وهي «الخلايا التي تنشط معاً تترابط معاً» مع حدّ كبحٍ يمنع الانفجار: الشقّ
+ * الأول (y·x) هو هيب نفسه، والشقّ الثاني (−y²·w) تسوية ذاتية تُبقي طول المتجه
+ * عند واحد. ولولاها لنمت الأوزان بلا حدّ حتى تُشبع كل شيء.
+ *
+ * ولا تدرّج ولا خطأ ولا حكم من الأب في هذا كلّه: خليةٌ ترى وتتعدّل بما رأت
+ * وحدها. وهذا هو التعلّم غير المُوجَّه، وهو أكثر ما يجري في القشرة فعلاً.
+ */
+
+/** معدّل التشكّل الابتدائي. صغير لأن الإطار الواحد لا يجوز أن يقلب عيناً. */
+const OJA_RATE = 0.02;
+
+/** بعد هذا العدد من الأنظار يخفت التشكّل إلى النصف — وهذا هو انغلاق الفترة
+ *  الحرجة: يتشكّل بأول ما يراه، ثم يستقرّ فلا يمحوه ما بعده. */
+const CRITICAL_PERIOD = 400;
+
+/** كم رقعةً تُؤخذ من كل إطار للتعلّم. أخذُ كل الرقع يُثقل جوالاً بلا فائدة:
+ *  الرقع المتجاورة متشابهة، وأخذ عيّنة متباعدة يُغطّي المشهد. */
+const PATCH_STRIDE = 9;
+
+/** رقعةٌ بلا تباين لا تُعلّم شيئاً: خلفيةٌ ملساء تدفع النواة نحو الصفر. */
+const PATCH_FLOOR = 0.02;
 
 export class VisualCortex implements Lobe<VisualCortexState> {
   readonly name = 'visualCortex';
   readonly ar = 'القشرة البصرية';
   readonly role = 'يترجم ما تلتقطه الكاميرا إلى أشكال وألوان وأبعاد وحركة';
 
-  /** مرشّحات الميول، تُبنى مرة واحدة في الباني ولا تتغيّر */
+  /** مرشّحات الميول: تُولَد غابور ثم تتشكّل بما يراه في فترته الحرجة */
   private readonly gabor: Float32Array[] = [];
   private readonly kernelSize = 5;
 
@@ -162,7 +196,20 @@ export class VisualCortex implements Lobe<VisualCortexState> {
   }
 
   /** تجميع بالمتوسّط على شبكة — مرحلة الخلايا المركّبة. */
-  private pool(map: Float32Array, size: number, grid: number, out: Vec, offset: number): void {
+  /**
+   * تجميع الخلايا المركّبة.
+   *
+   * و`rectify` ليس خياراً تقنياً بل تشريح: الخلية المركّبة في V1 تُجمّع **طاقة**
+   * الخلايا البسيطة لا استجابتها بإشارتها، ولذلك تستجيب للحدّ في أي طورٍ كان —
+   * حافّةٌ فاتحةٌ على قاتم وحافّةٌ قاتمة على فاتح كلتاهما حدّ.
+   *
+   * وكان الجمع هنا بالإشارة، فكانت استجابة غابور المتذبذبة يُلغي موجبُها
+   * سالبَها في المنطقة الواحدة، فتخرج «طاقة الميل» أصفاراً تقريباً مهما كان
+   * المشهد. قِسته: مشهد خطوط أفقية صريحة أعطى ميلَيه الثالث والرابع صفراً
+   * تاماً، والفرق بين مشهد أفقي وآخر عمودي خمسة بالمئة. أي أن زبير كان **لا
+   * يفرّق الاتجاهات أصلاً** رغم أن مرشّحاته صحيحة.
+   */
+  private pool(map: Float32Array, size: number, grid: number, out: Vec, offset: number, rectify = false): void {
     const cell = size / grid;
     for (let gy = 0; gy < grid; gy++) {
       for (let gx = 0; gx < grid; gx++) {
@@ -174,13 +221,82 @@ export class VisualCortex implements Lobe<VisualCortexState> {
         const x1 = Math.max(x0 + 1, Math.floor((gx + 1) * cell));
         for (let y = y0; y < y1 && y < size; y++) {
           for (let x = x0; x < x1 && x < size; x++) {
-            sum += map[y * size + x] ?? 0;
+            const value = map[y * size + x] ?? 0;
+            sum += rectify ? Math.abs(value) : value;
             n++;
           }
         }
         out[offset + gy * grid + gx] = n > 0 ? sum / n : 0;
       }
     }
+  }
+
+  /**
+   * تشكيل النوى بما رآه — قاعدة أوجا مع تنافس بين الميول.
+   *
+   * والتنافس ركنٌ ثانٍ لا زينة: الرقعة الواحدة تُعدّل **الميل الأقوى استجابةً
+   * لها وحده**، فتتفرّق النوى على اتجاهات المشهد بدل أن تتقارب كلُّها على
+   * أشيعها. وهذا هو المبدأ الذي تنشأ به أعمدة الاتجاه في القشرة.
+   */
+  private shape(edges: Float32Array, size: number): void {
+    const rate = OJA_RATE / (1 + this.glances / CRITICAL_PERIOD);
+    if (rate < 1e-5) return;
+
+    const k = this.kernelSize;
+    const half = (k - 1) / 2;
+    const patch = new Float32Array(k * k);
+
+    for (let cy = half; cy < size - half; cy += PATCH_STRIDE) {
+      for (let cx = half; cx < size - half; cx += PATCH_STRIDE) {
+        let energy = 0;
+        for (let dy = 0; dy < k; dy++) {
+          for (let dx = 0; dx < k; dx++) {
+            const value = edges[(cy - half + dy) * size + (cx - half + dx)] ?? 0;
+            patch[dy * k + dx] = value;
+            energy += value * value;
+          }
+        }
+        if (Math.sqrt(energy / patch.length) < PATCH_FLOOR) continue;
+
+        // المنافسة: أي ميلٍ يستجيب لهذه الرقعة أكثر
+        let winner = 0;
+        let best = -Infinity;
+        const responses = new Array<number>(ORIENTATIONS);
+        for (let o = 0; o < ORIENTATIONS; o++) {
+          let y = 0;
+          const kernel = this.gabor[o]!;
+          for (let i = 0; i < patch.length; i++) y += patch[i]! * kernel[i]!;
+          responses[o] = y;
+          if (Math.abs(y) > best) { best = Math.abs(y); winner = o; }
+        }
+
+        // أوجا على الفائز وحده: Δw = η·y·(x − y·w)
+        const kernel = this.gabor[winner]!;
+        const y = responses[winner]!;
+        if (!Number.isFinite(y)) continue;
+        for (let i = 0; i < kernel.length; i++) {
+          const update = rate * y * (patch[i]! - y * kernel[i]!);
+          if (Number.isFinite(update)) kernel[i]! += update;
+        }
+        this.recenter(kernel);
+      }
+    }
+  }
+
+  /** إعادة تصفير المجموع بعد كل تعديل: النواة كاشفةُ حدٍّ لا مقياسُ سطوع، وأي
+   *  انحرافٍ في مجموعها يجعلها تستجيب لإضاءة الغرفة بدل شكل الشيء. */
+  private recenter(kernel: Float32Array): void {
+    let sum = 0;
+    let norm = 0;
+    for (let i = 0; i < kernel.length; i++) sum += kernel[i]!;
+    const mean = sum / kernel.length;
+    for (let i = 0; i < kernel.length; i++) {
+      kernel[i]! -= mean;
+      norm += kernel[i]! * kernel[i]!;
+    }
+    // وتُعاد إلى طول الوحدة: أوجا تفعلها بالتقارب، والتصريح بها يمنع الانجراف
+    const length = Math.sqrt(norm);
+    if (length > 1e-6) for (let i = 0; i < kernel.length; i++) kernel[i]! /= length;
   }
 
   /** النظر: من إشارة الشبكية إلى وصف هندسي. */
@@ -190,12 +306,14 @@ export class VisualCortex implements Lobe<VisualCortexState> {
     const features = vec(VISION_FEATURES);
 
     const edges = this.centerSurround(retina.luminance, size);
+    // التشكّل قبل القياس: ما يراه الآن يُعدّل عينه، ثم يُوصَف بها كما صارت
+    this.shape(edges, size);
 
     // ١. طاقة الميول
     let edgeEnergy = 0;
     for (let o = 0; o < ORIENTATIONS; o++) {
       const response = this.convolve(edges, size, this.gabor[o]!);
-      this.pool(response, size, POOL, features, o * POOL * POOL);
+      this.pool(response, size, POOL, features, o * POOL * POOL, true);
       for (let i = 0; i < response.length; i++) edgeEnergy += response[i]!;
     }
     edgeEnergy /= ORIENTATIONS * size * size;
@@ -312,13 +430,25 @@ export class VisualCortex implements Lobe<VisualCortexState> {
    * بيانات. وهذا موافق لتشريحه: بنية V1 تنمو قبل أن يرى الوليد شيئاً، والتعلّم
    * يقع في الطبقات التي بعدها لا فيها. فلا شيء يُحفَظ منه إلا عدد أنظاره. */
   save(): VisualCortexState {
-    return { glances: this.glances };
+    return { glances: this.glances, kernels: this.gabor.map((k) => Array.from(k)) };
   }
 
   load(state: VisualCortexState): void {
     try {
       if (typeof state?.glances === 'number' && Number.isFinite(state.glances)) {
         this.glances = Math.max(0, Math.floor(state.glances));
+      }
+      /* النوى تُستعاد إن كانت سليمة الطول والقيم. نواةٌ عطبة تعني عيناً عمياء
+       * في اتجاه كامل، ولذلك تُفحَص قبل أن تُقبل ويُترك المولود منها بديلاً. */
+      const saved = state?.kernels;
+      if (Array.isArray(saved) && saved.length === ORIENTATIONS) {
+        const width = this.kernelSize * this.kernelSize;
+        for (let o = 0; o < ORIENTATIONS; o++) {
+          const row = saved[o];
+          if (!Array.isArray(row) || row.length !== width) continue;
+          if (!row.every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
+          this.gabor[o]!.set(row);
+        }
       }
     } catch { /* لا أثر: الفص لا يحمل معرفة تُفقَد */ }
   }

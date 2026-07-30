@@ -161,6 +161,7 @@ const inhibitCtx = {
   vocab: 80,
   unknownCount: 1,
   factConfidence: 0.8,
+  lessonLanded: false,
 };
 
 test('لا يجيب من ذاكرة لا يملكها ولا يعمّم بلا تعميم', () => {

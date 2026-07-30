@@ -57,6 +57,9 @@ export type QuestionKind =
 
 export type SentenceKind = 'اسمية' | 'فعلية' | 'استفهام' | 'نفي' | 'أمر' | 'نداء' | 'مفردة';
 
+/** نوع العلاقة بين طرفي الجملة — يُصدَّر لأن الفص الجُداري يُفهرس به حقائقه. */
+export type RelationKind = 'جنس' | 'صفة' | 'فعل' | 'ملك';
+
 export interface Parse {
   words: WordForm[];
   kind: SentenceKind;
@@ -68,7 +71,7 @@ export interface Parse {
   topic: string | null;
   comment: string | null;
   /** أالمحمول صفةٌ أم جنس؟ به تتعايش «حيوان» و«صغيرة» بدل أن تتقاتلا */
-  relation: 'جنس' | 'صفة' | 'فعل' | 'ملك' | null;
+  relation: RelationKind | null;
   /** الضمير الظاهر إن وُجد، وجنسه وعدده — به يُعرَف على مَن يعود */
   pronoun: { word: string; gender: Gender; number: NumberForm } | null;
   /** كلمة العدد إن وُجدت */
@@ -433,6 +436,38 @@ export class Syntax implements Lobe<SyntaxState> {
   }
 
   /**
+   * محمولٌ بلا موضوع: كلمةٌ واحدة تُكمل ما قبلها.
+   *
+   * «القطة حيوان» ثم «صغيرة» — والثانية ليست جملةً ناقصة بل **حذفٌ**، وهو أشيع
+   * ما يقع في كلام الناس: يُذكر الموضوع مرة ويُبنى عليه أدوارٌ بعده. والطفل
+   * يفهمه من أول سنتَيه: يُقال له «الكرة حمراء» ثم «وكبيرة» فيعرف عمّن يُتكلَّم.
+   *
+   * وبلا هذا كان زبير يستقبل «صغيرة» جملةً مبتورةً لا موضوع لها، فيسأل «شو
+   * هذا؟» عن كلمةٍ أبوه يشرح بها ما قاله قبل لحظة. رآه الأب في التطبيق.
+   *
+   * ويُشترط لصحّة الحمل: كلمةُ معنى واحدة لا أكثر، وألّا تكون سؤالاً ولا أداةً
+   * ولا تحيّة. وما عدا ذلك يُترك — الحمل على غير موضعه أسوأ من تركه.
+   */
+  ellipsis(percept: Percept): { comment: string; relation: RelationKind } | null {
+    if (percept.isQuestion) return null;
+    const words = percept.tokens.map((token) => this.classify(token));
+    const content = words.filter((w) => w.pos !== 'حرف' && !DEMONSTRATIVES.has(w.word)
+      && !LINKING_WORDS.has(w.word) && !SOCIAL_WORDS.has(w.word));
+    if (content.length !== 1) return null;
+
+    const only = content[0]!;
+    if (QUESTION_TOOLS.has(only.word) || NEGATIONS.has(only.word)) return null;
+    if (PRONOUNS.has(only.word)) return null;
+    // كلمة من حرفين لا تحمل معنىً محمولاً غالباً، وحملُها تخمينٌ لا فهم
+    if (only.stem.length < 3) return null;
+
+    const relation: RelationKind = only.pos === 'فعل'
+      ? 'فعل'
+      : isAdjective(only.stem) ? 'صفة' : 'جنس';
+    return { comment: only.stem, relation };
+  }
+
+  /**
    * مَن يملك في هذه الجملة؟
    *
    * والمِلك في العربية لا يُقال بفعل غالباً بل بحرف وضمير متّصل: «عندي» و«معه»
@@ -496,6 +531,13 @@ function isAdjective(stem: string): boolean {
 /** روابط تُتجاوز عند بناء الطرفين: ليست طرفاً ولا محمولاً. */
 const LINKING_WORDS: ReadonlySet<string> = new Set([
   'هو', 'هي', 'هما', 'هم', 'يعني', 'تعني', 'عباره', 'عن', 'كان', 'صار', 'ليس', 'ليست', 'مو', 'مش', 'لا',
+]);
+
+/** ألفاظ اجتماعية لا تُحمَل على موضوع سابق: تحيّةٌ وشكرٌ ومدح، لا وصفٌ لشيء. */
+const SOCIAL_WORDS: ReadonlySet<string> = new Set([
+  'مرحبا', 'اهلا', 'هلا', 'السلام', 'عليكم', 'صباح', 'مساء', 'الخير', 'النور',
+  'شكرا', 'احسنت', 'برافو', 'ممتاز', 'عظيم', 'تمام', 'طيب', 'حسنا', 'اوك',
+  'نعم', 'ايوا', 'اي', 'خطا', 'غلط', 'صح', 'صحيح', 'وينك', 'كيفك', 'رجعت',
 ]);
 
 const PERSON_CATEGORIES: ReadonlySet<string> = new Set(['انسان', 'مهنه', 'قريب', 'شخص', 'اسم']);

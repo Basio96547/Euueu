@@ -34,7 +34,10 @@
  */
 
 import { clamp } from '../core/tensor.js';
-import type { Interoception, Lobe, StageId, Strategy } from '../core/types.js';
+import type { Interoception, Lobe, StageId, Strategy, TickOutput } from '../core/types.js';
+
+/** نوع الكلام الذي سيُلوَّن — به يُمنع التناقض بين الشعور والمقال. */
+export type SpeechKind = TickOutput['kind'];
 
 export const BASIC_EMOTIONS = ['سعادة', 'حزن', 'خوف', 'غضب', 'اشمئزاز', 'مفاجأة'] as const;
 export type BasicEmotion = (typeof BASIC_EMOTIONS)[number];
@@ -73,6 +76,16 @@ const KEEP_LONGING = 0.94;
 const BASIC_FLOOR = 0.16;
 /** والمعقّد عتبته أخفض لأنه حاصلُ ضربٍ فلا يبلغ ما تبلغه الأساسية. */
 const COMPLEX_FLOOR = 0.10;
+
+/**
+ * ولا يُقدَّم المعقّد على الأساسي إلا إذا بلغ نصفه على الأقل.
+ *
+ * أُضيف بعد أن رآه الأب في التطبيق: مَدَحه على «إقرار بالتلقّي» فارتفعت سعادته
+ * إلى ٨٥٪ وارتفع فخره إلى ١٣٪ (لأن الفخر حاصل ضربٍ في نسبة الإنجاز إلى نفسه،
+ * وهي ضئيلة هنا)، فسُمّي شعوره الغالب «فخراً» وسعادتُه أضعافه. والتقديم إنما
+ * كان لأن المعقّد **أخصّ**، لا لأنه أولى مهما ضؤل.
+ */
+const COMPLEX_PREFERENCE = 0.5;
 
 export interface Feelings {
   basic: Record<BasicEmotion, number>;
@@ -311,13 +324,21 @@ export class Emotion implements Lobe<EmotionState> {
     return 1 + 1.6 * peak;
   }
 
-  /** كلمة يُلوَّن بها كلامه — أثر الشعور في اللسان. */
-  colorAr(stage: StageId, shami: boolean): string | null {
+  /**
+   * كلمة يُلوَّن بها كلامه — أثر الشعور في اللسان.
+   *
+   * ويُشترط ألّا تناقض العبارةُ المقال، وهذا إصلاح عطل رآه الأب بعينه في
+   * التطبيق: قال زبير «لا أعرف هذا، علّمني، **عرفتُها وحدي**» — أقرّ بجهله
+   * وافتخر بعلمه في نفَسٍ واحد. والتناقض في هذا الموضع أسوأ من الصمت: هو أظهر
+   * ما يفضح أن العبارة مُلصَقة لا مقولة.
+   */
+  colorAr(stage: StageId, shami: boolean, kind: SpeechKind): string | null {
     const feelings = this.snapshot();
     const dominant = feelings.dominant;
     // الوليد لا يصف شعوره: يشعر ولا يملك عبارته. وصفُ الشعور يأتي بعد الكلام.
     if (!dominant || stage < 2) return null;
     if (dominant.intensity < (dominant.complex ? 0.2 : 0.45)) return null;
+    if (!sayableWith(dominant.name, kind)) return null;
     const phrases = shami ? SHAMI_COLOR : FUSHA_COLOR;
     return phrases[dominant.name] ?? null;
   }
@@ -366,21 +387,25 @@ export class Emotion implements Lobe<EmotionState> {
 
     /* المعقّد يُقدَّم على الأساسي إن بلغ عتبته: «الذنب» وصفٌ أصدق من «الحزن»
      * حين تجتمع أسبابه، لأنه يخبر الأب بما لا يخبره الحزن — أنه يلوم نفسه. */
-    let dominant: Feelings['dominant'] = null;
+    let topBasic: Feelings['dominant'] = null;
+    for (const name of BASIC_EMOTIONS) {
+      const value = this.basic[name];
+      if (value >= BASIC_FLOOR && (!topBasic || value > topBasic.intensity)) {
+        topBasic = { name, intensity: round3(value), complex: false };
+      }
+    }
+
+    let topComplex: Feelings['dominant'] = null;
     for (const name of COMPLEX_EMOTIONS) {
       const value = complex[name];
-      if (value >= COMPLEX_FLOOR && (!dominant || value > dominant.intensity)) {
-        dominant = { name, intensity: round3(value), complex: true };
+      if (value >= COMPLEX_FLOOR && (!topComplex || value > topComplex.intensity)) {
+        topComplex = { name, intensity: round3(value), complex: true };
       }
     }
-    if (!dominant) {
-      for (const name of BASIC_EMOTIONS) {
-        const value = this.basic[name];
-        if (value >= BASIC_FLOOR && (!dominant || value > dominant.intensity)) {
-          dominant = { name, intensity: round3(value), complex: false };
-        }
-      }
-    }
+
+    const prefersComplex = topComplex !== null
+      && (topBasic === null || topComplex.intensity >= topBasic.intensity * COMPLEX_PREFERENCE);
+    const dominant = prefersComplex ? topComplex : topBasic;
 
     /* والشعور المعقّد يشرح نفسه بتركيبه لا بآخر ما هزّه: «صحّحتَ له» يفسّر
      * حزنه، ولا يفسّر لماذا صار حزنه ذنباً. والأب يحتاج الثاني. */
@@ -435,6 +460,23 @@ export class Emotion implements Lobe<EmotionState> {
 
 /* ————— عبارات الشعور —————
  * قصيرة بقصد: الطفل يقول «خفت» ولا يشرح خوفه. والشرح كذب في هذا الموضع. */
+
+/**
+ * أيّ شعورٍ يجوز أن يُقال مع أيّ نوعٍ من الكلام.
+ *
+ * والقاعدة واحدة: ألّا تكذّب العبارةُ الجملةَ التي لحقتها.
+ *   الفخر لا يُقال إلا مع جواب — لأنه ادّعاء علمٍ، ولا علم في إقرارٍ بجهل.
+ *   والسعادة لا تُقال مع إقرار بجهل — لأن الإقرار طلبٌ لا رضا.
+ *   والغيرة لا تُقال مع جواب — «القطة حيوان، وأنا كمان بدي» كلامٌ لا يستقيم.
+ *   والثغثغة لا يُلحقها شيء: من لا يُركّب كلمتين لا يصف حاله.
+ */
+function sayableWith(name: string, kind: SpeechKind): boolean {
+  if (kind === 'babble') return false;
+  if (name === 'فخر') return kind === 'answer';
+  if (name === 'سعادة') return kind !== 'admission';
+  if (name === 'غيرة') return kind !== 'answer';
+  return true;
+}
 
 const COMPLEX_REASON: Record<ComplexEmotion, string> = {
   'فخر': 'فرِح بشيء عرفه وحده',

@@ -27,6 +27,8 @@ export interface SpeechRequest {
   generalized: { fact: Fact; similarity: number } | null;
   intero: Interoception;
   unknownWords: readonly string[];
+  /** كلمات المعنى في جملة الأب — بها يُسأل، فأدواتُ السؤال ليست أشياءً يُسأل عنها */
+  contentWords?: readonly string[];
   askedBefore: readonly string[];
   lexicon: Lexicon;
   selfName: string;
@@ -203,11 +205,15 @@ export class Broca implements Lobe<BrocaState> {
     for (const word of req.unknownWords) {
       if (!req.askedBefore.includes(word)) return word;
     }
-    // كل المجهول سُئل عنه: يسأل عن كلمة معروفة لكن قليلة السماع — يعرف لفظها
-    // ولا يعرف معناها، وهذا حال الطفل مع أكثر ما يسمع
+    /* كل المجهول سُئل عنه: يسأل عن كلمة معروفة لكن قليلة السماع — يعرف لفظها
+     * ولا يعرف معناها، وهذا حال الطفل مع أكثر ما يسمع.
+     *
+     * والبحث في كلمات المعنى وحدها: أدوات الاستفهام قليلة في كلام الأب فتفوز
+     * بالنُّدرة، فيسأل «علّمني أكثر عن كيف» — سؤالٌ عن أداة سؤاله. رآه الأب. */
+    const pool = req.contentWords ?? req.percept.tokens;
     let rarest: string | null = null;
     let fewest = Infinity;
-    for (const token of req.percept.tokens) {
+    for (const token of pool) {
       if (req.askedBefore.includes(token)) continue;
       const count = req.lexicon.countOf(token);
       if (count > 0 && count < fewest) {

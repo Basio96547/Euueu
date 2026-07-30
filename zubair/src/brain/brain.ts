@@ -36,7 +36,7 @@ import { VisualCortex, type VisualPercept } from './lobes/visualCortex.js';
 import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js';
 import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
 import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
-import { Syntax } from './lobes/syntax.js';
+import { Syntax, type RelationKind } from './lobes/syntax.js';
 import {
   transduceAudio, transduceBody, transduceVision,
   type RawAudio, type RawBody, type RawFrame, type RawTouch,
@@ -399,9 +399,11 @@ export class Zubair {
      * والجهل يُقاس بكلمات المعنى وحدها: أدوات الاستفهام وأسماء الإشارة وحروف
      * الوصل ليست أشياءً يُسأل عنها. الطفل لا يقول «ما معنى هذا؟» عن كلمة «هذا»،
      * ولو عُدَّت جهلاً لصار زبير يردّ سؤالك بسؤالٍ عن أداة سؤالك. */
-    const unknownContent = percept.unknown.filter(
-      (word) => !QUESTION_WORDS.has(word) && !STOP_WORDS.has(word) && !DEMONSTRATIVE_KEYS.has(word),
-    );
+    const isContent = (word: string): boolean =>
+      !QUESTION_WORDS.has(word) && !STOP_WORDS.has(word) && !DEMONSTRATIVE_KEYS.has(word);
+    const unknownContent = percept.unknown.filter(isContent);
+    /** كلمات المعنى في جملته كلها — عنها يُسأل، لا عن أدوات سؤاله */
+    const contentTokens = percept.tokens.filter(isContent);
     const repeated = this.prefrontal.recent.at(-1)?.said === percept.raw;
     const intero = timed(this.hypothalamus, 'حدّث دوافعه', 'cpu', () => this.hypothalamus.update({
       unknownCount: unknownContent.length,
@@ -465,6 +467,8 @@ export class Zubair {
       where: this.accel.unit, ms: round2(now() - recallStarted),
     });
 
+    const lessonsBefore = this.lessons;
+
     /* ٧٫٥ النحو: تركيب الجملة قبل الربط.
      * يُستدعى قبل الجُداري لأن الجُداري يبني على ما يُخرجه: نوع العلاقة (جنسٌ
      * أم صفة أم فعل)، والنفي، وما يطلبه السؤال. */
@@ -498,13 +502,36 @@ export class Zubair {
       }
     }
 
+    /* الحذف: محمولٌ بلا موضوع يعود على آخر ما تحدّثنا عنه.
+     *
+     * «القطة حيوان» ثم «صغيرة» — والثانية تعليمٌ عن القطة لا كلمةٌ مبتورة.
+     * وهو من جنس إرجاع الضمير فوُضع معه: كلاهما يستكمل الجملة الحاضرة بما
+     * سبقها، ومرجعهما واحد — آخر المواضيع. */
+    let ellipsis: { comment: string; relation: RelationKind } | null = null;
+    if (!parse.topic && !parse.pronoun && this.recentTopics.length > 0) {
+      const bare = this.syntax.ellipsis(percept);
+      const last = this.recentTopics[this.recentTopics.length - 1]!;
+      if (bare && bare.comment !== last.stem) {
+        ellipsis = bare;
+        resolvedSubject = last.stem;
+        trace.push({
+          lobe: this.syntax.name, ar: this.syntax.ar,
+          note: `«${bare.comment}» محمولٌ محذوف الموضوع — حمله على «${last.stem}»`,
+          where: 'cpu', ms: 0,
+        });
+      }
+    }
+
     const teachesNegation = parse.negated && parse.topic !== null && parse.comment !== null
       && understanding.intent !== 'PRAISE';
 
     const teaching = understanding.intent === 'TEACH_FACT'
       || understanding.intent === 'TEACH_WORD'
       || understanding.intent === 'TEACH_NAME'
-      || teachesNegation;
+      || teachesNegation
+      /* والحذف تعليمٌ كالتعليم الصريح: «صغيرة» بعد «القطة حيوان» درسٌ عن
+       * القطة. ولولا هذا لسمعه زبير كلمةً غريبة يسأل عنها. */
+      || (ellipsis !== null && understanding.intent !== 'PRAISE' && understanding.intent !== 'CORRECT');
 
     if (teachesNegation && parse.topic && parse.comment) {
       /* النفي يُهدم به المحمول المنفيّ ولا يُبنى محمولٌ جديد: «القطة ليست نبات»
@@ -516,12 +543,13 @@ export class Zubair {
         lobe: this.parietal.name, ar: this.parietal.ar,
         note: `نفى أن ${parse.topic} ${parse.comment}`, where: 'cpu', ms: 0,
       });
-    } else if (teaching && (bound.subject ?? resolvedSubject) && (bound.object ?? parse.comment)) {
+    } else if (teaching && (bound.subject ?? resolvedSubject) && (bound.object ?? parse.comment ?? ellipsis?.comment)) {
       /* الضمير يحلّ محلّه مرجعه قبل الحفظ: «هي صغيرة» تُحفَظ «قطة ← صغيرة».
        * وبلا هذا الإبدال يعود الضمير ثم لا يُنتفَع به، فيبقى الكلام معلّقاً. */
       const subject = bound.subject ?? resolvedSubject!;
-      const object = bound.object ?? parse.comment!;
-      this.parietal.learnFact(subject, object, this.ticks, 'أبوه', parse.relation ?? 'جنس');
+      const object = bound.object ?? parse.comment ?? ellipsis!.comment;
+      this.parietal.learnFact(subject, object, this.ticks, 'أبوه',
+        parse.relation ?? ellipsis?.relation ?? 'جنس');
       this.lessons++;
       this.lessonsSinceSleep++;
       // ترابط هيبي: طرفا الحقيقة يتقاربان في تمثيله، فيصير «قطة» و«حيوان»
@@ -531,7 +559,7 @@ export class Zubair {
       if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b);
       trace.push({
         lobe: this.parietal.name, ar: this.parietal.ar,
-        note: `حفظ: ${subject} ← ${object}${parse.relation && parse.relation !== 'جنس' ? ` (${parse.relation})` : ''}`,
+        note: `حفظ: ${subject} ← ${object}${(parse.relation ?? ellipsis?.relation ?? 'جنس') !== 'جنس' ? ` (${parse.relation ?? ellipsis?.relation})` : ''}`,
         where: 'cpu', ms: 0,
       });
     }
@@ -605,6 +633,10 @@ export class Zubair {
     }
     const generalized = !fact && topic ? this.parietal.generalize(topic, this.lexicon) : null;
 
+    /* أنزل الدرس فعلاً؟ يُقاس بما حُفظ لا بما قيل: أبٌ يُعلّم جملةً لم يفهمها
+     * ابنه لم يُعلّمه شيئاً بعد. وعليه وحده يُكبَح «علّمني» و«شو هذا؟». */
+    const lessonLanded = this.lessons > lessonsBefore;
+
     /* ٩. اللوزة: هل هذا المعنى مقترن بمدح أم بخطأ في تجربتي؟ */
     const valence = timed(this.amygdala, 'وسم عاطفي للمعنى', this.compute_.unit,
       () => this.amygdala.valence(understanding.meaning, this.compute_));
@@ -652,6 +684,7 @@ export class Zubair {
       vocab: this.lexicon.size,
       unknownCount: unknownContent.length,
       factConfidence: fact?.confidence ?? 0,
+      lessonLanded,
     }));
 
     /* ١٢. العُقد القاعدية: أي استجابة أختار؟
@@ -681,13 +714,15 @@ export class Zubair {
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
       strategy: decision.strategy, stage, percept, understanding, recall, fact, generalized,
-      intero, unknownWords: unknownContent,
+      intero, unknownWords: unknownContent, contentWords: contentTokens,
       /* موضوع سؤالك يُضاف إلى ما سأل عنه في هذه النبضة وحدها: طفل يُسأل «شو
        * القطة؟» فيردّ «شو القطة؟» يبدو ساخراً لا جاهلاً. إن كان لا يعرف فليقل
        * «ما بعرف، علّمني» — وهذا ما تفعله استراتيجية الإقرار بالجهل. */
       askedBefore: topic ? [...this.askedWords, topic] : this.askedWords,
       lexicon: this.lexicon, selfName: this.name, rng: this.rng,
-      feelingAr: this.emotion.colorAr(stage.id, this.broca.speaksShami),
+      /* نوع الكلام يُحسَب قبل صياغته كي لا يناقض الشعورُ المقال. وهو يُعرف من
+       * الاستراتيجية وحدها: بروكا تختار الصيغة، والاستراتيجية تحدّد جنسها. */
+      feelingAr: this.emotion.colorAr(stage.id, this.broca.speaksShami, speechKind(decision.strategy)),
     }));
 
     /* ١٤. المخيخ: الإتقان ومنع التكرار */
@@ -1032,7 +1067,10 @@ export class Zubair {
 /* ————— أدوات صغيرة ————— */
 
 const QUESTION_WORDS = new Set([
-  'ما', 'ماذا', 'شو', 'مين', 'من', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متى', 'كم', 'ايش', 'شنو',
+  /* بصورتها المطبَّعة كما تصل من الحاسّة: الألف المقصورة تصير ياءً، فـ«متى»
+   * تصل «متي». وكانت مكتوبةً هنا بألفها المقصورة فلم تطابق شيئاً أبداً. */
+  'ما', 'ماذا', 'شو', 'مين', 'من', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متي',
+  'امتي', 'كم', 'ايش', 'شنو', 'شلون', 'قديش', 'ليه', 'اي', 'فين',
 ]);
 
 /** مَن يُغار مما عنده: أبوه وكل ثالث. ولا يغار المرء مما عنده هو. */
@@ -1053,6 +1091,19 @@ function goalAr(goal: 'LEARN' | 'ANSWER' | 'BOND' | 'REST'): string {
     case 'ANSWER': return 'أن يجيب';
     case 'BOND': return 'أن يقترب منك';
     case 'REST': return 'أن يستريح';
+  }
+}
+
+/** جنس الكلام من الاستراتيجية — مرآةٌ لما تُخرجه بروكا، وتُختبر مطابقتها. */
+function speechKind(strategy: Strategy): TickOutput['kind'] {
+  switch (strategy) {
+    case 'ANSWER_MEMORY':
+    case 'ANSWER_GENERAL': return 'answer';
+    case 'ASK_QUESTION': return 'question';
+    case 'ADMIT': return 'admission';
+    case 'ACKNOWLEDGE': return 'acknowledge';
+    case 'GREET_BACK': return 'greeting';
+    case 'BABBLE': return 'babble';
   }
 }
 

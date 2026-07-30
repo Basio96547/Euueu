@@ -12,6 +12,7 @@
 
 import { Dense, type DenseState } from '../core/net.js';
 import { LifLayer, type LifState } from '../core/spiking.js';
+import { SelfAttention, type AttentionState } from '../core/attention.js';
 import { Rng, clamp, vec, type Vec } from '../core/tensor.js';
 import { DIMS, type ComputePort, type Interoception, type Lobe } from '../core/types.js';
 import type { Percept } from '../core/text.js';
@@ -104,6 +105,8 @@ export interface ThalamusState {
   gate: DenseState;
   /** جهود الخلايا النبضية وسجلّ إطلاقها، بترتيب MODALITIES */
   cells?: LifState[];
+  /** إسقاطات الانتباه الذاتي: مَن ينظر إلى مَن في الجملة */
+  attention?: AttentionState;
 }
 
 /** قيمة حالة داخلية خارج [0,1] أو غير منتهية تُفسد البوابة كلها فتُقصَر بصمت. */
@@ -141,19 +144,20 @@ export class Thalamus implements Lobe<ThalamusState> {
    * لأن الفرق بين مؤثّرٍ خافت يُلحّ ومؤثّرٍ خافت يمرّ مرّة لا يُقاس إلا بالزمن. */
   private readonly relayCells = new LifLayer(MODALITIES.length);
 
+  /* الانتباه الذاتي: يسبق البوابة فيُعطيها كلماتٍ في سياقها لا كلماتٍ مفردة.
+   * وموضعه المهاد لأن المهاد مقسمُ الانتباه في هذا الدماغ، ولأن حكم الأب يصل
+   * البوابة فيسري منها إليه — فيتعلّمان معاً بإشارة واحدة. */
+  private readonly attention: SelfAttention;
+  /** تدرّج البوابة عند كل كلمة، ليُمرَّر إلى الانتباه عند التعزيز */
+  private lastContext: Vec[] = [];
+
   /** البذرة تُحقَن كي تكون تهيئة البوابة قابلة للإعادة، فيُثبَت التعلّم برقم. */
   constructor(rng?: Rng) {
     this.net = new Dense(GATE_IN, 1, 'sigmoid', rng ?? new Rng(0x7a1a));
     this.net.b[0] = OPEN_AT_BIRTH;
+    this.attention = new SelfAttention(DIMS.word, new Rng(0x2d5c));
   }
 
-  /**
-   * الترشيح والتوزيع: أي حاسّة تصل قشرتها الآن وأيّها تُغلق.
-   *
-   * اليقظة تحدّد السعة الكلية لا كل مجرى على حدة: طفلٌ نصف نائم يصله الأبرز
-   * وحده. وهذا ما يفعله المهاد في النوم فعلاً — يُغلق الحواسّ عن القشرة، ولذلك
-   * لا يوقظك ضوءٌ خفيف ويوقظك اسمك.
-   */
   /**
    * وصولُ حاسّةٍ في لحظتها: تُشحن بها خليتها النبضية، وتُعاد نبضتُها إن أطلقت.
    *
@@ -169,6 +173,13 @@ export class Thalamus implements Lobe<ThalamusState> {
     return this.relayCells.charge(index, unitValue(salience), at);
   }
 
+  /**
+   * الترشيح والتوزيع: أي حاسّة تصل قشرتها الآن وأيّها تُغلق.
+   *
+   * اليقظة تحدّد السعة الكلية لا كل مجرى على حدة: طفلٌ نصف نائم يصله الأبرز
+   * وحده. وهذا ما يفعله المهاد في النوم فعلاً — يُغلق الحواسّ عن القشرة، ولذلك
+   * لا يوقظك ضوءٌ خفيف ويوقظك اسمك.
+   */
   relay(streams: StreamSalience, intero: Interoception, arousal: number, at = 0): RelayDecision {
     const alertness = unitValue(arousal) * 0.7 + unitValue(intero.arousal) * 0.3;
     // النعاس يرفع العتبة: عند يقظة تامة تمرّ المجاري الضعيفة، وعند نصفها لا
@@ -253,10 +264,16 @@ export class Thalamus implements Lobe<ThalamusState> {
 
     this.encodeIntero(intero);
 
+    /* السياق أولاً: كل كلمة تُعاد صياغتها بما نظرت إليه من أخواتها، ثم تُوزَن.
+     * والترتيب لا يجوز عكسه — وزنُ كلمةٍ لا يُعرف قبل أن يُعرف موقعها من
+     * الجملة: «القطة» في «شو القطة؟» غيرُها في «القطة حيوان». */
+    const context = this.attention.forward(vecs.slice(0, n));
+    this.lastContext = context;
+
     const weights: number[] = [];
     let total = 0;
     for (let i = 0; i < n; i++) {
-      const wordVec = vecs[i]!;
+      const wordVec = context[i] ?? vecs[i]!;
       this.fillInput(wordVec);
       const y = this.net.forward(this.input, compute);
       const raw = y[0]!;
@@ -276,7 +293,7 @@ export class Thalamus implements Lobe<ThalamusState> {
     const open = total > GATE_EPS;
     const denominator = open ? total : n;
     for (let i = 0; i < n; i++) {
-      const wordVec = vecs[i]!;
+      const wordVec = context[i] ?? vecs[i]!;
       const share = (open ? weights[i]! : 1) / denominator;
       const copy = Math.min(DIMS.word, wordVec.length);
       for (let d = 0; d < copy; d++) {
@@ -313,6 +330,9 @@ export class Thalamus implements Lobe<ThalamusState> {
     const count = this.lastInputs.length;
 
     const dy = vec(1);
+    // تدرّج لكل كلمة بحجم تمثيلها: يُملأ من البوابة ثم يُسلَّم إلى الانتباه
+    const dGate: Vec[] = [];
+    for (let i = 0; i < count; i++) dGate.push(vec(DIMS.word));
     let contributing = 0;
     for (let i = 0; i < count; i++) {
       const x = this.lastInputs[i]!;
@@ -329,17 +349,38 @@ export class Thalamus implements Lobe<ThalamusState> {
       // على المجموع تمنع جملةً طويلة من إحداث قفزة أكبر لمجرّد طولها
       const share = total > GATE_EPS ? (this.lastWeights[i] ?? 0) / total : 1 / count;
       dy[0] = -r * share;
-      this.net.backward(dy);
+      const dx = this.net.backward(dy);
+      /* الجزء الأول من تدرّج المدخل هو تدرّج تمثيل الكلمة المُسيَّق، وهو مدخل
+       * الانتباه إلى الحكم: به يتعلّم زبير أي كلمةٍ كان ينبغي أن تنظر إلى أيّها.
+       * والنسخ لازم لأن `Dense` يعيد مخزنه هو، وسيُدهَس في الكلمة التالية. */
+      if (i < dGate.length) dGate[i]!.set(dx.subarray(0, DIMS.word));
       contributing++;
     }
     // خطوة واحدة للجملة كلها بعد تراكم تدرّجات كلماتها. ولا تُطلب الخطوة إن لم
     // يُسهم أحد: خطوة Adam بتدرّج صفري تُحرّك الأوزان بعزمها السابق وتُقدّم عدّاد
     // تصحيح الانحياز، فتُغيّر البوابة بلا سبب تعليمي
-    if (contributing > 0) this.net.step(lr);
+    if (contributing > 0) {
+      this.net.step(lr);
+      /* والانتباه يخطو بمعدّل أبطأ بكثير: هو بنية الجملة لا وزن الكلمة، وبنية
+       * الجملة لا تنقلب بحكمٍ واحد. ولو ساوى معدّلُه معدّلَ البوابة لتأرجح
+       * «مَن ينظر إلى مَن» مع كل مدح وتصحيح، فلم يستقرّ على نحوٍ أبداً. */
+      if (this.lastContext.length > 0) {
+        this.attention.backward(dGate.slice(0, this.lastContext.length));
+        this.attention.step(lr * 0.2);
+      }
+    }
+  }
+
+  /** خريطة انتباه آخر جملة: مَن نظر إلى مَن. تُعرَض للأب وتُختبر. */
+  get attentionMap(): number[][] {
+    return this.attention.map;
   }
 
   save(): ThalamusState {
-    return { inDim: GATE_IN, gate: this.net.save(), cells: this.relayCells.save() };
+    return {
+      inDim: GATE_IN, gate: this.net.save(),
+      cells: this.relayCells.save(), attention: this.attention.save(),
+    };
   }
 
   load(state: ThalamusState): void {
@@ -357,6 +398,7 @@ export class Thalamus implements Lobe<ThalamusState> {
       // الخلايا تُستعاد بعد البوابة وباستقلال عنها: جهدٌ محفوظ عطب لا يُسقط
       // الانتباه المتعلَّم، وأسوأ ما فيه أن تبدأ الخلايا من راحتها
       if (state.cells) this.relayCells.load(state.cells);
+      if (state.attention) this.attention.load(state.attention);
     } catch {
       // حالة معطوبة بشكل لم نتوقّعه: تُترك البوابة كما وُلدت، ولا يُرمى استثناء
     }

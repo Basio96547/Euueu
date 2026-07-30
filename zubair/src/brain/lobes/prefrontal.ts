@@ -78,8 +78,13 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     unknownCount: number;
     /** ثقته في الحقيقة التي يملكها الآن — بها يُعرف أإقرارُه بالجهل صدقٌ أم عجز */
     factConfidence: number;
+    /** أنزل درسُ أبيه في هذه النبضة فعلاً؟ أي: فُهم وحُفظ لا أنه قيل فحسب */
+    lessonLanded: boolean;
   }): Strategy[] {
+    /** ما يصحّ أصلاً — حَتْم */
     const allowed: Strategy[] = [];
+    /** وما يصحّ ولا يُكرّر — تفضيل يُخالَف عند الضيق */
+    const preferred: Strategy[] = [];
     const lastTwo = ctx.lastStrategies.slice(-2);
     const stuckOn = lastTwo.length === 2 && lastTwo[0] === lastTwo[1] ? lastTwo[0] : null;
     const firstStageVocab = STAGES[1]?.minVocab ?? 12;
@@ -95,10 +100,15 @@ export class Prefrontal implements Lobe<PrefrontalState> {
           // جواب من ذاكرة صريحة يحتاج حقيقة صريحة، وإلا صار اختراعاً
           if (!ctx.hasFact) continue;
           if (!answering) continue;
+          /* ومَن يُعلَّم الآن لا يُجيب: قال له أبوه «صغيرة» يصف بها القطة، فردّ
+           * «القطة حيوان، علّمتني هيك» — جوابٌ عن سؤال لم يُسأل. والدرس النازل
+           * قصدٌ صريح، ولو لم يُبيّنه ظاهرُ الجملة. */
+          if (ctx.lessonLanded) continue;
           break;
         case 'ANSWER_GENERAL':
           if (!ctx.hasGeneralization) continue;
           if (!answering) continue;
+          if (ctx.lessonLanded) continue;
           break;
         case 'ASK_QUESTION':
           // سؤال أعاده عن نفس الكلمة يُنفّر أباه ولا يُعلّمه شيئاً جديداً
@@ -108,6 +118,9 @@ export class Prefrontal implements Lobe<PrefrontalState> {
            * القطه؟» — ردّ سؤال أبيه بسؤاله عن الشيء نفسه. والسؤال في موضع
            * المعرفة ليس فضولاً بل تهرّب، ويُعلّم الأب أن ابنه لا يجيب. */
           if (ctx.hasFact && ctx.unknownCount === 0) continue;
+          /* ومَن نزل فيه الدرس لا يسأل عن شيء ليس فيه جهلٌ حاضر: قال له أبوه
+           * «القطة حيوان» فحفظها، فسؤاله بعدها «شو هذا؟» يُظهره كأنه لم يسمع. */
+          if (ctx.lessonLanded && ctx.unknownCount === 0) continue;
           break;
         case 'BABBLE':
           // من تعلّم كلمات لا يعود يثغثغ: هذا هو النمو محسوساً
@@ -118,8 +131,10 @@ export class Prefrontal implements Lobe<PrefrontalState> {
           if (ctx.hasFact && answering) continue;
           break;
         case 'ACKNOWLEDGE':
-          // الإقرار بالتلقّي لا معنى له إلا بعد تعليم أو حكم
-          if (!teaching && ctx.intent !== 'PRAISE' && ctx.intent !== 'CORRECT') continue;
+          /* الإقرار بالتلقّي لا معنى له إلا بعد تعليم أو حكم — والدرس النازل
+           * تعليمٌ ولو لم يُصنَّف كذلك: «صغيرة» وحدها درسٌ عن القطة حُفظ فعلاً. */
+          if (!teaching && !ctx.lessonLanded
+            && ctx.intent !== 'PRAISE' && ctx.intent !== 'CORRECT') continue;
           break;
         case 'GREET_BACK':
           if (ctx.intent !== 'GREET') continue;
@@ -130,13 +145,33 @@ export class Prefrontal implements Lobe<PrefrontalState> {
            * وهو يراها ويعرف اسمها. والإقرار بالجهل يبقى مباحاً حين تكون ثقته
            * ضعيفة فعلاً — فذاك صدقٌ لا عجز. */
           if (ctx.hasFact && answering && ctx.factConfidence >= 0.5) continue;
+          /* ومَن عُلّم الآن لا يقول «علّمني».
+           *
+           * هذا أظهر عطلٍ رآه الأب في التطبيق بعينه: قال «القطة حيوان» فردّ
+           * زبير «علّمني، أريد أن أعرف» — وقد عُلّم للتوّ. ثم مدحه الأب على
+           * هذا الردّ، فعُزّز «الإقرار بالجهل» في موضع التعليم، فصار يقولها
+           * في كل درس بعده. عطلٌ واحد في الكبح أفسد التعليم كلَّه. */
+          if (ctx.lessonLanded) continue;
           break;
       }
+      allowed.push(strategy);
       // تكرار العَرَض يُكبَح، وتكرار الكفاءة لا — انظر RUT_PRONE أعلاه
       if (stuckOn === strategy && RUT_PRONE.has(strategy)) continue;
-      allowed.push(strategy);
+      preferred.push(strategy);
     }
 
+    /* المفاضلة على مرتبتين، وهذا إصلاح عطلٍ رآه الأب بعينه.
+     *
+     * قواعد الصلاحية أعلاه **حَتْمٌ**: مَن عُلّم لا يقول «علّمني». وكبحُ التكرار
+     * **تفضيلٌ**: لا يُعيد الصيغة نفسها ثلاثاً. وكانا في مرتبة واحدة، فاجتمعا
+     * على إسقاط كل الخيارات في موضعٍ بعينه — درسٌ ثالث بعد درسين أُقرّ بتلقّيهما:
+     * الجواب ممنوع (أبوه يُعلّم لا يسأل)، والسؤال ممنوع (لا جهل حاضر)، والثغثغة
+     * ممنوعة (كبر)، و«حفظت» مكبوحة بالتكرار. فسقط إلى آخر السطر — «علّمني» —
+     * وهو أسوأ ما يُقال لمن يُعلّم.
+     *
+     * والصواب أن يُخالَف التفضيل عند الضيق ولا يُخالَف الحَتْم: أن يُعيد «حفظت»
+     * خيرٌ من أن يطلب تعليماً نزل فيه للتوّ. */
+    if (preferred.length > 0) return preferred;
     if (allowed.length > 0) return allowed;
     return ctx.vocab < firstStageVocab ? ['BABBLE'] : ['ADMIT'];
   }
