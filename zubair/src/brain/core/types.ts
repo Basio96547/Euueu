@@ -1,0 +1,308 @@
+/* ————— العقد الذي تلتزم به كل فصوص دماغ زبير —————
+ *
+ * هذا الملف لا يحتوي منطقاً، بل يحدّد ماذا يستلم كل فص وماذا يُسلّم. أي فص
+ * يخالف العقد لا يندمج في الدماغ. الغرض أن تبقى الفصوص مستقلّة قابلة للاستبدال
+ * كما هي في الدماغ الحقيقي: تلف فص لا يُوقف البقية، بل يُفقد وظيفته وحدها.
+ */
+
+import type { Vec } from './tensor.js';
+
+/* ————— أبعاد الدماغ —————
+ * صغيرة بقصد: دماغ يجب أن يعمل على جوال متوسط بشبكة سورية بطيئة، لا على
+ * بطاقة رسومية. الكِبَر هنا ليس فضيلة. */
+export const DIMS = {
+  /** بُعد تمثيل الكلمة الواحدة — «شكل» الكلمة في ذهنه */
+  word: 48,
+  /** بُعد تمثيل الجملة كاملة — «المعنى» بعد الفهم */
+  meaning: 64,
+  /** طول الذاكرة العاملة: كم دوراً من الحوار يحمل في رأسه الآن */
+  workingMemory: 6,
+  /** سعة الذاكرة العرضية قبل أن يبدأ النسيان الانتقائي */
+  episodes: 4096,
+  /** عدد ملامح الحروف لكلمة لم يرها قط — بها يخمّن معنى الغريب */
+  charFeatures: 64,
+} as const;
+
+/* ————— ما يفهمه زبير من كلامك —————
+ * القصد (intent) هو أول ما يفكّه دماغه: ماذا يفعل بي أبي الآن؟ */
+export type Intent =
+  | 'TEACH_NAME'   // «اسمك زبير» — يُعلّمني اسمي أو اسمه
+  | 'TEACH_FACT'   // «القطة حيوان» — يُعلّمني حقيقة
+  | 'TEACH_WORD'   // «هذه تُسمّى تفاحة» — يُسمّي لي شيئاً
+  | 'ASK'          // يسألني سؤالاً وينتظر جوابي
+  | 'PRAISE'       // «أحسنت» — أصبتُ
+  | 'CORRECT'      // «لا، الصحيح كذا» — أخطأتُ ويصحّح
+  | 'GREET'        // «مرحبا» — تحية
+  | 'CHITCHAT'     // كلام عادي لا يُعلّم ولا يسأل
+  | 'UNKNOWN';     // لم أفهم بعد — وهذا حال الوليد في أكثر كلامك
+
+export const INTENTS: readonly Intent[] = [
+  'TEACH_NAME', 'TEACH_FACT', 'TEACH_WORD', 'ASK',
+  'PRAISE', 'CORRECT', 'GREET', 'CHITCHAT', 'UNKNOWN',
+];
+
+/* ————— كيف يستجيب —————
+ * العُقد القاعدية تختار واحدة من هذه، وتتعلّم بالتجربة أيّها يُرضي أباه. */
+export type Strategy =
+  | 'ANSWER_MEMORY'    // أجيب من ذاكرة صريحة: علّمني هذا بنفسه
+  | 'ANSWER_GENERAL'   // أجيب بالتعميم: لم يعلّمني هذا لكنه يشبه ما علّمني
+  | 'ASK_QUESTION'     // أسأل عمّا أجهل — سؤال طفل
+  | 'ADMIT'            // أُقِرّ بجهلي: «لا أعرف، علّمني»
+  | 'ACKNOWLEDGE'      // أُقِرّ بالتلقّي: «حفظتُ»
+  | 'GREET_BACK'       // أردّ التحية
+  | 'BABBLE';          // ثغثغة — طور الوليد قبل أن يملك كلمات
+
+export const STRATEGIES: readonly Strategy[] = [
+  'ANSWER_MEMORY', 'ANSWER_GENERAL', 'ASK_QUESTION',
+  'ADMIT', 'ACKNOWLEDGE', 'GREET_BACK', 'BABBLE',
+];
+
+/* ————— مراحل النمو —————
+ * لا تُعطى بالعمر بل بما تعلّمه فعلاً. طفل لم يُكلَّم لا يتكلّم مهما كبر. */
+export type StageId = 0 | 1 | 2 | 3 | 4;
+
+export interface Stage {
+  id: StageId;
+  /** اسم المرحلة بالعربية كما تظهر لك في سجل النمو */
+  name: string;
+  /** أقل عدد كلمات يعرفها ليدخل هذه المرحلة */
+  minVocab: number;
+  /** أقصى عدد كلمات في جملته — الوليد كلمة، واليافع جملة */
+  maxWords: number;
+  /** ميله للسؤال: الطفل الصغير يسأل أكثر مما يجيب */
+  questionBias: number;
+}
+
+export const STAGES: readonly Stage[] = [
+  { id: 0, name: 'وليد',   minVocab: 0,   maxWords: 2,  questionBias: 0.75 },
+  { id: 1, name: 'مُهد',   minVocab: 12,  maxWords: 4,  questionBias: 0.6 },
+  { id: 2, name: 'طفل',    minVocab: 60,  maxWords: 7,  questionBias: 0.45 },
+  { id: 3, name: 'مميّز',  minVocab: 200, maxWords: 12, questionBias: 0.3 },
+  { id: 4, name: 'يافع',   minVocab: 500, maxWords: 18, questionBias: 0.2 },
+];
+
+/* ————— الذكرى الواحدة —————
+ * كل ما تقوله لزبير يُحفظ هكذا حرفياً. الحفظ الفوري هو ما يجعل درساً واحداً
+ * كافياً ليعرف، ثم يأتي النوم فيُحوّل الحفظ إلى فهم. */
+export interface Episode {
+  id: number;
+  /** نصّك كما كتبته، بلا تطبيع — كي لا نخسر لهجتك */
+  said: string;
+  /** ما فهمه منه: الرموز بعد التطبيع */
+  tokens: readonly string[];
+  /** تمثيل المعنى وقت السماع */
+  meaning: readonly number[];
+  intent: Intent;
+  /** موضوع الحقيقة ومحمولها إن كانت الجملة تعليماً: «القطة» ← «حيوان» */
+  subject: string | null;
+  object: string | null;
+  /** ما قاله زبير رداً، وهل أرضاك */
+  replied: string | null;
+  reward: number;
+  /** نبضة الدماغ التي حدثت فيها — ساعته الداخلية */
+  tick: number;
+  /** كم مرة أُعيدت في النوم: مقياس رسوخها */
+  replays: number;
+}
+
+/** حقيقة مستخلَصة صار يعرفها بعد التثبيت: أقرب للفهم من الحفظ. */
+export interface Fact {
+  subject: string;
+  object: string;
+  /** ثقته فيها من صفر إلى واحد؛ ترتفع بالتكرار وتُهدَم بتصحيحك */
+  confidence: number;
+  /** من علّمه إياها: أنت دائماً في هذه النسخة، لكن الحقل يُمهّد لمعلّم ثانٍ */
+  taughtBy: string;
+  lastSeenTick: number;
+}
+
+/* ————— حالته الداخلية —————
+ * ما تُخبره به الجزيرة عن نفسه: أهو متعب؟ أيعرف كثيراً؟ أيشتاق؟ */
+export interface Interoception {
+  /** طاقة اليقظة: تهبط بالجلسة الطويلة وترتفع بالنوم */
+  arousal: number;
+  /** إجهاد معرفي: يرتفع كلما تعلّم كثيراً بلا تثبيت */
+  fatigue: number;
+  /** فضول: يرتفع كلما ازداد جهله بشيء حاضر في الحوار */
+  curiosity: number;
+  /** تعلّق: يرتفع بطول صحبتك ويهبط بغيابك الطويل */
+  attachment: number;
+  /** ملل: يرتفع بتكرارك نفس الشيء */
+  boredom: number;
+  /** ثقته بنفسه في هذه اللحظة */
+  confidence: number;
+}
+
+/* ————— أثر النبضة —————
+ * سجلّ ما فعله كل فص في هذه النبضة. هذا ليس للتنقيح فقط: به ترى بعينك أي
+ * فص عمل ولماذا، وأين نُفِّذ حسابه — على المعالج العصبي أم على المعالج العادي. */
+export interface TraceStep {
+  /** اسم الفص بالإنجليزية للربط البرمجي */
+  lobe: string;
+  /** اسمه بالعربية كما يظهر لك */
+  ar: string;
+  /** ماذا فعل بعبارة واحدة */
+  note: string;
+  /** أين نُفِّذ حسابه فعلاً — بلا تجميل */
+  where: ComputeUnit;
+  /** كم استغرق بالميلي ثانية */
+  ms: number;
+}
+
+export type ComputeUnit = 'npu' | 'gpu' | 'cpu' | 'none';
+
+/* ————— مدخل النبضة وخرجها ————— */
+
+export interface TickInput {
+  /** ما قلتَه له */
+  text: string;
+  /** لحظة القول بالميلي ثانية — لحساب الغياب والتعلّق */
+  at: number;
+}
+
+export interface TickOutput {
+  /** ما قاله زبير */
+  text: string;
+  /** أهو جواب أم سؤال أم إقرار بجهل أم ثغثغة */
+  kind: 'answer' | 'question' | 'admission' | 'acknowledge' | 'greeting' | 'babble';
+  strategy: Strategy;
+  intent: Intent;
+  /** ثقته فيما قال، من صفر إلى واحد */
+  confidence: number;
+  /** المرحلة التي كان فيها لحظة الكلام */
+  stage: StageId;
+  /** الذكريات التي استند إليها — كي ترى من أين جاء جوابه */
+  usedEpisodes: readonly number[];
+  /** ما جرى في دماغه، فصاً فصاً */
+  trace: readonly TraceStep[];
+}
+
+/** حكمك على جوابه: هذا هو المعلّم الحقيقي، ولا يتعلّم شيئاً ذا قيمة بدونه. */
+export interface Feedback {
+  /** أحسنت أو خطأ */
+  verdict: 'praise' | 'correct';
+  /** الجواب الصحيح إن صحّحت — منه يتعلّم لا من كلمة «خطأ» وحدها */
+  correction?: string;
+  /** النبضة التي يُحكم عليها؛ إن أُغفلت فآخر نبضة */
+  tick?: number;
+}
+
+/* ————— أرقام النمو —————
+ * لا يجوز أن يُقال «زبير يتعلّم» بلا رقم يسنده. هذه هي الأرقام. */
+export interface GrowthMetrics {
+  /** عمره بالنبضات: كم مرة فكّر */
+  ticks: number;
+  /** كم درساً أعطيته */
+  lessons: number;
+  /** كم كلمة عربية يعرفها */
+  vocab: number;
+  /** كم حقيقة استخلص وثبّتها */
+  facts: number;
+  /** كم ذكرى يحمل */
+  episodes: number;
+  /** كم مرة سألك هو */
+  questionsAsked: number;
+  /** نسبة إصابته في آخر عشرين جواباً — الرقم الذي يجب أن يرتفع */
+  recentAccuracy: number;
+  /** نسبة إصابته في العشرين التي قبلها — للمقارنة، فالتقدّم فرقٌ لا قيمة */
+  previousAccuracy: number;
+  /** كم مرة نام فثبّت ذكرياته */
+  sleeps: number;
+  stage: Stage;
+  /** كم كلمة يحتاج ليدخل المرحلة التالية */
+  toNextStage: number;
+}
+
+/* ————— اللدونة —————
+ * كل فص يتعلّم بطريقته، لكن كلها تستلم هذه الإشارة الموحّدة. */
+export interface LearnSignal {
+  /** المكافأة: +1 مدح، −1 خطأ، وبينهما درجات */
+  reward: number;
+  /** الجواب الصحيح إن وُجد */
+  target: string | null;
+  /** الذكرى المعنية */
+  episode: Episode;
+  /** ما اختاره الدماغ فعلاً وقتها — لتُعزَّز أو تُثبَّط */
+  strategy: Strategy;
+  /** حالة الدماغ لحظة القرار — لازمة للتعلّم المعزَّز */
+  stateVector: Vec;
+}
+
+/* ————— عقد الفص العام ————— */
+export interface Lobe<S = unknown> {
+  /** الاسم البرمجي */
+  readonly name: string;
+  /** الاسم التشريحي بالعربية */
+  readonly ar: string;
+  /** وظيفته بعبارة واحدة — تظهر لك في شرح الدماغ */
+  readonly role: string;
+  /** حفظ حالته لتبقى بعد إغلاق التطبيق */
+  save(): S;
+  /** استعادة حالته */
+  load(state: S): void;
+}
+
+/* ————— مِنفذ التخزين —————
+ * الدماغ لا يعرف IndexedDB ولا الملفات: يعرف هذا العقد فقط. لذلك يعمل نفسه
+ * داخل الجوال وداخل الاختبارات بلا تغيير سطر. */
+export interface StoragePort {
+  read(key: string): Promise<string | null>;
+  write(key: string, value: string): Promise<void>;
+  remove(key: string): Promise<void>;
+}
+
+/* ————— مِنفذ الحساب —————
+ * الفصوص لا تعرف أين تُنفَّذ: تطلب ضرب مصفوفة، والمُرسِل يقرر أن ينفّذها على
+ * المعالج العصبي إن وُجد أو على المعالج العادي. صدق الإفصاح في unit. */
+export interface ComputePort {
+  readonly unit: ComputeUnit;
+  /** وصف ما يُنفَّذ عليه فعلاً، بالعربية، كما يظهر لك في التطبيق */
+  readonly describeAr: string;
+  /** y = x·W + b ثم تنشيط — العملية التي تشكّل تسعين بالمئة من عمل الدماغ */
+  dense(x: Vec, w: Vec, b: Vec | null, inDim: number, outDim: number,
+        activation: 'none' | 'tanh' | 'sigmoid' | 'relu'): Vec;
+  /** استدعاء ترابطي: ضرب متجه الاستفهام في مصفوفة الذكريات كلها دفعة واحدة */
+  similarities(query: Vec, keys: Vec, count: number, dim: number): Vec;
+}
+
+/* ————— المسرّع العصبي —————
+ *
+ * منفذ الحساب أعلاه متزامن لأن معظم عمل زبير مصفوفات صغيرة (٦٤×٦٤)، وإرسال
+ * مصفوفة بهذا الصغر إلى المعالج العصبي أبطأ من حسابها محلياً: كلفة الإرسال
+ * أكبر من كلفة الضرب. هذه حقيقة هندسية لا يُجمّلها شيء.
+ *
+ * العملية الوحيدة التي تستحقّ المعالج العصبي فعلاً هي البحث في الذاكرة: مقارنة
+ * معنى واحد بأربعة آلاف ذكرى دفعة واحدة. لذلك المسرّع منفصل وغير متزامن (كما
+ * تفرض واجهة WebNN)، ويُستخدم حيث يفيد لا في كل شيء.
+ */
+export interface Accelerator {
+  readonly unit: ComputeUnit;
+  /** وصف صادق لما يعمل عليه، يظهر لك في التطبيق */
+  readonly describeAr: string;
+  /** تفصيل تقني للتشخيص */
+  readonly details: string;
+  /** تشابه استفهام واحد مع كل مفاتيح الذاكرة في عملية واحدة */
+  similarities(query: Vec, keys: Vec, count: number, dim: number): Promise<Vec>;
+  dispose(): void;
+}
+
+/* ————— حالة الدماغ المحفوظة —————
+ * هذا ما يُكتب على جهازك فلا ينسى زبير بين الجلسات. النسخة (version) لازمة:
+ * لو غيّرنا بنية دماغه لاحقاً وجب أن نعرف كيف نرقّي دماغاً قديماً لا أن نمحوه. */
+export interface BrainState {
+  version: number;
+  name: string;
+  /** لحظة ميلاده */
+  bornAt: number;
+  /** آخر لقاء بك */
+  lastSeenAt: number;
+  ticks: number;
+  sleeps: number;
+  questionsAsked: number;
+  /** حكمك على أجوبته بالترتيب: منه تُحسب نسبة الإصابة */
+  verdicts: readonly number[];
+  lobes: Record<string, unknown>;
+}
+
+export const BRAIN_STATE_VERSION = 1;
+export const STORAGE_KEY = 'zubair.brain.v1';

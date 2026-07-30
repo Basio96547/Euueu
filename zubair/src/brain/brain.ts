@@ -1,0 +1,642 @@
+/* ————— زبير: تجميع الدماغ —————
+ *
+ * هذا الملف لا يفكّر، بل يوصّل. كل الذكاء في الفصوص، وهنا يمرّ الكلام بينها
+ * بالترتيب التشريحي نفسه الذي يسلكه الإدراك في دماغ حقيقي: من الجذع إلى
+ * الحاسّة إلى المهاد إلى القشرة إلى الحوفي إلى الجبهي إلى الكلام.
+ *
+ * قاعدة حاكمة: هذا الملف لا يحتوي قاعدة تعلّم واحدة ولا عتبة قرار. لو وجدت
+ * نفسك تكتب هنا منطقاً معرفياً فذاك دليل أن فصاً ناقص. الفصل ليس ترتيباً
+ * جمالياً: به يبقى كل فص قابلاً للاستبدال وحده، وبه يُعرف أي فص أخطأ.
+ */
+
+import { Rng, argmax, clamp, type Vec } from './core/tensor.js';
+import { Lexicon } from './core/text.js';
+import { bestAccelerator, cpuCompute } from './core/npu.js';
+import { browserStorage, memoryStorage } from './core/persist.js';
+import { accuracyOf, stageOf, toNextStage } from './core/growth.js';
+import {
+  BRAIN_STATE_VERSION, DIMS, STAGES, STORAGE_KEY, STRATEGIES,
+  type Accelerator, type BrainState, type ComputePort, type ComputeUnit, type Episode,
+  type Feedback, type GrowthMetrics, type Intent, type Strategy, type TickOutput, type TraceStep,
+} from './core/types.js';
+import { Brainstem } from './lobes/brainstem.js';
+import { Thalamus } from './lobes/thalamus.js';
+import { TemporalLobe } from './lobes/temporal.js';
+import { Hippocampus } from './lobes/hippocampus.js';
+import { Parietal } from './lobes/parietal.js';
+import { Amygdala, Cingulate, Hypothalamus, Insula } from './lobes/limbic.js';
+import { BasalGanglia } from './lobes/basalGanglia.js';
+import { Cerebellum, Prefrontal } from './lobes/prefrontal.js';
+import { Broca } from './lobes/broca.js';
+
+/** ما بقي من النبضة الأخيرة لأن حكم الأب يأتي بعدها لا معها. */
+interface PendingJudgement {
+  tick: number;
+  said: string;
+  replied: string;
+  meaning: Vec;
+  state: Vec;
+  strategy: Strategy;
+  intent: Intent;
+  subject: string | null;
+  object: string | null;
+  assertedObject: string | null;
+}
+
+export interface CreateOptions {
+  storage?: import('./core/types.js').StoragePort;
+  seed?: number;
+  name?: string;
+  accelerator?: Accelerator;
+  /** لا تقرأ دماغاً محفوظاً — لميلاد جديد نظيف في الاختبارات */
+  fresh?: boolean;
+}
+
+export interface JudgeResult {
+  /** خطأ التنبؤ بالمكافأة: مقدار ما فاجأه حكمك */
+  dopamine: number;
+  /** ما تعلّمه من حكمك، بعبارات عربية تُعرض للأب */
+  learned: string[];
+}
+
+export interface SleepResult {
+  replayed: number;
+  factsFormed: number;
+  /** ما تغيّر فعلاً بالنوم — يُعرض للأب كي لا يكون النوم زراً بلا أثر */
+  vocabBefore: number;
+  vocabAfter: number;
+  accuracyBefore: number;
+}
+
+export class Zubair {
+  readonly name: string;
+
+  private readonly rng: Rng;
+  private readonly compute_: ComputePort;
+  private accel: Accelerator;
+  private readonly storage: import('./core/types.js').StoragePort;
+
+  /* الفصوص */
+  private readonly brainstem = new Brainstem();
+  private readonly lexicon: Lexicon;
+  private readonly thalamus: Thalamus;
+  private readonly temporal: TemporalLobe;
+  private readonly hippocampus = new Hippocampus();
+  private readonly parietal = new Parietal();
+  private readonly amygdala: Amygdala;
+  private readonly hypothalamus = new Hypothalamus();
+  private readonly insula = new Insula();
+  private readonly cingulate = new Cingulate();
+  private readonly basalGanglia: BasalGanglia;
+  private readonly prefrontal = new Prefrontal();
+  private readonly cerebellum = new Cerebellum();
+  private readonly broca: Broca;
+
+  /* حالة الدماغ العامة */
+  private bornAt = 0;
+  private lastSeenAt = 0;
+  private ticks = 0;
+  private sleeps = 0;
+  private lessons = 0;
+  private lessonsSinceSleep = 0;
+  private questionsAsked = 0;
+  private verdicts: number[] = [];
+  private askedWords: string[] = [];
+  private pending: PendingJudgement | null = null;
+
+  private constructor(opts: Required<Pick<CreateOptions, 'name'>> & CreateOptions) {
+    this.name = opts.name;
+    const seed = opts.seed ?? 0x2b17a1;
+    this.rng = new Rng(seed);
+    this.compute_ = cpuCompute();
+    this.accel = opts.accelerator ?? {
+      unit: 'cpu',
+      describeAr: 'يفكّر على معالج جهازك العادي',
+      details: 'لم يُطلب مسرّع',
+      similarities: async (q, k, c, d) => this.compute_.similarities(q, k, c, d),
+      dispose: () => {},
+    };
+    this.storage = opts.storage ?? defaultStorage();
+
+    const rng = new Rng(seed ^ 0x51ab);
+    this.lexicon = new Lexicon(rng);
+    this.thalamus = new Thalamus(rng);
+    this.temporal = new TemporalLobe(rng);
+    this.amygdala = new Amygdala(rng);
+    this.basalGanglia = new BasalGanglia(rng);
+    this.broca = new Broca(rng);
+  }
+
+  static async create(opts: CreateOptions = {}): Promise<Zubair> {
+    const child = new Zubair({ ...opts, name: opts.name ?? 'زبير' });
+    child.accel = opts.accelerator ?? (await bestAccelerator());
+    if (!opts.fresh) await child.load();
+    if (child.bornAt === 0) child.bornAt = Date.now();
+    return child;
+  }
+
+  /* ————— ما يراه الأب عن حال ابنه ————— */
+
+  get metrics(): GrowthMetrics {
+    const vocab = this.lexicon.size;
+    const { recent, previous } = accuracyOf(this.verdicts);
+    return {
+      ticks: this.ticks,
+      lessons: this.lessons,
+      vocab,
+      facts: this.parietal.facts.length,
+      episodes: this.hippocampus.count,
+      questionsAsked: this.questionsAsked,
+      recentAccuracy: recent,
+      previousAccuracy: previous,
+      sleeps: this.sleeps,
+      stage: stageOf(vocab),
+      toNextStage: toNextStage(vocab),
+    };
+  }
+
+  get compute(): { unit: ComputeUnit; describeAr: string; details: string } {
+    return { unit: this.accel.unit, describeAr: this.accel.describeAr, details: this.accel.details };
+  }
+
+  /** خريطة الدماغ كما تُعرض للأب: كل فص ووظيفته. */
+  get lobes(): Array<{ name: string; ar: string; role: string }> {
+    const all = [
+      this.brainstem, this.lexicon, this.thalamus, this.temporal, this.hippocampus,
+      this.parietal, this.amygdala, this.hypothalamus, this.insula, this.cingulate,
+      this.basalGanglia, this.prefrontal, this.cerebellum, this.broca,
+    ];
+    return all.map((lobe) => ({ name: lobe.name, ar: lobe.ar, role: lobe.role }));
+  }
+
+  /* ————— النبضة: من كلامك إلى كلامه ————— */
+
+  async hear(text: string, at: number = Date.now()): Promise<TickOutput> {
+    const trace: TraceStep[] = [];
+    const timed = <T>(lobe: { name: string; ar: string }, note: string, where: ComputeUnit, fn: () => T): T => {
+      const started = now();
+      const value = fn();
+      trace.push({ lobe: lobe.name, ar: lobe.ar, note, where, ms: round2(now() - started) });
+      return value;
+    };
+
+    /* ١. جذع الدماغ: النبضة واليقظة والغياب */
+    const vitals = timed(this.brainstem, 'نبضة جديدة', 'cpu', () => this.brainstem.tick(at));
+    this.ticks = vitals.ticks;
+
+    /* ٢. الحاسّة: يقرأ حرفك وينمّي مفرداته بما سمع */
+    const vocabBefore = this.lexicon.size;
+    const percept = timed(this.lexicon, 'قرأ كلامك', 'cpu', () => this.lexicon.perceive(text, true));
+    const grown = this.lexicon.size - vocabBefore;
+    if (grown > 0) {
+      trace.push({
+        lobe: this.lexicon.name, ar: this.lexicon.ar,
+        note: `تعلّم ${grown} كلمة جديدة`, where: 'cpu', ms: 0,
+      });
+    }
+
+    /* ٣. الردود الفطرية: تخمين ما تريده مني قبل أن تتعلّم قشرتي */
+    const reflex = timed(this.brainstem, 'غريزة: قصدك المبدئي', 'cpu', () => this.brainstem.reflexIntent(percept));
+
+    /* ٤. الوطاء: الدوافع تتبدّل بما سمع */
+    const repeated = this.prefrontal.recent.at(-1)?.said === percept.raw;
+    const intero = timed(this.hypothalamus, 'حدّث دوافعه', 'cpu', () => this.hypothalamus.update({
+      unknownCount: percept.unknown.length,
+      repeatedInput: repeated,
+      awayMs: vitals.awayMs,
+      lessonsSinceSleep: this.lessonsSinceSleep,
+      knownVocab: this.lexicon.size,
+    }));
+
+    /* ٥. المهاد: أي كلماتك تستحقّ الانتباه */
+    const gated = timed(this.thalamus, 'وزّع انتباهه على كلماتك', this.compute_.unit,
+      () => this.thalamus.gate(percept, intero, this.compute_));
+
+    /* ٦. الفص الصدغي: الفهم */
+    const understanding = timed(this.temporal, 'فهم المعنى والقصد', this.compute_.unit,
+      () => this.temporal.understand(percept, gated.bag, reflex, this.compute_));
+
+    /* ٧. الحُصين: هل علّمتني هذا قبلاً؟
+     * البحث هو العملية الوحيدة التي تستحقّ المسرّع العصبي: معنى واحد يُقارَن
+     * بآلاف الذكريات دفعة واحدة. لذلك وحدها تمرّ من هنا لا كل حساب. */
+    const recallStarted = now();
+    const recall = this.accel.unit === 'cpu'
+      ? this.hippocampus.recall(understanding.meaning, 4, this.compute_)
+      : await this.hippocampus.recallFast(understanding.meaning, 4, this.accel);
+    trace.push({
+      lobe: this.hippocampus.name, ar: this.hippocampus.ar,
+      note: recall.best ? `استدعى ذكرى بتشابه ${recall.bestScore.toFixed(2)}` : 'لا ذكرى مشابهة',
+      where: this.accel.unit, ms: round2(now() - recallStarted),
+    });
+
+    /* ٨. الفص الجُداري: الربط والحقائق والتعميم */
+    const bound = timed(this.parietal, 'ربط طرفي الجملة', 'cpu',
+      () => this.parietal.bind(percept, understanding.intent));
+
+    const teaching = understanding.intent === 'TEACH_FACT'
+      || understanding.intent === 'TEACH_WORD'
+      || understanding.intent === 'TEACH_NAME';
+
+    if (teaching && bound.subject && bound.object) {
+      this.parietal.learnFact(bound.subject, bound.object, this.ticks, 'أبوه');
+      this.lessons++;
+      this.lessonsSinceSleep++;
+      // ترابط هيبي: طرفا الحقيقة يتقاربان في تمثيله، فيصير «قطة» و«حيوان»
+      // متجاورين في ذهنه لا رمزين منفصلين — وهذا أصل التعميم لاحقاً
+      const a = this.lexicon.idOf(bound.subject);
+      const b = this.lexicon.idOf(bound.object);
+      if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b);
+      trace.push({
+        lobe: this.parietal.name, ar: this.parietal.ar,
+        note: `حفظ: ${bound.subject} ← ${bound.object}`, where: 'cpu', ms: 0,
+      });
+    }
+
+    /* موضوع السؤال: عمّا يسألني أبي؟ أعلى كلمة انتباهاً ليست أداة استفهام. */
+    const topic = bound.subject ?? this.salientTopic(percept, gated.weights);
+    const fact = topic ? this.parietal.lookup(topic) : null;
+    const generalized = !fact && topic ? this.parietal.generalize(topic, this.lexicon) : null;
+
+    /* ٩. اللوزة: هل هذا المعنى مقترن بمدح أم بخطأ في تجربتي؟ */
+    const valence = timed(this.amygdala, 'وسم عاطفي للمعنى', this.compute_.unit,
+      () => this.amygdala.valence(understanding.meaning, this.compute_));
+
+    /* ١٠. الجزيرة والحزام: حالته الداخلية، وهل هو متأكّد أصلاً */
+    const insulaVec = timed(this.insula, 'استبطن حاله', 'cpu', () => this.insula.encode(intero));
+    const conflict = timed(this.cingulate, 'قاس تعارضه الداخلي', 'cpu', () => this.cingulate.conflict({
+      intentProbs: understanding.intentProbs,
+      recallScore: recall.bestScore,
+      factConfidence: fact?.confidence ?? 0,
+      valence,
+    }));
+
+    /* ١١. الفص الجبهي: الهدف والكبح */
+    const stage = stageOf(this.lexicon.size);
+    const goal = timed(this.prefrontal, 'حدّد هدفه', 'cpu', () => this.prefrontal.goal(intero, understanding));
+    const allowed = timed(this.prefrontal, 'كبح ما لا يصلح الآن', 'cpu', () => this.prefrontal.inhibit(STRATEGIES, {
+      stage,
+      askedRecently: this.askedWords.slice(-8),
+      lastStrategies: this.prefrontal.recentStrategies,
+      hasFact: fact !== null,
+      hasGeneralization: generalized !== null,
+      recallScore: recall.bestScore,
+      vocab: this.lexicon.size,
+    }));
+
+    /* ١٢. العُقد القاعدية: أي استجابة أختار؟
+     * الحرارة ليست ثابتة: الملل والفضول يدفعانه للتجريب، واليقين يدفعه للالتزام
+     * بما يعرف. هذا هو التوازن بين الاستكشاف والاستغلال، وبه يخرج من العادة. */
+    const temperature = clamp(0.5 + 0.7 * intero.boredom + 0.5 * intero.curiosity - 0.4 * (1 - conflict.level), 0.2, 2.2);
+    const state = this.basalGanglia.encodeState({
+      understanding, recallScore: recall.bestScore, hasFact: fact !== null,
+      hasGeneralization: generalized !== null, valence, conflict: conflict.level,
+      intero, insula: insulaVec, stage: stage.id, unknownCount: percept.unknown.length,
+    });
+    const decision = timed(this.basalGanglia, `اختار استجابته (حرارة ${temperature.toFixed(2)})`, this.compute_.unit,
+      () => this.basalGanglia.select(state, allowed, temperature, this.rng, this.compute_));
+
+    /* ١٣. بروكا: الكلام */
+    const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
+      strategy: decision.strategy, stage, percept, understanding, recall, fact, generalized,
+      intero, unknownWords: percept.unknown, askedBefore: this.askedWords,
+      lexicon: this.lexicon, selfName: this.name, rng: this.rng,
+    }));
+
+    /* ١٤. المخيخ: الإتقان ومنع التكرار */
+    const refined = timed(this.cerebellum, 'أتقن صياغته', 'cpu', () => this.cerebellum.refine(speech.text, {
+      recentReplies: this.prefrontal.recent.map((t) => t.replied),
+    }));
+
+    /* ١٥. ما بعد الكلام: تخزين، وتعلّم أسلوب أبيه، وتعلّم من غريزته */
+    const episode = this.hippocampus.store({
+      said: percept.raw, tokens: percept.tokens, meaning: Array.from(understanding.meaning),
+      intent: understanding.intent, subject: bound.subject, object: bound.object,
+      replied: refined, reward: 0, tick: this.ticks,
+    });
+
+    this.prefrontal.push({ said: percept.raw, replied: refined, meaning: understanding.meaning, tick: this.ticks, strategy: decision.strategy });
+    this.broca.learnStyle(percept.raw);
+
+    // التعلّم من الغريزة: حين يكون النمط السطحي صريحاً، تُدرَّب القشرة عليه.
+    // هكذا يتعلّم الطفل الأول: غريزته معلّمه حتى يأتي معلّم أحسن — أبوه.
+    if (reflex.strength >= 0.6) {
+      this.temporal.teachIntent(percept, gated.bag, reflex.intent, 0.01);
+    }
+
+    if (speech.kind === 'question') {
+      this.questionsAsked++;
+      if (speech.about) this.askedWords.push(speech.about);
+      if (this.askedWords.length > 64) this.askedWords = this.askedWords.slice(-64);
+    }
+
+    this.pending = {
+      tick: this.ticks, said: percept.raw, replied: refined,
+      meaning: understanding.meaning.slice(), state: state.slice(),
+      strategy: decision.strategy, intent: understanding.intent,
+      subject: bound.subject, object: bound.object,
+      assertedObject: decision.strategy === 'ANSWER_MEMORY' ? (fact?.object ?? null)
+        : decision.strategy === 'ANSWER_GENERAL' ? (generalized?.fact.object ?? null) : null,
+    };
+    this.lastSeenAt = at;
+
+    trace.push({
+      lobe: 'goal', ar: 'هدفه الآن', note: goalAr(goal), where: 'none', ms: 0,
+    });
+
+    return {
+      text: refined, kind: speech.kind, strategy: decision.strategy,
+      intent: understanding.intent,
+      confidence: clamp(1 - conflict.level, 0, 1),
+      stage: stage.id,
+      usedEpisodes: recall.episodes.map((e) => e.id),
+      trace,
+    };
+  }
+
+  /** أعلى كلمة انتباهاً ليست أداة استفهام — عمّا يسألني أبي. */
+  private salientTopic(percept: { tokens: string[]; isQuestion: boolean }, weights: number[]): string | null {
+    if (percept.tokens.length === 0) return null;
+    let best: string | null = null;
+    let bestWeight = -Infinity;
+    for (let i = 0; i < percept.tokens.length; i++) {
+      const token = percept.tokens[i]!;
+      if (QUESTION_WORDS.has(token) || STOP_WORDS.has(token)) continue;
+      const w = weights[i] ?? 0;
+      if (w > bestWeight) {
+        bestWeight = w;
+        best = token;
+      }
+    }
+    return best;
+  }
+
+  /* ————— حكم الأب: هنا يقع أهم تعلّم في الدماغ كله ————— */
+
+  async judge(feedback: Feedback): Promise<JudgeResult> {
+    const pending = this.pending;
+    if (!pending) return { dopamine: 0, learned: [] };
+
+    const reward = feedback.verdict === 'praise' ? 1 : -1;
+    const learned: string[] = [];
+
+    this.hippocampus.annotate(pending.tick, pending.replied, reward);
+    this.amygdala.condition(pending.meaning, reward);
+    this.thalamus.reinforce(reward);
+    const { dopamine } = this.basalGanglia.learn(pending.state, pending.strategy, reward);
+    this.verdicts.push(reward);
+    if (this.verdicts.length > 400) this.verdicts = this.verdicts.slice(-400);
+
+    learned.push(reward > 0
+      ? `عزّز أن «${strategyAr(pending.strategy)}» تُرضيك في مثل هذا الموضع`
+      : `أضعف «${strategyAr(pending.strategy)}» في مثل هذا الموضع`);
+
+    if (feedback.verdict === 'correct' && feedback.correction && feedback.correction.trim()) {
+      const correction = feedback.correction.trim();
+
+      // ١. نمط الخطأ: ما قاله خطأً وما كان صحيحاً — يتعلّمه المخيخ لئلا يعيده
+      this.cerebellum.learnFromCorrection(pending.replied, correction);
+
+      // ٢. الحقيقة الخاطئة تُهدَم. لا نمحوها فوراً: نخفض ثقتها، فإن أصرّ الأب سقطت.
+      if (pending.subject && pending.assertedObject) {
+        this.parietal.contradict(pending.subject, pending.assertedObject);
+        learned.push(`هدم ثقته في «${pending.subject} ← ${pending.assertedObject}»`);
+      }
+
+      // ٣. تصحيحك درس كامل لا كلمة «خطأ»: يُقرأ ويُفهم ويُحفظ كما لو علّمته ابتداءً
+      const cPercept = this.lexicon.perceive(correction, true);
+      const cReflex = this.brainstem.reflexIntent(cPercept);
+      const cGate = this.thalamus.gate(cPercept, this.hypothalamus.state, this.compute_);
+      const cUnderstanding = this.temporal.understand(cPercept, cGate.bag, cReflex, this.compute_);
+      const cBound = this.parietal.bind(cPercept, 'TEACH_FACT');
+      const subject = cBound.subject ?? pending.subject;
+      const object = cBound.object ?? (cPercept.tokens.length === 1 ? cPercept.tokens[0]! : null);
+
+      if (subject && object) {
+        this.parietal.learnFact(subject, object, this.ticks, 'أبوه');
+        const a = this.lexicon.idOf(subject);
+        const b = this.lexicon.idOf(object);
+        if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b, 0.05);
+        learned.push(`تعلّم من تصحيحك: ${subject} ← ${object}`);
+      }
+
+      // ٤. الذكرى الصحيحة تُخزَّن بمكافأة موجبة كي يُعاد عليها في النوم
+      this.hippocampus.store({
+        said: correction, tokens: cPercept.tokens,
+        meaning: Array.from(cUnderstanding.meaning), intent: 'TEACH_FACT',
+        subject, object, replied: null, reward: 0.5, tick: this.ticks,
+      });
+      this.lessons++;
+      this.lessonsSinceSleep++;
+    }
+
+    if (feedback.verdict === 'praise') {
+      // المدح على جواب من ذاكرة صريحة يقوّي الحقيقة نفسها لا الاستراتيجية وحدها
+      if (pending.subject && pending.assertedObject) {
+        this.parietal.learnFact(pending.subject, pending.assertedObject, this.ticks, 'أبوه');
+      }
+    }
+
+    await this.save();
+    return { dopamine, learned };
+  }
+
+  /* ————— النوم: هنا يتحوّل الحفظ إلى فهم —————
+   *
+   * الحفظ الفوري يجعل درساً واحداً كافياً ليعرف، لكنه لا يجعله يفهم. الفهم
+   * يحتاج تكراراً، والأب لا يكرّر ألف مرة. فيُعيد زبير على نفسه دروسه أثناء
+   * النوم — وهذا ما يفعله دماغك كل ليلة: يُشغّل ذكريات اليوم مراراً ليثبّتها. */
+  async sleep(cycles = 3): Promise<SleepResult> {
+    const vocabBefore = this.lexicon.size;
+    const accuracyBefore = accuracyOf(this.verdicts).recent;
+    let replayed = 0;
+    let factsFormed = 0;
+
+    for (let cycle = 0; cycle < cycles; cycle++) {
+      const batch = this.hippocampus.replayBatch(24, this.rng);
+      for (const episode of batch) {
+        replayed++;
+        const percept = this.lexicon.perceive(episode.said, false);
+        const reflex = this.brainstem.reflexIntent(percept);
+        const gate = this.thalamus.gate(percept, this.hypothalamus.state, this.compute_);
+
+        // تثبيت القصد: نفس الدرس يُعاد على القشرة فتنتقل معرفته من الحُصين إليها
+        this.temporal.teachIntent(percept, gate.bag, episode.intent, 0.02);
+
+        if (episode.reward !== 0) {
+          const meaning = Float32Array.from(episode.meaning);
+          this.amygdala.condition(meaning, episode.reward, 0.02);
+        }
+
+        if (episode.subject && episode.object) {
+          const before = this.parietal.lookup(episode.subject);
+          this.parietal.learnFact(episode.subject, episode.object, this.ticks, episode.replays > 0 ? 'التثبيت' : 'أبوه');
+          if (!before) factsFormed++;
+          const a = this.lexicon.idOf(episode.subject);
+          const b = this.lexicon.idOf(episode.object);
+          if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b, 0.01);
+        }
+      }
+    }
+
+    this.hypothalamus.onSleep();
+    this.brainstem.onSleep();
+    this.sleeps++;
+    this.lessonsSinceSleep = 0;
+    await this.save();
+
+    return { replayed, factsFormed, vocabBefore, vocabAfter: this.lexicon.size, accuracyBefore };
+  }
+
+  /** يبتدئ هو الكلام: عند أول لقاء، أو بعد غياب. */
+  async greet(): Promise<TickOutput | null> {
+    const away = this.lastSeenAt === 0 ? Infinity : Date.now() - this.lastSeenAt;
+    // ساعة غياب تكفي ليشتاق. أقل من ذلك استكمال جلسة لا لقاء جديد.
+    if (away < 60 * 60 * 1000) return null;
+    return this.hear(this.ticks === 0 ? 'مرحبا' : 'رجعت');
+  }
+
+  /* ————— الحفظ: طفل لا يُحفظ دماغه ينسى أباه ————— */
+
+  private snapshot(): BrainState {
+    return {
+      version: BRAIN_STATE_VERSION,
+      name: this.name,
+      bornAt: this.bornAt,
+      lastSeenAt: this.lastSeenAt,
+      ticks: this.ticks,
+      sleeps: this.sleeps,
+      questionsAsked: this.questionsAsked,
+      verdicts: this.verdicts,
+      lobes: {
+        meta: { lessons: this.lessons, lessonsSinceSleep: this.lessonsSinceSleep, askedWords: this.askedWords },
+        brainstem: this.brainstem.save(),
+        lexicon: this.lexicon.save(),
+        thalamus: this.thalamus.save(),
+        temporal: this.temporal.save(),
+        hippocampus: this.hippocampus.save(),
+        parietal: this.parietal.save(),
+        amygdala: this.amygdala.save(),
+        hypothalamus: this.hypothalamus.save(),
+        insula: this.insula.save(),
+        cingulate: this.cingulate.save(),
+        basalGanglia: this.basalGanglia.save(),
+        prefrontal: this.prefrontal.save(),
+        cerebellum: this.cerebellum.save(),
+        broca: this.broca.save(),
+      },
+    };
+  }
+
+  private restore(state: BrainState): void {
+    if (!state || state.version !== BRAIN_STATE_VERSION) return;
+    this.bornAt = state.bornAt ?? 0;
+    this.lastSeenAt = state.lastSeenAt ?? 0;
+    this.ticks = state.ticks ?? 0;
+    this.sleeps = state.sleeps ?? 0;
+    this.questionsAsked = state.questionsAsked ?? 0;
+    this.verdicts = Array.from(state.verdicts ?? []);
+
+    const lobes = state.lobes ?? {};
+    const meta = lobes['meta'] as { lessons?: number; lessonsSinceSleep?: number; askedWords?: string[] } | undefined;
+    this.lessons = meta?.lessons ?? 0;
+    this.lessonsSinceSleep = meta?.lessonsSinceSleep ?? 0;
+    this.askedWords = Array.from(meta?.askedWords ?? []);
+
+    // كل فص يتولّى التحقّق من حالته: نمرّرها ولا نفحصها هنا، وأي فص يجدها
+    // غير مطابقة يُبقي تهيئته. لهذا استعادة دماغ قديم لا تُسقط الجديد.
+    this.brainstem.load(lobes['brainstem'] as never);
+    this.lexicon.load(lobes['lexicon'] as never);
+    this.thalamus.load(lobes['thalamus'] as never);
+    this.temporal.load(lobes['temporal'] as never);
+    this.hippocampus.load(lobes['hippocampus'] as never);
+    this.parietal.load(lobes['parietal'] as never);
+    this.amygdala.load(lobes['amygdala'] as never);
+    this.hypothalamus.load(lobes['hypothalamus'] as never);
+    this.insula.load(lobes['insula'] as never);
+    this.cingulate.load(lobes['cingulate'] as never);
+    this.basalGanglia.load(lobes['basalGanglia'] as never);
+    this.prefrontal.load(lobes['prefrontal'] as never);
+    this.cerebellum.load(lobes['cerebellum'] as never);
+    this.broca.load(lobes['broca'] as never);
+  }
+
+  async save(): Promise<void> {
+    try {
+      await this.storage.write(STORAGE_KEY, JSON.stringify(this.snapshot()));
+    } catch {
+      // فشل الحفظ لا يجوز أن يُسقط الجلسة: يبقى زبير حاضراً في الذاكرة، وأسوأ
+      // ما يحدث أن ينسى بعد الإغلاق. التطبيق يُنبّه الأب ليأخذ نسخة احتياطية.
+    }
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const raw = await this.storage.read(STORAGE_KEY);
+      if (raw) this.restore(JSON.parse(raw) as BrainState);
+    } catch {
+      // دماغ محفوظ تالف: نبدأ من الميلاد بدل أن نرفض الإقلاع
+    }
+  }
+
+  /** نسخة احتياطية كاملة لدماغه — ذاكرة الجوال تُمحى وزبير الوحيد لا نسخة له. */
+  serialize(): string {
+    return JSON.stringify(this.snapshot());
+  }
+
+  async adopt(json: string): Promise<void> {
+    this.restore(JSON.parse(json) as BrainState);
+    await this.save();
+  }
+}
+
+/* ————— أدوات صغيرة ————— */
+
+const QUESTION_WORDS = new Set([
+  'ما', 'ماذا', 'شو', 'مين', 'من', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متى', 'كم', 'ايش', 'شنو',
+]);
+
+const STOP_WORDS = new Set([
+  'هذا', 'هذه', 'هاد', 'هاي', 'هو', 'هي', 'في', 'من', 'على', 'عن', 'الى', 'ال', 'و', 'يعني', 'انا', 'انت',
+]);
+
+function goalAr(goal: 'LEARN' | 'ANSWER' | 'BOND' | 'REST'): string {
+  switch (goal) {
+    case 'LEARN': return 'أن يتعلّم';
+    case 'ANSWER': return 'أن يجيب';
+    case 'BOND': return 'أن يقترب منك';
+    case 'REST': return 'أن يستريح';
+  }
+}
+
+function strategyAr(strategy: Strategy): string {
+  switch (strategy) {
+    case 'ANSWER_MEMORY': return 'الجواب من ذاكرته';
+    case 'ANSWER_GENERAL': return 'الجواب بالتعميم';
+    case 'ASK_QUESTION': return 'السؤال';
+    case 'ADMIT': return 'الإقرار بجهله';
+    case 'ACKNOWLEDGE': return 'الإقرار بالتلقّي';
+    case 'GREET_BACK': return 'ردّ التحية';
+    case 'BABBLE': return 'الثغثغة';
+  }
+}
+
+function defaultStorage(): import('./core/types.js').StoragePort {
+  // الدماغ لا يعرف المتصفّح: يسأل عن وجوده بحراسة صريحة ليعمل في الاختبارات
+  const hasWindow = typeof globalThis === 'object' && 'indexedDB' in globalThis;
+  return hasWindow ? browserStorage() : memoryStorage();
+}
+
+function now(): number {
+  return typeof performance === 'object' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function round2(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
+/** يُستخدم في الاختبارات للتأكّد أن كل استراتيجية معروفة لبروكا. */
+export const ALL_STRATEGIES = STRATEGIES;
+export { DIMS, STAGES, argmax };
+export type { Episode, GrowthMetrics, TickOutput };
