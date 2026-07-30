@@ -2,6 +2,7 @@
 import Base from '../../layouts/Base.astro';
 import Header from '../../components/Header.astro';
 import { ARTICLES } from '../../lib/help';
+import { jsonForScript } from '../../lib/seo';
 
 export function getStaticPaths() {
   return ARTICLES.map((a) => ({ params: { slug: a.slug }, props: { article: a } }));
@@ -42,7 +43,7 @@ const faqLd = {
     <a class="btn btn--ghost" href="/app/support">ما زال عندي سؤال</a>
   </article>
 
-  <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
+  <script type="application/ld+json" is:inline set:html={jsonForScript(faqLd)} />
 </Base>
 
 <style>

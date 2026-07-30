@@ -4,7 +4,7 @@ import '@talisham/ui/base.css';
 import { currentFx, isDemoMode, catalogSource } from '../lib/catalog';
 import BottomNav from '../components/BottomNav.astro';
 import Footer from '../components/Footer.astro';
-import { SITE, organizationLd, websiteLd, graph } from '../lib/seo';
+import { SITE, organizationLd, websiteLd, graph, jsonForScript } from '../lib/seo';
 
 interface Props {
   title: string;
@@ -85,7 +85,7 @@ const ld = graph(base, [organizationLd(base), websiteLd(base), ...schema]);
       عُطّل الحقن. والـWorker يستبدل محتوى هذا الوسم بالسعر الساري —
       ولذلك له مُعرِّف: بلا مِعلَمٍ يُميّزه لا سبيل إلى إيجاده في HTML.
     -->
-    <script id="fx-boot" is:inline set:html={`window.__FX__=${JSON.stringify(fx)};`} />
+    <script id="fx-boot" is:inline set:html={`window.__FX__=${jsonForScript(fx)};`} />
   </head>
 
   <body>

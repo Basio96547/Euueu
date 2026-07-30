@@ -143,6 +143,31 @@ export function faqLd(qa: Array<{ q: string; a: string }>) {
   };
 }
 
+/**
+ * تسلسلٌ آمن للوضع داخل وسم `<script>`.
+ *
+ * `JSON.stringify` يهرّب علامة الاقتباس والشرطة المائلة الخلفية، ولا
+ * يهرّب `<` ولا `/`. فاسمُ منتجٍ فيه `</script>` يُنهي الوسم قبل أوانه،
+ * وما بعده يصير HTML حيّاً في الصفحة:
+ *
+ *     <script type="application/ld+json">{"name":"</script><img onerror=…>
+ *
+ * وسياسة المحتوى لا تردّه: `script-src` فيها `'unsafe-inline'`، فمعالجُ
+ * `onerror` المحقون يعمل. والأسماء تأتي من الكتالوج، أي أن مدير كتالوجٍ
+ * واحداً يستطيع أن يسرق جلسة صاحب المتجر من صفحةٍ عامّة.
+ *
+ * والهروب هنا داخل نصّ JSON: `<` تُقرأ `<` عند التحليل، فالبيانات
+ * تصل كما هي ولا يُنهي شيءٌ الوسم. وU+2028/2029 تُهرَّب لأنهما فاصلا
+ * سطرٍ في جافاسكربت وليسا كذلك في JSON.
+ */
+export const jsonForScript = (value: unknown) =>
+  JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+
 /** يلفّ الأنواع في رسمٍ واحد: رسمٌ واحد أصحّ من خمسة منفصلة لا تعرف بعضها */
 export const graph = (base: string, nodes: unknown[]) =>
-  JSON.stringify({ '@context': 'https://schema.org', '@graph': nodes.filter(Boolean) });
+  jsonForScript({ '@context': 'https://schema.org', '@graph': nodes.filter(Boolean) });

@@ -102,7 +102,18 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
       var empty = document.querySelector('[data-empty]');
       var pick = document.getElementById('pick');
       var diff = document.querySelector('[data-diff]');
-      var byslug = {};
+      // الأسماء والمواصفات تُبنى نصّاً ثم تُسنَد إلى innerHTML. ومصدرها
+      // الكتالوج — أي أن مدير كتالوجٍ يكتب اسماً فيه وسمٌ يجعله يعمل في
+      // متصفّح كل زائر. فيُهرَّب ما يُدرَج، ولا يُوثَق بالمصدر لأنه «داخلي».
+      function esc(v) {
+        return String(v == null ? '' : v)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      // كائنٌ بلا سلف: `byslug['__proto__']` في كائنٍ عادي يعطي شيئاً
+      // صادقاً فيمرّ من المرشِّح، ثم تُعرَض «undefined» في كل خانة.
+      var byslug = Object.create(null);
       DATA.forEach(function (d) { byslug[d.slug] = d; });
 
       var fx = window.__FX__ || { rate: 0 };
@@ -134,8 +145,8 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
         var items = list.map(function (s) { return byslug[s]; });
         var html = '<table class="cmp"><thead><tr><th></th>';
         items.forEach(function (d) {
-          html += '<th><a href="/p/' + d.slug + '/">' + d.name + '</a>'
-            + '<button type="button" data-rm="' + d.slug + '" aria-label="أزل">×</button></th>';
+          html += '<th><a href="/p/' + esc(d.slug) + '/">' + esc(d.name) + '</a>'
+            + '<button type="button" data-rm="' + esc(d.slug) + '" aria-label="أزل">×</button></th>';
         });
         html += '</tr></thead><tbody>';
 
@@ -147,8 +158,8 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
           var vals = items.map(function (d) { return d.rows[k]; });
           var same = vals.every(function (v) { return v === vals[0]; });
           if (diff.checked && same && items.length > 1) return;
-          html += '<tr' + (same ? ' class="same"' : '') + '><th>' + k + '</th>';
-          vals.forEach(function (v) { html += '<td>' + v + '</td>'; });
+          html += '<tr' + (same ? ' class="same"' : '') + '><th>' + esc(k) + '</th>';
+          vals.forEach(function (v) { html += '<td>' + esc(v) + '</td>'; });
           html += '</tr>';
         });
 
