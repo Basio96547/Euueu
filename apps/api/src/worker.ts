@@ -2,6 +2,7 @@ import { buildDeps, createApp, type Deps } from './http/app.js';
 import { useCloudflareKv, type CfKvNamespace } from './common/kv.js';
 import type { D1Binding } from './common/prisma.service.js';
 import type { R2Binding } from './modules/storage.js';
+import { BootstrapService } from './modules/bootstrap.module.js';
 
 /**
  * تالي شام — Worker واحد يخدم كل شيء.
@@ -84,6 +85,20 @@ export default {
           },
         }, { status: 503 });
       }
+      /* التهيئة تسبق كل شيء: تعمل والقاعدة بلا جداول، فلا تمرّ بطبقة
+         الخدمات التي تفترض وجودها. وتُرفض على قاعدة مهيّأة. */
+      if (path === '/api/v1/bootstrap') {
+        const boot = new BootstrapService(env.DB);
+        if (request.method === 'GET') return Response.json({ data: await boot.status() });
+        if (request.method === 'POST') {
+          try {
+            return Response.json({ data: await boot.run() });
+          } catch (e: any) {
+            return Response.json(e?.body?.() ?? { error: { code: 'BOOTSTRAP_FAILED' } }, { status: e?.status ?? 500 });
+          }
+        }
+      }
+
       useCloudflareKv(env.KV);
       const { app } = api(env);
       return app.fetch(request, env, ctx);

@@ -24,12 +24,28 @@ jobs:
 
       # الترحيل قبل النشر لا بعده: نصٌّ جديد يقرأ عموداً لم يُنشأ بعدُ
       # يفشل عند أول طلب، والترتيب هنا يمنع تلك النافذة.
+      #
+      # ولا يُوقف النشرة إن فشل: مفتاح النشر الحالي بلا صلاحية D1
+      # (`code: 7403`)، وإيقاف كل نشرة لأجل ذلك يعني موقعاً لا يُحدَّث
+      # أبداً. البديل ليس تجاهلاً صامتاً: الخطوة التالية تقول ما جرى،
+      # والـWorker يهيّئ قاعدته بنفسه مرة واحدة عبر `/api/v1/bootstrap`.
       - name: ترحيل قاعدة D1
+        id: migrate
+        continue-on-error: true
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: d1 migrations apply talisham --remote
+
+      - name: نتيجة الترحيل
+        run: |
+          if [ "${{ steps.migrate.outcome }}" = "failure" ]; then
+            echo "::warning::تعذّر ترحيل D1 — غالباً لأن CLOUDFLARE_API_TOKEN بلا صلاحية D1:Edit."
+            echo "::warning::امنح المفتاح صلاحية D1، أو هيّئ القاعدة مرة واحدة عبر POST /api/v1/bootstrap"
+          else
+            echo "الترحيل تمّ."
+          fi
 
       # Worker واحد يخدم الموقع والتطبيقين والواجهة البرمجية:
       # أربع نشرات منفصلة كانت تعني نطاقاً بلا مسار وصفحاتٍ ترجع 404.
