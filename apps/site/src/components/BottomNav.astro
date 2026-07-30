@@ -8,7 +8,7 @@ const items = [
   { key: 'account', href: '/app/account', label: 'حسابي', d: 'M12 4.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2M4.5 20c1.6-4 4.3-6 7.5-6s5.9 2 7.5 6' },
 ];
 ---
-<nav class="bottomnav glass" aria-label="التنقل الرئيسي">
+<nav class="bottomnav" aria-label="التنقل الرئيسي">
   {items.map((i) => (
     <a href={i.href} aria-current={active === i.key ? 'page' : undefined}>
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={i.d} /></svg>

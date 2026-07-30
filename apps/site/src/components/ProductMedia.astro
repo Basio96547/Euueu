@@ -87,7 +87,10 @@ const id = nextArtId(kind);
       linear-gradient(148deg,
         hsl(var(--pm-h1) 62% 60% / var(--pm-a1)),
         hsl(var(--pm-h2) 52% 42% / var(--pm-a2))),
-      var(--surface-3);
+      var(--shelf);
+    /* الحرفُ خطٌّ داخليّ لا حدٌّ خارجيّ: النيّة غائرةٌ في الجدار،
+       فحافّتها تُرى من الداخل. */
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lip) 42%, transparent);
   }
   /* الليل يحتاج شدّةً أقلّ: اللون نفسه فوق أرضيةٍ سوداء يصير صارخاً */
   @media (prefers-color-scheme: dark) {
