@@ -260,8 +260,13 @@ export class Brainstem implements Lobe<BrainstemState> {
           const marked = percept.raw.includes('؟') || percept.raw.includes('?');
           return { intent: rule.intent, strength: marked ? rule.strength : TOOL_QUESTION };
         }
-        // أداة ملتبسة رآها المُدرِك خارج موضع الاستفهام: تبقى قرينة ضعيفة
-        if (hasWord(tokens, rule.words)) return { intent: rule.intent, strength: TOOL_QUESTION };
+        /* لا استدراك على المُدرِك هنا، وهذا موضع أُصلح بعد قياس.
+         *
+         * كان الجذع يُعيد الحكم بأداة ملتبسة («ما» و«من» و«كم») في أي موضع، فصار
+         * «خرجت من البيت» سؤالاً — وهو أخطر خطأ ممكن في هذا الفص: يجيب زبير حيث
+         * يجب أن يتعلّم. والمُدرِك هو من يملك قاعدة الموضع (الملتبسة لا تُقبل إلا
+         * رمزاً أوّل)، فإن قال «ليست سؤالاً» فقد فحص الأدوات كلها والعلامة معاً.
+         * حكمٌ بعد حكمه نقضٌ له لا تدقيقٌ فيه. */
         continue;
       }
 

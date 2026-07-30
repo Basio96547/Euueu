@@ -24,6 +24,13 @@ export class Amygdala implements Lobe<AmygdalaState> {
   private readonly grad: Vec = vec(1);
   private readonly target: Vec = vec(1);
 
+  /* هدف التدريب لا يبلغ الواحد أبداً، وهذا إصلاح عطل حقيقي لا احتراس نظري:
+   * تنشيط tanh يبلغ ±١ في الحدّ فقط، ومشتقه (١ − y²) يصير صفراً هناك. فلمّا كان
+   * الهدف ±١ تشبّع الخرج بعد نحو عشرين اشتراطاً فمات تدرّجه، وصار الوسم
+   * أبدياً: طفل خاف من شيء مرة لا يستطيع أبوه أن يُطمئنه عنه بعدها بحال. قِسته:
+   * بعد ٢٢٥ اشتراطاً سلبياً بقي عند ‎-1.0000‎ ولم يتحرّك مع أربعين مدحاً. */
+  private static readonly TARGET_CEILING = 0.9;
+
   constructor(rng?: Rng) {
     // خرج واحد بـ tanh: القيمة في [-1,1] وهو مدى المكافأة نفسه، فلا حاجة لأي
     // تحويل بين ما يتعلّمه وما يستقبله
@@ -40,10 +47,14 @@ export class Amygdala implements Lobe<AmygdalaState> {
   condition(meaning: Vec, reward: number, lr = 0.05): void {
     if (!Number.isFinite(reward)) return;
     const prediction = this.net.forward(meaning);
-    this.target[0] = clamp(reward, -1, 1);
+    this.target[0] = clamp(reward, -Amygdala.TARGET_CEILING, Amygdala.TARGET_CEILING);
     squaredLossGrad(prediction, this.target, this.grad);
     this.net.backward(this.grad);
-    this.net.step(lr);
+    /* انحدار بسيط لا Adam، وهو الشقّ الثاني من إصلاح التشبّع: خطوة Adam ثابتة
+     * الحجم، فتدفع ما قبل التنشيط بعيداً حتى يتشبّع tanh مهما كان الهدف معتدلاً.
+     * والانحدار البسيط خطوته تتناسب مع الخطأ فتهدأ عند الهدف وتبقى قابلة للعكس:
+     * وسمٌ يُكتسب بالتجربة يجب أن يُنقض بتجربة. */
+    this.net.stepPlain(lr);
   }
 
   save(): AmygdalaState {
@@ -121,8 +132,11 @@ export class Hypothalamus implements Lobe<HypothalamusState> {
     this.intero.attachment = clamp(Math.max(ATTACHMENT_FLOOR, decayed), 0, 1);
 
     /* الثقة من حجم ما يعرف: وليد بلا مفردات لا يثق بكلامه، ومن عرف مئات
-     * الكلمات يجيب بثقة. تشبّع لوغاريتمي فلا تصل واحداً أبداً. */
-    this.intero.confidence = clamp(Math.log10(1 + vocab) / 3, 0, 0.95);
+     * الكلمات يجيب بثقة. تشبّع لوغاريتمي فلا تصل واحداً أبداً.
+     *
+     * القصر على الصفر قبل اللوغاريتم لا بعده: `log10` لعدد سالب يعطي NaN،
+     * ولو مرّ إلى الثقة لأفسد كل قرار بعده في الدماغ. */
+    this.intero.confidence = clamp(Math.log10(1 + Math.max(0, vocab)) / 3, 0, 0.95);
 
     // اليقظة يملكها جذع الدماغ، والوطاء يستهلكها قليلاً بالتعب
     this.intero.arousal = clamp(1 - 0.4 * this.intero.fatigue, 0.2, 1);

@@ -123,7 +123,16 @@ export function normalized(a: Vec): Vec {
   return scaleInto(out, 1 / n);
 }
 
+/**
+ * قصر قيمة في مجال، مع حراسة من NaN.
+ *
+ * الحراسة من NaN ليست زيادة احتياط: كل مقارنة مع NaN تعطي `false`، فتنزلق
+ * القيمة من الشرطين معاً وتُعاد كما هي. دالةٌ اسمها clamp تُخرج NaN تُبطل غرضها
+ * وتُسلّم العطب إلى كل من بعدها. قِسته: مفردات سالبة أعطت `log10` قيمةً NaN
+ * فمرّت من هنا إلى ثقة زبير، ومنها إلى كل قرار في الدماغ.
+ */
 export function clamp(x: number, lo: number, hi: number): number {
+  if (!Number.isFinite(x)) return x === Infinity ? hi : lo;
   return x < lo ? lo : x > hi ? hi : x;
 }
 

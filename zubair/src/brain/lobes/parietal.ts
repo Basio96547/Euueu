@@ -41,10 +41,28 @@ const CONTRADICT_FACTOR = 0.4;
 /** دون هذه الثقة لا تبقى الحقيقة في دماغه: خير له أن يجهل من أن يعرف خطأ. */
 const DOUBT_FLOOR = 0.2;
 
-/** أقلّ تشابه يُبيح نقل محمول إلى موضوع لم يُعلَّم قط.
- *  التعميم بلا عتبة تخريف: بلا هذا الرقم يصير كل مجهول «حيواناً» لأن شيئاً ما
- *  في دماغه أقرب إليه من غيره — والأقرب ليس قريباً بالضرورة. */
-const GENERALIZE_THRESHOLD = 0.55;
+/**
+ * أقلّ تشابه يُبيح نقل محمول إلى موضوع لم يُعلَّم قط.
+ *
+ * التعميم بلا عتبة تخريف: بلا هذا الرقم يصير كل مجهول «حيواناً» لأن شيئاً ما في
+ * دماغه أقرب إليه من غيره — والأقرب ليس قريباً بالضرورة.
+ *
+ * والرقم مقيس لا مُقدَّر، وقد صُحّح بعد قياس: كان ٠٫٥٥ فكان **فوق الإشارة
+ * كلها**، فلم يعمّم زبير قط ولا مرة واحدة — ميزة موثّقة لا تعمل. القياس على
+ * ملامح الحروف في ٤٨ بُعداً يعطي: كلمات الجذر الواحد ٠٫٣٤–٠٫٤٠ (متوسط ٠٫٣٧٥)،
+ * وكلمات لا صلة بينها ‎-0.04‎ في المتوسط وأعلاها ٠٫٢٣. فالعتبة الصادقة بينهما:
+ * فوق أعلى ضجيج مرصود بهامش، ودون متوسط الجذر الواحد.
+ */
+const GENERALIZE_THRESHOLD = 0.3;
+
+/**
+ * وأقرب شبيه لا يكفي أن يتجاوز العتبة، بل يجب أن يسبق الذي بعده بهذا الهامش.
+ *
+ * السبب أن أقصى قيمة بين مرشّحين ترتفع بعددهم وحده: دماغ فيه مئة حقيقة سيجد
+ * فيها ما يبلغ ٠٫٣ بالمصادفة لا بالشبه. والهامش يسأل سؤالاً آخر: هل هذا شبيهٌ
+ * **مميَّز** أم أن الكل متساوٍ في بعده؟ فإن تساووا فلا شبه أصلاً.
+ */
+const GENERALIZE_MARGIN = 0.05;
 
 /** أقلّ عدد حروف يبقى بعد نزع أداة التعريف. «الآن» ← «ان» ليس تجريداً بل تشويه. */
 const MIN_STEM = 3;
@@ -358,16 +376,23 @@ export class Parietal implements Lobe<ParietalState> {
     const query = this.wordVector(s, lexicon, this.queryVec);
     let best: Fact | null = null;
     let bestSimilarity = -Infinity;
+    let runnerUp = -Infinity;
     for (const record of this.records.values()) {
       const candidate = this.wordVector(record.main.subject, lexicon, this.candidateVec);
       const similarity = cosine(query, candidate);
-      if (Number.isFinite(similarity) && similarity > bestSimilarity) {
+      if (!Number.isFinite(similarity)) continue;
+      if (similarity > bestSimilarity) {
+        runnerUp = bestSimilarity;
         bestSimilarity = similarity;
         best = record.main;
+      } else if (similarity > runnerUp) {
+        runnerUp = similarity;
       }
     }
 
     if (!best || bestSimilarity < GENERALIZE_THRESHOLD) return null;
+    // شبيه واحد فقط في دماغه: لا منافس يُقاس عليه التميّز، فتكفي العتبة
+    if (runnerUp > -Infinity && bestSimilarity - runnerUp < GENERALIZE_MARGIN) return null;
 
     return {
       fact: {
@@ -392,9 +417,21 @@ export class Parietal implements Lobe<ParietalState> {
    * والخلط بين القناتين مقبول: التمثيل الابتدائي لأي كلمة في المعجم مبنيّ على
    * ملامح حروفها بوزن غالب، فالفضاءان ليسا غريبين.
    */
+  /**
+   * متجه كلمة للمقارنة. الشرط الحاكم: **الطرفان في فضاء واحد**.
+   *
+   * كان هنا سقوطٌ إلى `idOf('ال' + word)` حين لا يعرف المعجم الكلمة مجرّدة —
+   * والمعجم لا يعرفها مجرّدة أبداً تقريباً، لأن الأب يقول «القطة» فيحفظها
+   * المعجم «القطه» بينما مفتاح الحقيقة «قطه» بلا أداة. فكان الجُداري يقيس ملامح
+   * حروف كلمةٍ مجرّدة مقابل تمثيلٍ متعلَّمٍ لكلمةٍ معرَّفة، وأداة التعريف تُبدّل
+   * ثلاثيات الحروف كلها: قِسته فبلغ التشابه ٠٫٠٢٥ حيث كان يجب أن يبلغ ٠٫٣٤.
+   * فلم يعمّم زبير قط، والعتبة لم تكن وحدها السبب.
+   *
+   * فلا يُؤخذ التمثيل المتعلَّم إلا لكلمة يعرفها المعجم بصورتها هذه بعينها، وإلا
+   * فملامح الحروف للطرفين معاً — أضعف إشارةً وأصدق مقارنةً.
+   */
   private wordVector(word: string, lexicon: Lexicon, out: Vec): Vec {
-    let id = lexicon.idOf(word);
-    if (id < 0) id = lexicon.idOf(`ال${word}`);
+    const id = lexicon.idOf(word);
     if (id >= 0 && lexicon.embedding.has(id)) {
       const row = lexicon.embedding.get(id);
       if (row.length === out.length) return row;
