@@ -13,11 +13,14 @@
     "test:e2e": "bash scripts/e2e.sh",
     "build:worker": "bash scripts/build-worker.sh",
     "worker:dev": "wrangler dev --port 8787",
-    "deploy": "bash scripts/build-worker.sh && wrangler deploy",
+    "deploy": "bash scripts/deploy.sh",
     "db:migrate": "wrangler d1 migrations apply talisham --remote",
     "db:migrate:local": "wrangler d1 migrations apply talisham --local",
     "db:seed": "node apps/api/prisma/seed-d1.mjs > /tmp/talisham-seed.sql && wrangler d1 execute talisham --local --file=/tmp/talisham-seed.sql",
-    "db:seed:remote": "node apps/api/prisma/seed-d1.mjs > /tmp/talisham-seed.sql && wrangler d1 execute talisham --remote --file=/tmp/talisham-seed.sql"
+    "db:seed:remote": "node apps/api/prisma/seed-d1.mjs > /tmp/talisham-seed.sql && wrangler d1 execute talisham --remote --file=/tmp/talisham-seed.sql",
+    "check": "bash scripts/check.sh",
+    "backup": "bash scripts/db-backup.sh",
+    "restore": "bash scripts/db-restore.sh"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

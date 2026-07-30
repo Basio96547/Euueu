@@ -17,18 +17,50 @@
 | تهيئة القاعدة | 51 جدولاً · 140 جملة مخطَّط · 118 بذرة · صفر أخطاء |
 | مسار الكتابة (سلة ← إضافة ← حذف) | يعمل بالدفعات الذرّية |
 
-### صلاحيتان ناقصتان في مفتاح النشر
+### النشر يجري من جهازك لا من GitHub
 
-`CLOUDFLARE_API_TOKEN` في أسرار المستودع ينشر Workers ولا يملك:
+حُذفت ملفات `.github` كلها: النشر والفحص والنسخ صارت نصوصاً تُشغَّل هنا.
+الوسيط كان يضيف دقائق انتظار، ويُخفي الخطأ في سجلٍّ يُفتح من متصفّح،
+ويُخضع النشر لفرعٍ افتراضي ولأسرارٍ تُضبط في مكانٍ ثالث.
 
-| الصلاحية | الأثر الآن | ما تفتحه |
+| كان | صار |
+| --- | --- |
+| `deploy.yml` عند كل دفعة | `bash scripts/deploy.sh` |
+| `ci.yml` + `maintenance.yml` | `bash scripts/check.sh` |
+| `backup.yml` يومياً | `bash scripts/backup-cron.sh` في cron جهازك |
+
+### المفتاح وصلاحياته
+
+النشر يقرأ `CLOUDFLARE_API_TOKEN` من بيئتك:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...
+bash scripts/check.sh && bash scripts/deploy.sh
+```
+
+يُنشأ من [لوحة Cloudflare ← API Tokens](https://dash.cloudflare.com/profile/api-tokens):
+
+| الصلاحية | ما تفتحه | بدونها |
 | --- | --- | --- |
-| **D1: Edit** | خطوة الترحيل في النشر تُخفق (لا تُوقفه)، والتهيئة تمّت عبر `POST /api/v1/bootstrap` | ترحيل آلي مع كل نشرة |
-| **R2: Edit** | ربط `MEDIA` معطَّل في `wrangler.jsonc`، ورفع الصور يردّ `MEDIA_BUCKET_MISSING` | صور المنتجات |
+| **Workers Scripts: Edit** | النشر نفسه | لا نشر إطلاقاً |
+| **Workers KV Storage: Edit** | سرّ التوقيع المولَّد، والحدّ، والتخزين المؤقت | الـWorker يعمل بذاكرة العزلة — وهي تُهدَم بلا إشعار |
+| **D1: Edit** | الترحيل والنسخ الاحتياطي | لا تغيير في بنية القاعدة، ولا نسخة |
+| **R2: Edit** | صور المنتجات | رفع الصور يردّ `MEDIA_BUCKET_MISSING` |
 
-تُضافان من [لوحة Cloudflare ← API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-على المفتاح نفسه. وبعدهما: أزل التعليق عن `r2_buckets` في `wrangler.jsonc`،
-واحذف مسار `/api/v1/bootstrap` — الأداة أولى بذلك العمل.
+وبعد **R2: Edit**: أزل التعليق عن `r2_buckets` في `wrangler.jsonc`.
+وبعد **D1: Edit**: احذف مسار `/api/v1/bootstrap` — الأداة أولى بذلك العمل.
+
+### النسخ الاحتياطي
+
+لا يجري تلقائياً بعد حذف `.github`. جدوِله على جهازك:
+
+```cron
+0 4 * * *  cd /مسار/المشروع && CLOUDFLARE_API_TOKEN=... \
+           BACKUP_PASSPHRASE=... bash scripts/backup-cron.sh
+```
+
+⚠ `BACKUP_PASSPHRASE` تُحفظ خارج الجهاز أيضاً: بدونها لا تُفكّ النسخة
+أبداً، والقرص الذي عليه النسخ هو نفسه القرص الذي قد يُعطب.
 
 ## البنية: Worker واحد لكل شيء
 
@@ -46,8 +78,8 @@
 وأصلٌ واحد يعني: بلا CORS، وبلا نطاق ثانٍ، وبلا رمز دخول يعبر أصلين.
 
 ```bash
-pnpm run build:worker     # يبني الأربعة ويجمعها في dist-worker/
-npx wrangler deploy       # أو ادفع إلى main فيتولّى deploy.yml النشر
+bash scripts/check.sh     # الأنواع والوحدة والبناء والطرف-إلى-طرف
+bash scripts/deploy.sh    # البناء والترحيل والنشر والتحقّق من الحيّ
 ```
 
 ## قاعدة البيانات: D1
@@ -69,13 +101,17 @@ npx wrangler deploy       # أو ادفع إلى main فيتولّى deploy.yml 
 pnpm run db:migrate:local
 pnpm run db:seed
 
-# على الإنتاج (يجري آلياً مع كل نشر إلى main)
-pnpm run db:migrate
-pnpm run db:seed:remote        # مرة واحدة عند الإطلاق
+# على الإنتاج — يجري داخل scripts/deploy.sh قبل النشر
+bash scripts/db-seal-migrations.sh --remote
+npx wrangler d1 migrations apply talisham --remote
 ```
 
 الترحيل **قبل** النشر لا بعده: نصٌّ جديد يقرأ عموداً لم يُنشأ بعدُ يفشل عند
-أول طلب، وترتيب خطوات `deploy.yml` يمنع تلك النافذة.
+أول طلب، وترتيب خطوات `scripts/deploy.sh` يمنع تلك النافذة.
+
+والختم قبل الترحيل: القاعدة الحيّة هُيِّئت عبر `/bootstrap` لا بـwrangler،
+فجداولها موجودة وسجلّ `d1_migrations` فارغ — ولولا الختم لبدأ الترحيل من
+`0001` وسقط بـ«table users already exists»، ومعه كلّ ترحيلٍ بعده.
 
 ### تعديل المخطَّط
 
