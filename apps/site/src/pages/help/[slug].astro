@@ -25,8 +25,12 @@ const faqLd = {
 <Base title={article.title} description={article.summary}>
   <Header title={article.title} back="/help/" />
 
-  <article class="wrap">
-    <p class="lead">{article.summary}</p>
+  <article class="container">
+    <div class="pagehead">
+      <p class="eyebrow">مركز المساعدة</p>
+      <h1>{article.title}</h1>
+      <p class="lede">{article.summary}</p>
+    </div>
 
     {article.sections.map((s) => (
       <section class="qa glass">
@@ -42,8 +46,7 @@ const faqLd = {
 </Base>
 
 <style>
-  .wrap { padding: 12px 12px 96px; display: grid; gap: 12px; }
-  .lead { color: var(--ink-2); line-height: 1.8; }
+  .container { display: grid; gap: 12px; }
   .qa { padding: 14px; border-radius: var(--r-l); display: grid; gap: 6px; }
   .qa h2 { font-size: var(--step-0); font-weight: 800; }
   .qa p { color: var(--ink-2); line-height: 1.85; font-size: var(--step--1); }

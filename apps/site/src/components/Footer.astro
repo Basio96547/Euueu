@@ -38,36 +38,76 @@ const groups: Array<{ h: string; links: Array<[string, string]> }> = [
 ---
 
 <footer class="foot">
-  <div class="cols">
-    {groups.map((g) => (
-      <nav aria-label={g.h}>
-        <h2>{g.h}</h2>
-        <ul>
-          {g.links.map(([href, label]) => (
-            <li><a href={href}>{label}</a></li>
-          ))}
-        </ul>
-      </nav>
-    ))}
-  </div>
+  <div class="inner">
+    <div class="sig">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4.5 4.5h15v15h-15z" /><path d="M12 1.9 22.1 12 12 22.1 1.9 12z" /></svg>
+      </span>
+      <span class="wd">تالي <b>شام</b></span>
+      <span class="loc">دمشق · سوريا</span>
+    </div>
 
-  <p class="note">
-    الدفع نقداً عند الاستلام حصراً — لا نطلب أي دفعة مقدَّمة بأي وسيلة.
-  </p>
-  <p class="note muted">تالي شام · دمشق، سوريا</p>
+    <div class="cols">
+      {groups.map((g) => (
+        <nav aria-label={g.h}>
+          <h2>{g.h}</h2>
+          <ul>
+            {g.links.map(([href, label]) => (
+              <li><a href={href}>{label}</a></li>
+            ))}
+          </ul>
+        </nav>
+      ))}
+    </div>
+
+    <p class="pledge">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+        ><rect x="2.5" y="6" width="19" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /></svg>
+      الدفع نقداً عند الاستلام حصراً — لا نطلب أي دفعة مقدَّمة بأي وسيلة.
+    </p>
+  </div>
 </footer>
 
 <style>
   .foot {
-    margin: 28px 12px 0; padding: 16px 0 96px;
+    margin-block-start: var(--space-7);
+    padding-block: var(--space-5) calc(var(--nav-h) + var(--safe-b) + 30px);
     border-block-start: 1px solid var(--line);
-    display: grid; gap: 14px;
+    background: var(--surface-2);
   }
-  .cols { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
-  .foot h2 { font-size: var(--step--1); font-weight: 800; margin-block-end: 8px; }
-  .foot ul { list-style: none; display: grid; gap: 7px; }
-  .foot a { font-size: var(--step--1); color: var(--ink-2); text-decoration: none; }
-  .note { font-size: var(--step--1); color: var(--ink-2); line-height: 1.7; }
-  .note.muted { color: var(--ink-3); }
-  @media (min-width: 640px) { .cols { grid-template-columns: repeat(3, 1fr); } }
+  .inner {
+    max-inline-size: var(--content); margin-inline: auto;
+    padding-inline: var(--gutter);
+    display: grid; gap: var(--space-5);
+  }
+
+  .sig { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .sig .mark { color: var(--brass); display: grid; place-items: center; }
+  .sig .mark svg {
+    inline-size: 20px; block-size: 20px;
+    fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round;
+  }
+  .sig .wd { font-weight: 800; font-size: var(--step-1); }
+  .sig .wd b { color: var(--brass); font-weight: 800; }
+  .sig .loc {
+    margin-inline-start: auto; font-size: var(--step--2); color: var(--ink-3); font-weight: 700;
+  }
+
+  .cols { display: grid; gap: var(--space-4); grid-template-columns: 1fr 1fr; }
+  .foot h2 {
+    font-size: var(--step--2); font-weight: 800; color: var(--ink-3);
+    margin-block-end: 9px; letter-spacing: 0.03em;
+  }
+  .foot ul { display: grid; gap: 8px; }
+  .foot a { font-size: var(--step--1); color: var(--ink-2); }
+  .foot a:hover { color: var(--brass); }
+
+  .pledge {
+    display: flex; gap: 9px; align-items: flex-start;
+    font-size: var(--step--1); color: var(--ink-2); line-height: 1.65;
+    padding-block-start: var(--space-4); border-block-start: 1px solid var(--line);
+  }
+  .pledge .icon { color: var(--brass); flex: none; margin-block-start: 3px; }
+
+  @media (min-width: 560px) { .cols { grid-template-columns: repeat(3, 1fr); } }
 </style>

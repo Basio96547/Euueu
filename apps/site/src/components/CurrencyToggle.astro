@@ -8,16 +8,20 @@
 
 <style>
   .curtoggle {
-    display: flex; gap: 2px; padding: 2px;
-    background: color-mix(in srgb, var(--ink) 8%, transparent);
-    border-radius: 999px;
+    display: flex; padding: 2px;
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
   }
   .curtoggle button {
-    font: inherit; font-size: 0.72rem; font-weight: 800;
+    font: inherit; font-size: var(--step--2); font-weight: 800;
     border: 0; background: none; color: var(--ink-3);
-    padding: 5px 10px; border-radius: 999px; cursor: pointer;
-    min-height: 32px; min-width: 36px;
+    padding: 0 11px; border-radius: var(--r-pill); cursor: pointer;
+    min-height: 30px; min-width: 34px;
     transition: background var(--dur-tap) var(--ease-state), color var(--dur-tap) var(--ease-state);
   }
-  .curtoggle button[aria-pressed='true'] { background: var(--brass); color: #0b1416; }
+  .curtoggle button[aria-pressed='true'] {
+    background: var(--brass); color: var(--brass-ink);
+    box-shadow: var(--sh-1);
+  }
 </style>

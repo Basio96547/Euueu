@@ -12,11 +12,15 @@ const sorted = [...POSTS].sort((a, b) => b.published.localeCompare(a.published))
 >
   <Header title="المدونة" back="/" />
 
-  <div class="wrap">
-    <p class="lead">
-      أدلّة مكتوبة لمن يشتري في سوريا: ما يُفحص قبل الدفع، وما يفرّق بين نسخة
-      وأخرى، وما يطيل عمر الجهاز. لا مقالات مدفوعة ولا مراجعات مجاملة.
-    </p>
+  <main class="container">
+    <div class="pagehead">
+      <p class="eyebrow">مكتوبةٌ هنا لا منقولة</p>
+      <h1>المدونة</h1>
+      <p class="lede">
+        أدلّة لمن يشتري في سوريا: ما يُفحص قبل الدفع، وما يفرّق بين نسخة
+        وأخرى، وما يطيل عمر الجهاز. لا مقالات مدفوعة ولا مراجعات مجاملة.
+      </p>
+    </div>
 
     <div class="cards">
       {sorted.map((p) => (
@@ -27,12 +31,11 @@ const sorted = [...POSTS].sort((a, b) => b.published.localeCompare(a.published))
         </a>
       ))}
     </div>
-  </div>
+  </main>
 </Base>
 
 <style>
-  .wrap { padding: 12px 12px 96px; display: grid; gap: 14px; }
-  .lead { color: var(--ink-2); line-height: 1.8; }
+  .container { display: grid; gap: 14px; }
   .cards { display: grid; gap: 9px; }
   .card { display: grid; gap: 4px; padding: 14px; border-radius: var(--r-l); color: inherit; text-decoration: none; }
   .card b { font-size: var(--step-0); font-weight: 800; line-height: 1.5; }

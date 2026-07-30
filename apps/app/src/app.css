@@ -1,61 +1,113 @@
-#root { max-width: 560px; margin-inline: auto; }
-.page { padding: 12px 14px 24px; display: grid; gap: 14px; }
-.hd { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 8px 0; }
-.hd h1 { font-size: var(--step-1); font-weight: 800; letter-spacing: -0.02em; }
+/* ===========================================================
+   الأساس المشترك لتطبيقَي السلة واللوحة.
+   يبني فوق @talisham/ui: الرموز والأزرار والوسوم من هناك،
+   وهنا ما يخصّ الشاشات ذات النماذج والصفوف والأرقام.
+   =========================================================== */
+
+#root { max-width: 620px; margin-inline: auto; }
+.page { padding: 4px var(--gutter) 28px; display: grid; gap: var(--space-4); }
+
+/* الترويسة على محاذاة المحتوى نفسها لا على حافة الشاشة: شريطٌ يبدأ من
+   الصفر ومحتوىً يبدأ من ١٤ يُقرآن كطبقتين لا كصفحة واحدة.
+   وهي ثابتة لا لاصقة: اللصق يحتاج أرضيةً صلبة تحته، وهذه بطاقة زجاجية
+   يمرّ النصّ من خلفها. */
+.hd {
+  margin: 8px var(--gutter) var(--space-4);
+  padding: 9px 12px;
+  display: flex; align-items: center; gap: 10px;
+  border-radius: var(--r-l);
+}
+.hd h1 { font-size: var(--step-1); font-weight: 800; letter-spacing: 0; line-height: 1.3; }
 .hd .sp { margin-inline-start: auto; }
-.card { padding: 12px; display: grid; gap: 10px; }
+
+.card { padding: 14px; display: grid; gap: 11px; border-radius: var(--r-l); }
 .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .muted { color: var(--ink-3); font-size: var(--step--1); }
-.line { display: flex; gap: 10px; padding: 10px 0; border-block-end: 1px solid var(--line); }
-.line:last-child { border-block-end: 0; }
-.line .mid { flex: 1; display: grid; gap: 2px; }
-.line b { font-size: var(--step--1); font-weight: 700; }
-.tot { display: flex; justify-content: space-between; font-size: var(--step-1); font-weight: 800; padding-block-start: 10px; border-block-start: 1px solid var(--line); }
-.field { display: grid; gap: 6px; }
+
+/* سطر في قائمة: منتجٌ في السلة، أو بندٌ في طلب */
+.line { display: flex; gap: 11px; padding: 11px 0; border-block-end: 1px solid var(--line-2); }
+.line:first-child { padding-block-start: 0; }
+.line:last-child { border-block-end: 0; padding-block-end: 0; }
+.line .mid { flex: 1; min-inline-size: 0; display: grid; gap: 3px; }
+.line b { font-size: var(--step--1); font-weight: 700; line-height: 1.5; }
+
+/* الإجمالي هو آخر ما تقرؤه العين قبل الدفع، فيُفصل ويُكبَّر */
+.tot {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: var(--step-1); font-weight: 800; font-variant-numeric: tabular-nums;
+  padding-block-start: 12px; margin-block-start: 2px;
+  border-block-start: 1.5px solid var(--line);
+}
+
+/* ————— النماذج ————— */
+.field { display: grid; gap: 7px; }
 .field label { font-size: var(--step--1); font-weight: 700; color: var(--ink-2); }
 .field label .req { color: var(--clay); }
 input, select, textarea {
-  font: inherit; padding: 11px 12px; border-radius: 12px;
-  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+  font: inherit; padding: 11px 13px; border-radius: var(--r-s);
+  /* الحقل غائرٌ لا بارز: سطحٌ أغمق من البطاقة يقول «اكتب هنا» بلا تسمية */
+  border: 1.5px solid var(--line); background: var(--surface-3); color: var(--ink);
   min-height: var(--tap-min); width: 100%;
+  transition: border-color var(--dur-tap) var(--ease-state), background var(--dur-tap) var(--ease-state);
 }
-input:focus-visible, select:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
-.hint { font-size: 0.72rem; color: var(--ink-3); }
+input:focus, select:focus, textarea:focus { background: var(--surface); border-color: var(--brass); }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--brass); outline-offset: 1px;
+}
+input::placeholder, textarea::placeholder { color: var(--ink-3); }
+.hint { font-size: var(--step--2); color: var(--ink-3); line-height: 1.6; }
+
+/* ————— الرسائل ————— */
+.err, .ok, .warnbox {
+  padding: 11px 13px; border-radius: var(--r-m);
+  font-size: var(--step--1); line-height: 1.65;
+}
 .err {
-  padding: 10px 12px; border-radius: var(--r-m); font-size: var(--step--1); font-weight: 700;
-  border: 1px solid color-mix(in srgb, var(--clay) 45%, transparent);
-  background: color-mix(in srgb, var(--clay) 10%, transparent); color: var(--ink);
+  font-weight: 700; color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--clay) 42%, transparent);
+  background: color-mix(in srgb, var(--clay) 10%, transparent);
 }
 .ok {
-  padding: 10px 12px; border-radius: var(--r-m); font-size: var(--step--1); font-weight: 700;
-  border: 1px solid color-mix(in srgb, var(--jade) 45%, transparent);
+  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--jade) 42%, transparent);
   background: color-mix(in srgb, var(--jade) 10%, transparent);
 }
 .warnbox {
-  padding: 10px 12px; border-radius: var(--r-m); font-size: 0.74rem; line-height: 1.6; color: var(--ink-2);
-  border: 1px solid color-mix(in srgb, var(--brass) 40%, transparent);
+  color: var(--ink-2);
+  border: 1px solid color-mix(in srgb, var(--brass) 36%, transparent);
   background: color-mix(in srgb, var(--brass) 9%, transparent);
 }
-.steps { display: flex; gap: 6px; align-items: center; font-size: 0.7rem; }
-.step { flex: 1; height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 14%, transparent); }
+
+/* مؤشّر الخطوات في الدفع: أين أنا، وكم بقي */
+.steps { display: flex; gap: 6px; align-items: center; font-size: var(--step--2); }
+.step {
+  flex: 1; block-size: 5px; border-radius: 99px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  transition: background var(--dur-in) var(--ease-in);
+}
 .step[data-on] { background: var(--jade); }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-.kpi { padding: 11px; display: grid; gap: 2px; }
-.kpi small { font-size: 0.66rem; color: var(--ink-3); font-weight: 700; }
-.kpi b { font-size: var(--step-2); font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.empty { padding: 44px 0; text-align: center; color: var(--ink-3); }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kpi { padding: 13px; display: grid; gap: 3px; border-radius: var(--r-m); }
+.kpi small { font-size: var(--step--2); color: var(--ink-3); font-weight: 700; }
+.kpi b { font-size: var(--step-2); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
+.empty { padding: 56px 0; text-align: center; color: var(--ink-3); display: grid; gap: 14px; justify-items: center; }
 
 /* مبدّل الكمية في السلة — أهداف لمس ٤٤ بكسل على الأقل (الفصل 5) */
-.qty { display: flex; align-items: center; gap: 4px; margin-block-start: 6px; }
+.qty { display: flex; align-items: center; gap: 5px; margin-block-start: 7px; }
 .qty button {
-  min-width: 34px; min-height: 34px; padding: 0 8px; border-radius: var(--r-s);
-  border: 1px solid var(--line); background: transparent; color: var(--ink);
+  min-inline-size: 38px; min-block-size: 38px; padding: 0 9px; border-radius: var(--r-s);
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
   font: inherit; font-weight: 800; line-height: 1; cursor: pointer;
   transition: transform var(--dur-tap) var(--ease-out), background var(--dur-tap) var(--ease-out);
 }
 .qty button:active { transform: scale(0.94); }
-.qty > span { min-width: 26px; text-align: center; font-weight: 800; }
+.qty > span {
+  min-inline-size: 30px; text-align: center; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
 .qty .rm {
-  margin-inline-start: 6px; font-size: 0.7rem; font-weight: 700;
-  color: var(--clay); border-color: color-mix(in srgb, var(--clay) 35%, transparent);
+  margin-inline-start: 7px; font-size: var(--step--2); font-weight: 700;
+  color: var(--clay); border-color: color-mix(in srgb, var(--clay) 32%, transparent);
+  background: color-mix(in srgb, var(--clay) 7%, transparent);
 }

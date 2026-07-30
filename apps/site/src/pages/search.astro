@@ -38,7 +38,7 @@ const popular = ['ايفون', 'سامسونج', 'شاحن', 'سماعات', 'م
 >
   <Header title="البحث" back="/" />
 
-  <div class="wrap">
+  <main class="container">
     <form class="searchbar glass" action="/search" method="get" role="search">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
         ><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5" /></svg
@@ -57,7 +57,7 @@ const popular = ['ايفون', 'سامسونج', 'شاحن', 'سماعات', 'م
       لا نتيجة مطابقة. جرّب كلمة أقصر، أو تصفّح الفئات في الأسفل.
     </p>
 
-    <div class="grid2" data-results>
+    <div class="card-grid" data-results>
       {indexed.map(({ product, key }) => (
         <div data-k={key}><ProductCard product={product} /></div>
       ))}
@@ -67,17 +67,17 @@ const popular = ['ايفون', 'سامسونج', 'شاحن', 'سماعات', 'م
       <section>
         <h2>الفئات</h2>
         <div class="links">
-          {categories.map((c) => <a href={`/c/${c.slug}/`}>{c.name.ar}</a>)}
+          {categories.map((c) => <a class="chip" href={`/c/${c.slug}/`}>{c.name.ar}</a>)}
         </div>
       </section>
       <section>
         <h2>العلامات</h2>
         <div class="links">
-          {brandList.map((b) => <a href={`/b/${b.slug}/`}>{b.name.ar}</a>)}
+          {brandList.map((b) => <a class="chip" href={`/b/${b.slug}/`}>{b.name.ar}</a>)}
         </div>
       </section>
     </nav>
-  </div>
+  </main>
 
   <script is:inline>
     (function () {
@@ -146,7 +146,7 @@ const popular = ['ايفون', 'سامسونج', 'شاحن', 'سماعات', 'م
 </Base>
 
 <style>
-  .wrap { padding: 4px 12px 96px; display: grid; gap: 12px; }
+  .container { display: grid; gap: 12px; padding-block-start: 12px; }
   .searchbar {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 12px; border-radius: var(--r-l);
@@ -157,27 +157,10 @@ const popular = ['ايفون', 'سامسونج', 'شاحن', 'سماعات', 'م
     background: transparent; border: 0; color: var(--ink); min-height: 28px;
   }
   .searchbar input:focus { outline: none; }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .chip {
-    font: inherit; font-size: var(--step--1); font-weight: 700;
-    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
-    border-radius: 999px; padding: 7px 14px; min-height: 36px; cursor: pointer;
-  }
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; }
   .count { font-size: var(--step--1); color: var(--ink-3); font-weight: 700; }
   .empty { padding: 24px 0; text-align: center; color: var(--ink-3); }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .grid2 > [hidden] { display: none; }
   .dirs { display: grid; gap: 14px; margin-block-start: 8px; }
   .dirs h2 { font-size: var(--step--1); color: var(--ink-3); font-weight: 800; margin-block-end: 8px; }
-  .links { display: flex; gap: 6px; flex-wrap: wrap; }
-  .links a {
-    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: 999px; padding: 7px 14px; text-decoration: none;
-  }
-  .sr-only {
-    position: absolute; width: 1px; height: 1px; overflow: hidden;
-    clip: rect(0 0 0 0); white-space: nowrap;
-  }
-  @media (min-width: 640px) { .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+  .links { display: flex; gap: 7px; flex-wrap: wrap; }
 </style>

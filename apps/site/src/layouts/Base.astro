@@ -23,12 +23,14 @@ const full = `${title} | تالي شام`;
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{full}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#0b1416" />
+    <meta name="theme-color" content="#efece5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#08110f" media="(prefers-color-scheme: dark)" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta property="og:title" content={full} />
     <meta property="og:description" content={description} />
     <meta property="og:locale" content="ar_SY" />
     <meta property="og:type" content="website" />
+    <meta name="format-detection" content="telephone=no" />
 
     <!--
       سعر الصرف يُحقن هنا وقت الطلب من الحافة (الفصل 7 §7.11).
@@ -42,7 +44,7 @@ const full = `${title} | تالي شام`;
     {demo && (
       <div class="sysbar sysbar--demo" role="status">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5" /><path d="M12 16h.01" /><circle cx="12" cy="12" r="9" /></svg>
-        بيانات تجريبية — هذه ليست منتجات حقيقية للبيع{catalogSource === 'seed' ? ' (بُنيت من ملف البذرة)' : ''}
+        بيانات تجريبية — ليست منتجات حقيقية للبيع
       </div>
     )}
 

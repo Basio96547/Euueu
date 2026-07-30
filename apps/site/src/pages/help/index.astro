@@ -8,10 +8,12 @@ import { LEGAL } from '../../lib/legal';
 <Base title="مركز المساعدة" description="كيف تطلب، وكيف يُحسب السعر، وسياسة الإرجاع والكفالة — تالي شام">
   <Header title="مركز المساعدة" />
 
-  <div class="wrap">
-    <p class="lead">
-      كل ما يخطر لك قبل أن تطلب أو بعده. الصفحات ساكنة وتفتح على أبطأ شبكة.
-    </p>
+  <main class="container">
+    <div class="pagehead">
+      <p class="eyebrow">دليل الشراء</p>
+      <h1>مركز المساعدة</h1>
+      <p class="lede">كل ما يخطر لك قبل أن تطلب أو بعده. الصفحات ساكنة وتفتح على أبطأ شبكة.</p>
+    </div>
 
     <div class="cards">
       {ARTICLES.map((a) => (
@@ -23,7 +25,7 @@ import { LEGAL } from '../../lib/legal';
     </div>
 
     <nav class="links" aria-label="السياسات">
-      {LEGAL.map((d) => <a href={`/legal/${d.slug}/`}>{d.title}</a>)}
+      {LEGAL.map((d) => <a class="chip" href={`/legal/${d.slug}/`}>{d.title}</a>)}
     </nav>
 
     <div class="contact glass">
@@ -34,12 +36,11 @@ import { LEGAL } from '../../lib/legal';
         <a class="btn btn--ghost" href="https://wa.me/963900000000">واتساب</a>
       </div>
     </div>
-  </div>
+  </main>
 </Base>
 
 <style>
-  .wrap { padding: 12px 12px 96px; display: grid; gap: 14px; }
-  .lead { color: var(--ink-2); line-height: 1.8; }
+  .container { display: grid; gap: 14px; }
   .cards { display: grid; gap: 9px; }
   .card { display: grid; gap: 3px; padding: 14px; border-radius: var(--r-l); color: inherit; text-decoration: none; }
   .card b { font-size: var(--step-0); font-weight: 800; }
@@ -48,10 +49,6 @@ import { LEGAL } from '../../lib/legal';
   .contact p { color: var(--ink-2); line-height: 1.7; font-size: var(--step--1); }
   .row { display: flex; gap: 8px; }
   .links { display: flex; gap: 6px; flex-wrap: wrap; }
-  .links a {
-    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: 999px; padding: 7px 14px; text-decoration: none;
-  }
+  .links { margin-block: 4px; }
   @media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }
 </style>

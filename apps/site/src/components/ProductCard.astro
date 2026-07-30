@@ -1,47 +1,102 @@
 ---
+/**
+ * بطاقة المنتج.
+ *
+ * التخطيط شبكةٌ بصفوفٍ مسمّاة لا تكديسٌ حرّ: الصورة، فالاسم، ثم فراغٌ
+ * يتمدّد، ثم السعر فالوسوم. فالسعر يقع على خطٍّ واحد في كل بطاقات الصف
+ * مهما اختلف طول الأسماء — وصفٌّ من الأسعار المتعرّجة يبدو مصادفةً لا
+ * تصميماً، ويصعب مسحه بالعين.
+ *
+ * والوسوم محدودةٌ باثنين مرتَّبين بأهميتهما: «آخر قطعة» تسبق «كفالة»
+ * تسبق «بطارية». أربعة وسومٍ ملفوفة على سطرين تُخفي المهمّ في الزحام.
+ */
 import Price from './Price.astro';
+import ProductMedia from './ProductMedia.astro';
 import { CONDITION_AR, ORIGIN_AR, type Product } from '../lib/catalog';
+
 interface Props { product: Product }
 const { product } = Astro.props;
 const v = product.variants[0]!;
 const rare = v.stock > 0 && v.stock <= 2;
+const out = v.stock === 0;
+
+/* الأهمّ أولاً، ثم يُقتطع الباقي */
+type T = { text: string; cls?: string };
+const tags: T[] = ([] as T[]).concat(
+  out ? [{ text: 'نفد', cls: 'tag--clay' }] : [],
+  rare ? [{ text: v.stock === 1 ? 'آخر قطعة' : 'قطعتان فقط', cls: 'tag--clay' }] : [],
+  v.batteryHealthPct ? [{ text: `بطارية ${v.batteryHealthPct}%`, cls: 'tag--jade' }] : [],
+  v.warrantyMonths > 0 ? [{ text: `كفالة ${v.warrantyMonths} شهراً` }] : [],
+  v.partCode ? [{ text: v.partCode, cls: 'tag--brass' }] : [],
+).slice(0, 2);
+
+/* شارةٌ واحدة فوق الصورة: الحالة للمستعمل، والمصدر للجديد */
+const badge = v.condition === 'NEW' ? ORIGIN_AR[v.deviceOrigin] : CONDITION_AR[v.condition];
+const title = `${product.name.ar}${v.storageGb ? ` · ${v.storageGb} جيجابايت` : ''}`;
 ---
-<a class="card glass" href={`/p/${product.slug}`}>
-  <div class="thumb">
-    <span class="ph-badge">{v.condition === 'NEW' ? ORIGIN_AR[v.deviceOrigin] : CONDITION_AR[v.condition]}</span>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-      <rect x="6" y="2" width="12" height="20" rx="2.6" /><path d="M10 5h4" />
-    </svg>
-  </div>
-  <span class="ttl">{product.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</span>
+<a class:list={['card', out && 'card--out']} href={`/p/${product.slug}/`}>
+  <ProductMedia
+    brand={product.brand}
+    brandName={product.brandName.en ?? product.brandName.ar}
+    category={product.category}
+    name={product.name.ar}
+    colorCode={v.colorCode}
+    alt={title}
+  >
+    <span class="badge">{badge}</span>
+    {out && <span class="veil">نفد المخزون</span>}
+  </ProductMedia>
+
+  <span class="ttl">{title}</span>
+  <span class="fill"></span>
   <Price usdCents={v.priceUsdCents} compareAt={v.compareAtPriceUsdCents} />
-  <span class="tags">
-    {v.partCode && <span class="tag tag--brass">{v.partCode}</span>}
-    {v.batteryHealthPct && <span class="tag tag--jade">بطارية {v.batteryHealthPct}%</span>}
-    {v.warrantyMonths > 0 && <span class="tag">كفالة {v.warrantyMonths}ش</span>}
-    {rare && <span class="tag tag--clay">{v.stock === 1 ? 'آخر قطعة' : 'قطعتان فقط'}</span>}
-    {v.stock === 0 && <span class="tag tag--clay">نفد</span>}
-  </span>
+  {tags.length > 0 && (
+    <span class="tag-row">
+      {tags.map((t) => <span class:list={['tag', t.cls]}>{t.text}</span>)}
+    </span>
+  )}
 </a>
 
 <style>
-  .card { display: grid; gap: 7px; padding: 9px; }
-  .thumb {
-    aspect-ratio: 1; border-radius: var(--r-s); position: relative; overflow: hidden;
-    background: linear-gradient(145deg,
-      color-mix(in srgb, var(--ink) 10%, transparent),
-      color-mix(in srgb, var(--ink) 4%, transparent));
-    display: grid; place-items: center; color: var(--ink-3);
+  .card {
+    display: grid;
+    grid-template-rows: auto auto 1fr auto auto;
+    gap: 8px;
+    padding: 8px 8px 11px;
+    border-radius: var(--r-l);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--sh-1);
+    transition:
+      transform var(--dur-tap) var(--ease-state),
+      box-shadow var(--dur-in) var(--ease-in),
+      border-color var(--dur-in) var(--ease-in);
   }
-  .thumb svg { width: 46%; height: 46%; opacity: 0.55; }
-  .ph-badge {
-    position: absolute; inset-inline-start: 6px; top: 6px;
-    font-size: 0.66rem; font-weight: 800; padding: 3px 7px; border-radius: 999px;
-    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+  .card:active { transform: scale(0.985); }
+  @media (hover: hover) {
+    .card:hover { box-shadow: var(--sh-2); border-color: color-mix(in srgb, var(--brass) 34%, var(--line)); }
   }
+  .card--out { opacity: 0.72; }
+
+  .badge {
+    position: absolute; inset-inline-start: 7px; inset-block-start: 7px;
+    font-size: var(--step--2); font-weight: 800; padding: 3px 8px;
+    border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); color: var(--ink-2);
+  }
+  .veil {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--surface) 62%, transparent);
+    font-size: var(--step--1); font-weight: 800; color: var(--ink-2);
+  }
+
   .ttl {
-    font-size: var(--step--1); font-weight: 700; line-height: 1.4;
+    font-size: var(--step--1); font-weight: 700; line-height: 1.45;
+    padding-inline: 2px;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .fill { min-block-size: 0; }
+  .card :global(.price), .card .tag-row { padding-inline: 2px; }
 </style>

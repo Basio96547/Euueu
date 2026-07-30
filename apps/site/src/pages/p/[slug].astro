@@ -3,8 +3,9 @@ import Base from '../../layouts/Base.astro';
 import Header from '../../components/Header.astro';
 import ProductCard from '../../components/ProductCard.astro';
 import Price from '../../components/Price.astro';
+import ProductMedia from '../../components/ProductMedia.astro';
 import {
-  products, compatibleAccessories, currentFx, reviewsFor, questionsFor,
+  products, categories, compatibleAccessories, currentFx, reviewsFor, questionsFor,
   CONDITION_AR, ORIGIN_AR, WARRANTY_AR,
 } from '../../lib/catalog';
 
@@ -16,6 +17,12 @@ const { product } = Astro.props;
 const v = product.variants[0]!;
 const fx = currentFx();
 const accessories = compatibleAccessories(product.slug);
+const catName = categories.find((c) => c.slug === product.category)?.name.ar ?? 'الكتالوج';
+const availLabel =
+  v.stock === 0 ? 'نفد المخزون'
+  : v.stock === 1 ? 'آخر قطعة'
+  : v.stock === 2 ? 'آخر قطعتين'
+  : 'متوفّر الآن';
 
 /* تُجلب وقت البناء وتُدرَج في HTML: لا استدعاء شبكة عند الزائر،
    وتقرؤها محركات البحث كما يقرؤها الإنسان. */
@@ -66,17 +73,36 @@ const jsonLd = {
 >
   <Header title={product.name.ar} back={`/c/${product.category}`} />
 
-  <div class="hero">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
-      <rect x="6" y="2" width="12" height="20" rx="2.6" /><path d="M10 5h4" />
-    </svg>
-    <span class="ph-note">صورة المنتج قيد الإعداد</span>
-  </div>
+  <main class="container pdp">
+    <nav class="crumbs" aria-label="مسار التصفّح">
+      <a href="/">الرئيسية</a><span aria-hidden="true">/</span>
+      <a href={`/c/${product.category}/`}>{catName}</a><span aria-hidden="true">/</span>
+      <a href={`/b/${product.brand}/`}>{product.brandName.ar}</a>
+    </nav>
 
-  <div class="pdp">
-    <h1>{product.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</h1>
+    <ProductMedia
+      brand={product.brand}
+      brandName={product.brandName.en ?? product.brandName.ar}
+      category={product.category}
+      name={product.name.ar}
+      colorCode={v.colorCode}
+      ratio="1 / 1"
+      alt={product.name.ar}
+      class="pm--hero"
+    >
+      <span class="mnote">رسمٌ توضيحيّ</span>
+    </ProductMedia>
 
-    <Price usdCents={v.priceUsdCents} compareAt={v.compareAtPriceUsdCents} size="lg" />
+    <div class="head">
+      <p class="brandline">{product.brandName.ar}{v.colorName ? ` · ${v.colorName.ar}` : ''}</p>
+      <h1>{product.name.ar}{v.storageGb ? ` ${v.storageGb} جيجابايت` : ''}</h1>
+      {product.shortDesc?.ar && <p class="lede">{product.shortDesc.ar}</p>}
+    </div>
+
+    <div class="pricebox">
+      <span class:list={['avail', v.stock === 0 && 'avail--out']}>{availLabel}</span>
+      <Price usdCents={v.priceUsdCents} compareAt={v.compareAtPriceUsdCents} size="lg" />
+    </div>
 
     <div class="badges">
       {v.partCode && <span class="tag tag--brass">{v.partCode} · {ORIGIN_AR[v.deviceOrigin]}</span>}
@@ -183,17 +209,17 @@ const jsonLd = {
     {accessories.length > 0 && (
       <section class="also">
         <h2>ملحقات متوافقة</h2>
-        <div class="grid2">{accessories.map((a) => <ProductCard product={a} />)}</div>
+        <div class="card-grid">{accessories.map((a) => <ProductCard product={a} />)}</div>
       </section>
     )}
-  </div>
+  </main>
 
   <div class="buybar glass">
     <span class="pr">
       <b data-usd={v.priceUsdCents}></b>
       <small data-usd={v.priceUsdCents} data-alt></small>
     </span>
-    <a class="btn btn--ghost" href="https://wa.me/963900000000" aria-label="تواصل عبر واتساب">
+    <a class="btn btn--icon" href="https://wa.me/963900000000" aria-label="تواصل عبر واتساب">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3.2-6.4" /><path d="M4 20l1.4-3.6" /></svg>
     </a>
     <button class="btn btn--buy" type="button" disabled={v.stock === 0}>
@@ -261,102 +287,145 @@ const jsonLd = {
 </Base>
 
 <style>
-  .hero {
-    aspect-ratio: 4 / 3; margin: 8px; border-radius: var(--r-l);
-    display: grid; place-items: center; gap: 8px; color: var(--ink-3);
-    background: linear-gradient(150deg,
-      color-mix(in srgb, var(--ink) 9%, transparent),
-      color-mix(in srgb, var(--ink) 3%, transparent));
-  }
-  .hero svg { width: 34%; opacity: 0.5; }
-  .ph-note { font-size: 0.72rem; }
+  .pdp { padding-block: 6px 0; display: grid; gap: 14px; }
+  /* الشريطان السفليّان معاً: شريط الشراء ثم شريط التنقّل تحته */
+  :global(body) { padding-block-end: calc(var(--nav-h) + var(--safe-b) + 88px); }
 
-  .pdp { padding: 4px 14px 0; display: grid; gap: 13px; }
-  :global(body) { padding-block-end: 152px; }
-  .pdp h1 { font-size: var(--step-2); font-weight: 800; letter-spacing: -0.02em; line-height: 1.25; }
+  .crumbs {
+    display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+    font-size: var(--step--2); color: var(--ink-3); padding-block-start: 6px;
+  }
+  .crumbs a { color: var(--ink-3); }
+  .crumbs a:last-child { color: var(--brass); font-weight: 700; }
+
+  .pdp :global(.pm--hero) {
+    --pm-scale: 0.76;
+    border-radius: var(--r-xl);
+    border: 1px solid var(--line);
+    max-inline-size: 520px; inline-size: 100%; margin-inline: auto;
+  }
+  .mnote {
+    position: absolute; inset-block-end: 8px; inset-inline-end: 10px;
+    font-size: var(--step--2); color: var(--ink-3);
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    border-radius: var(--r-pill); padding: 2px 9px;
+  }
+
+  .head { display: grid; gap: 5px; }
+  .brandline {
+    font-size: var(--step--1); font-weight: 700; color: var(--brass);
+  }
+  .pdp h1 { font-size: var(--step-2); line-height: var(--lh-tight); }
+  .lede { font-size: var(--step--1); color: var(--ink-2); line-height: 1.7; }
+
+  /* الحالة فوق السعر لا بجانبه: رقمُ الليرة من سبع خانات لا يترك مكاناً
+     لشارةٍ إلى جانبه عند 360 بكسل، فينكسر السطر بين الرقم و«ل.س». */
+  .pricebox {
+    display: grid; gap: 8px; justify-items: start;
+    padding: 13px 14px; border-radius: var(--r-l);
+    background: var(--surface); border: 1px solid var(--line);
+  }
+  .avail {
+    font-size: var(--step--2); font-weight: 800; color: var(--jade);
+    background: color-mix(in srgb, var(--jade) 12%, transparent);
+    border-radius: var(--r-pill); padding: 4px 11px;
+  }
+  .avail--out { color: var(--clay); background: color-mix(in srgb, var(--clay) 12%, transparent); }
+
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
 
   .cmpbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .cmplink { font-size: var(--step--1); font-weight: 700; color: var(--brass); text-decoration: none; }
+  .cmplink { font-size: var(--step--1); font-weight: 700; color: var(--brass); }
 
   .verify {
-    display: flex; gap: 10px; align-items: flex-start; padding: 11px; border-radius: var(--r-m);
-    border: 1px solid color-mix(in srgb, var(--jade) 40%, transparent);
-    background: color-mix(in srgb, var(--jade) 10%, transparent);
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: var(--r-m);
+    border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
+    background: color-mix(in srgb, var(--jade) 9%, transparent);
   }
-  .verify .icon { color: var(--jade); margin-block-start: 2px; }
-  .verify b { display: block; font-size: var(--step--1); }
-  .verify span { font-size: 0.72rem; color: var(--ink-2); line-height: 1.5; }
+  .verify .icon { color: var(--jade); margin-block-start: 3px; }
+  .verify b { display: block; font-size: var(--step--1); line-height: 1.5; }
+  .verify span { font-size: var(--step--2); color: var(--ink-2); line-height: 1.65; }
 
-  .picker { display: grid; gap: 7px; }
+  .picker { display: grid; gap: 8px; }
   .picker-h { font-size: var(--step--1); font-weight: 800; color: var(--ink-2); }
   .opts { display: flex; gap: 8px; flex-wrap: wrap; }
   .opt {
-    min-height: var(--tap-min); padding: 7px 13px; border-radius: 12px;
+    min-height: var(--tap-min); padding: 8px 14px; border-radius: var(--r-s);
     border: 1.5px solid var(--line); background: var(--surface);
     font: inherit; font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
-    cursor: pointer; display: grid; gap: 1px; text-align: start; line-height: 1.25;
+    cursor: pointer; display: grid; gap: 1px; text-align: start; line-height: 1.3;
     transition: border-color var(--dur-tap) var(--ease-state), background var(--dur-tap) var(--ease-state);
   }
-  .opt small { font-size: 0.64rem; color: var(--ink-3); font-weight: 600; }
+  .opt small { font-size: var(--step--2); color: var(--ink-3); font-weight: 600; }
   .opt[aria-pressed='true'] {
     border-color: var(--brass); color: var(--ink);
-    background: color-mix(in srgb, var(--brass) 12%, transparent);
+    background: color-mix(in srgb, var(--brass) 11%, transparent);
   }
 
-  .facts { display: grid; border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; margin: 0; }
-  .fact {
-    display: flex; justify-content: space-between; gap: 12px;
-    padding: 9px 12px; font-size: var(--step--1); border-block-end: 1px solid var(--line);
+  /* الجدول مخطَّط: صفٌّ فاتح وصفٌّ داكن يجعل مسح العين رأسياً بلا تيه */
+  .facts {
+    display: grid; border: 1px solid var(--line); border-radius: var(--r-l);
+    overflow: hidden; background: var(--surface);
   }
-  .fact:last-child { border-block-end: 0; }
-  .fact dt { color: var(--ink-3); margin: 0; }
-  .fact dd { font-weight: 700; margin: 0; }
+  .fact {
+    display: flex; justify-content: space-between; gap: 14px; align-items: baseline;
+    padding: 10px 14px; font-size: var(--step--1);
+  }
+  .fact:nth-child(odd) { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  .fact dt { color: var(--ink-3); }
+  .fact dd { font-weight: 700; text-align: end; }
 
   .cod {
-    display: flex; gap: 9px; align-items: center; padding: 11px 12px; border-radius: var(--r-m);
-    background: color-mix(in srgb, var(--brass) 13%, transparent);
-    font-size: var(--step--1); font-weight: 700;
+    display: flex; gap: 10px; align-items: center; padding: 12px 13px; border-radius: var(--r-m);
+    background: color-mix(in srgb, var(--brass) 11%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brass) 26%, transparent);
+    font-size: var(--step--1); font-weight: 700; line-height: 1.55;
   }
   .cod .icon { color: var(--brass); flex: none; }
 
   .rsum { display: flex; align-items: baseline; gap: 10px; }
-  .ravg { font-size: var(--step-3); font-weight: 800; letter-spacing: -0.03em; }
+  .ravg { font-size: var(--step-3); font-weight: 800; }
   .rstars { color: var(--brass); letter-spacing: 2px; }
   .rbars { display: grid; gap: 4px; }
-  .rbar { display: grid; grid-template-columns: 1ch 1fr 3ch; gap: 8px; align-items: center; font-size: 0.72rem; }
+  .rbar { display: grid; grid-template-columns: 1ch 1fr 3ch; gap: 8px; align-items: center; font-size: var(--step--2); }
   .rbar .track { block-size: 6px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
   .rbar .fill { display: block; block-size: 100%; background: var(--brass); }
-  .rev { display: grid; gap: 4px; padding-block: 10px; border-block-start: 1px solid var(--line); }
-  .rev p { color: var(--ink-2); line-height: 1.7; font-size: var(--step--1); }
-  .rev .rhead { display: flex; gap: 8px; align-items: center; font-size: 0.75rem; }
+  .rev { display: grid; gap: 5px; padding-block: 12px; border-block-start: 1px solid var(--line); }
+  .rev p { color: var(--ink-2); line-height: 1.75; font-size: var(--step--1); }
+  .rev .rhead { display: flex; gap: 8px; align-items: center; font-size: var(--step--2); }
   .rev .reply {
-    margin-block-start: 4px; padding: 8px 10px; border-radius: var(--r-m);
+    margin-block-start: 5px; padding: 9px 11px; border-radius: var(--r-m);
     background: color-mix(in srgb, var(--jade) 8%, transparent);
     border-inline-start: 3px solid color-mix(in srgb, var(--jade) 50%, transparent);
   }
 
-  .also { display: grid; gap: 10px; padding-block-start: 6px; }
-  .also h2 { font-size: var(--step-1); font-weight: 800; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .also { display: grid; gap: 11px; margin-block-start: var(--space-5); }
+  .also h2 { font-size: var(--step-1); }
 
+  /*
+    شريط الشراء فوق شريط التنقّل لا فوقه بالمعنى البصري: كانا يتراكبان
+    فيُخفي زرُّ «أضف للسلة» أيقونةَ السلة نفسها. الارتفاع يُحسب من
+    --nav-h فيتبع أيَّ تغيير في الشريط السفلي تلقائياً.
+  */
   .buybar {
-    position: fixed; z-index: 41; bottom: 76px; inset-inline: 8px;
-    border-radius: var(--r-l); padding: 10px;
+    position: fixed; z-index: 41;
+    bottom: calc(var(--nav-h) + var(--safe-b) + 14px); inset-inline: 8px;
+    max-inline-size: calc(var(--content) - 16px); margin-inline: auto;
+    border-radius: var(--r-l); padding: 9px 10px;
     display: flex; gap: 9px; align-items: center;
   }
-  .buybar .pr { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .buybar .pr { flex: 1; min-inline-size: 0; display: grid; gap: 0; }
   .buybar .pr b {
-    font-size: var(--step-1); font-weight: 800; letter-spacing: -0.02em;
-    font-variant-numeric: tabular-nums; white-space: nowrap;
+    font-size: var(--step-1); font-weight: 800;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.015em; white-space: nowrap;
   }
-  .buybar .pr small { font-size: 0.68rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .buybar .pr small { font-size: var(--step--2); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .buybar .btn--icon { --btn-bg: transparent; --btn-fg: var(--jade); --btn-brd: var(--line); }
 
   .btn--buy { flex: none; white-space: nowrap; }
   .is-fading { opacity: 0; transition: opacity var(--dur-out) var(--ease-state); }
 
-  @media (min-width: 640px) {
-    .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-    .buybar { inset-inline: auto 8px; max-width: 420px; }
+  @media (min-width: 560px) {
+    .buybar { inset-inline: auto 8px; max-inline-size: 440px; }
   }
 </style>

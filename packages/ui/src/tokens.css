@@ -2,48 +2,80 @@
    تالي شام — رموز التصميم
    المرجع: الفصل 5 (§5.4 المادة، §5.12–5.14 الحركة والأزرار)
    القاعدة الحاكمة: التصميم الصلب هو الأساس، والزجاج تحسين تدريجي.
+
+   الأرضية دافئة عن قصد: الهوية نحاسٌ وطينٌ ويشب — ألوانٌ ترابية كلّها،
+   وأرضيةٌ رماديةٌ باردة تحتها تُطفئ النحاس وتجعله يبدو متّسخاً. الورق
+   الدافئ يسندها، والحبر المائل إلى الأخضر الداكن يربطها بالسوق الشامي
+   لا بلوحة تحكّم عامّة.
    =========================================================== */
 
 :root {
   /* ————— اللون: نهاري ————— */
-  --ground: #edf0ef;
-  --surface: #ffffff;
-  --surface-2: #f5f7f6;
-  --ink: #0b1416;
-  --ink-2: #41514f;
-  --ink-3: #7b8a88;
-  --line: #d5dcda;
+  --ground: #efece5;         /* ورقٌ دافئ لا رماد بارد */
+  --surface: #fffdf8;
+  --surface-2: #f7f3ea;
+  --surface-3: #efeadd;      /* حفرة: حقول الإدخال ومواضع الصور */
+  --ink: #101b1c;
+  --ink-2: #45534f;
+  --ink-3: #7a8783;
+  --line: #ded8ca;
+  --line-2: #ebe6db;         /* فاصلٌ داخليّ أخفت من حدّ البطاقة */
 
-  --brass: #9a7412;          /* لون الهوية */
-  --jade: #2e7d62;           /* دلالي: تحقق، توفر، نجاح */
-  --clay: #b4552f;           /* دلالي: ندرة، تحذير، إجراء هدّام */
+  --brass: #8c6710;          /* لون الهوية */
+  --brass-ink: #fffdf8;      /* ما يُكتب فوق النحاس الصلب */
+  --brass-soft: #f2e6c8;
+  --jade: #256f56;           /* دلالي: تحقق، توفر، نجاح */
+  --clay: #a8471f;           /* دلالي: ندرة، تحذير، إجراء هدّام */
 
   /* ————— المادة الزجاجية ————— */
-  --glass-bg: rgba(255, 255, 255, 0.62);
-  --glass-brd: rgba(255, 255, 255, 0.85);
+  --glass-bg: rgba(255, 253, 248, 0.66);
+  --glass-brd: rgba(255, 255, 255, 0.9);
   --glass-spec: rgba(255, 255, 255, 0.95);
-  --glass-sh: 0 8px 28px rgba(11, 20, 22, 0.14);
+  --glass-sh: 0 10px 30px rgba(16, 27, 28, 0.13);
   --glass-blur: 18px;
   --glass-sat: 1.7;
 
+  /* ————— الارتفاع ————— */
+  --sh-1: 0 1px 2px rgba(16, 27, 28, 0.05), 0 2px 8px rgba(16, 27, 28, 0.05);
+  --sh-2: 0 2px 4px rgba(16, 27, 28, 0.05), 0 8px 22px rgba(16, 27, 28, 0.09);
+  --sh-3: 0 6px 12px rgba(16, 27, 28, 0.07), 0 18px 44px rgba(16, 27, 28, 0.15);
+
   /* ————— الأنصاف والمسافات ————— */
-  --r-s: 10px;
+  --r-xs: 7px;
+  --r-s: 11px;
   --r-m: 16px;
   --r-l: 22px;
+  --r-xl: 28px;
+  --r-pill: 999px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
+  --space-7: 48px;
 
-  /* ————— مقياس الخط ————— */
-  --step--1: 0.78rem;
-  --step-0: 0.94rem;
-  --step-1: 1.12rem;
-  --step-2: 1.45rem;
-  --step-3: 2rem;
-  --step-4: 2.7rem;
+  /* هامش الحافة موحَّد: صفحةٌ تبدأ عند 12 وأخرى عند 14 تُقرأ كأنها موقعان */
+  --gutter: 14px;
+  --content: 1140px;
+
+  /* ————— مقياس الخط —————
+     يتّسع مع الشاشة: هاتفٌ بعرض 360 لا يحتمل ما يحتمله حاسوب، وقياسٌ
+     ثابتٌ يُرضي أحدهما على حساب الآخر. */
+  --step--2: 0.7rem;
+  --step--1: 0.815rem;
+  --step-0: 0.945rem;
+  --step-1: clamp(1.14rem, 1.04rem + 0.5vw, 1.3rem);
+  --step-2: clamp(1.42rem, 1.25rem + 0.8vw, 1.72rem);
+  --step-3: clamp(1.95rem, 1.6rem + 1.6vw, 2.5rem);
+  --step-4: clamp(2.5rem, 1.95rem + 2.6vw, 3.4rem);
+
+  /* ————— الإيقاع الرأسي —————
+     العربية تحتاج فسحةً أكرم من اللاتينية: النقاط والحركات تحت السطر
+     وفوقه، والسطر الضيّق يخنقها. والعناوين تُشدّ لأنها تُقرأ ككتلة. */
+  --lh-tight: 1.28;
+  --lh-head: 1.42;
+  --lh-body: 1.75;
 
   /* الخط: مكدّس نظامي. تضمين خط عربي كامل يكلّف ~80KB
      وهو قرار مؤجَّل في سوق باقاته محدودة (الفصل 5 §5.7). */
@@ -61,44 +93,61 @@
   --ease-state: cubic-bezier(0.2, 0, 0, 1);
   --shift: 10px;
 
-  /* ————— اللمس ————— */
+  /* ————— اللمس والحواف ————— */
   --tap-min: 44px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --nav-h: 66px;             /* ارتفاع الشريط السفلي — تُحسب عليه الحشوات */
 }
 
 /* ————— اللون: ليلي ————— */
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #0b1416;
-    --surface: #132022;
-    --surface-2: #182a2c;
-    --ink: #e9efed;
-    --ink-2: #a3b3b1;
-    --ink-3: #6e807e;
+    --ground: #08110f;
+    --surface: #101c1d;
+    --surface-2: #17282a;
+    --surface-3: #0d1819;
+    --ink: #eaf0ed;
+    --ink-2: #a6b5b1;
+    --ink-3: #74847f;
     --line: #22383a;
-    --brass: #d9a72c;
-    --jade: #4fb894;
-    --clay: #db7a4f;
-    --glass-bg: rgba(24, 42, 44, 0.55);
+    --line-2: #1b2d2f;
+    --brass: #dcaa33;
+    --brass-ink: #0b1416;
+    --brass-soft: #33290e;
+    --jade: #52bd97;
+    --clay: #e08355;
+    --glass-bg: rgba(23, 40, 42, 0.58);
     --glass-brd: rgba(233, 239, 237, 0.16);
-    --glass-spec: rgba(233, 239, 237, 0.5);
-    --glass-sh: 0 10px 34px rgba(0, 0, 0, 0.45);
+    --glass-spec: rgba(233, 239, 237, 0.42);
+    --glass-sh: 0 12px 36px rgba(0, 0, 0, 0.5);
+    --sh-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.26);
+    --sh-2: 0 2px 4px rgba(0, 0, 0, 0.32), 0 8px 22px rgba(0, 0, 0, 0.4);
+    --sh-3: 0 6px 12px rgba(0, 0, 0, 0.36), 0 18px 44px rgba(0, 0, 0, 0.55);
   }
 }
 
 /* تفضيل صريح من المستخدم يتجاوز تفضيل النظام في الاتجاهين */
 :root[data-theme="dark"] {
-  --ground: #0b1416; --surface: #132022; --surface-2: #182a2c;
-  --ink: #e9efed; --ink-2: #a3b3b1; --ink-3: #6e807e; --line: #22383a;
-  --brass: #d9a72c; --jade: #4fb894; --clay: #db7a4f;
-  --glass-bg: rgba(24, 42, 44, 0.55); --glass-brd: rgba(233, 239, 237, 0.16);
-  --glass-spec: rgba(233, 239, 237, 0.5); --glass-sh: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --ground: #08110f; --surface: #101c1d; --surface-2: #17282a; --surface-3: #0d1819;
+  --ink: #eaf0ed; --ink-2: #a6b5b1; --ink-3: #74847f; --line: #22383a; --line-2: #1b2d2f;
+  --brass: #dcaa33; --brass-ink: #0b1416; --brass-soft: #33290e;
+  --jade: #52bd97; --clay: #e08355;
+  --glass-bg: rgba(23, 40, 42, 0.58); --glass-brd: rgba(233, 239, 237, 0.16);
+  --glass-spec: rgba(233, 239, 237, 0.42); --glass-sh: 0 12px 36px rgba(0, 0, 0, 0.5);
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.26);
+  --sh-2: 0 2px 4px rgba(0, 0, 0, 0.32), 0 8px 22px rgba(0, 0, 0, 0.4);
+  --sh-3: 0 6px 12px rgba(0, 0, 0, 0.36), 0 18px 44px rgba(0, 0, 0, 0.55);
 }
 :root[data-theme="light"] {
-  --ground: #edf0ef; --surface: #ffffff; --surface-2: #f5f7f6;
-  --ink: #0b1416; --ink-2: #41514f; --ink-3: #7b8a88; --line: #d5dcda;
-  --brass: #9a7412; --jade: #2e7d62; --clay: #b4552f;
-  --glass-bg: rgba(255, 255, 255, 0.62); --glass-brd: rgba(255, 255, 255, 0.85);
-  --glass-spec: rgba(255, 255, 255, 0.95); --glass-sh: 0 8px 28px rgba(11, 20, 22, 0.14);
+  --ground: #efece5; --surface: #fffdf8; --surface-2: #f7f3ea; --surface-3: #efeadd;
+  --ink: #101b1c; --ink-2: #45534f; --ink-3: #7a8783; --line: #ded8ca; --line-2: #ebe6db;
+  --brass: #8c6710; --brass-ink: #fffdf8; --brass-soft: #f2e6c8;
+  --jade: #256f56; --clay: #a8471f;
+  --glass-bg: rgba(255, 253, 248, 0.66); --glass-brd: rgba(255, 255, 255, 0.9);
+  --glass-spec: rgba(255, 255, 255, 0.95); --glass-sh: 0 10px 30px rgba(16, 27, 28, 0.13);
+  --sh-1: 0 1px 2px rgba(16, 27, 28, 0.05), 0 2px 8px rgba(16, 27, 28, 0.05);
+  --sh-2: 0 2px 4px rgba(16, 27, 28, 0.05), 0 8px 22px rgba(16, 27, 28, 0.09);
+  --sh-3: 0 6px 12px rgba(16, 27, 28, 0.07), 0 18px 44px rgba(16, 27, 28, 0.15);
 }
 
 /* ===========================================================
@@ -109,7 +158,7 @@
   /* الأساس الصلب: هذا ما يراه من لا يملك القدرة أو من عطّلها */
   background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow: 0 2px 10px rgba(11, 20, 22, 0.1);
+  box-shadow: var(--sh-1);
   border-radius: var(--r-m);
 }
 

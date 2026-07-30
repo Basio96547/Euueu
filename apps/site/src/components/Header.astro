@@ -1,29 +1,96 @@
 ---
+/**
+ * الشريط العلوي.
+ *
+ * العلامة ليست نصّاً وحده: ختمٌ ثمانيّ — مربّعان متقاطعان — وهو نقشٌ
+ * دمشقيّ قديم يُرسم بالهندسة لا بالخط، فلا يعتمد على خطٍّ منزَّل ولا
+ * يتبدّل شكله بين جهازٍ وآخر. وهو ما يجعل للموقع وجهاً يُذكر.
+ *
+ * وفي الصفحات الداخلية يبقى موضع الختم لزر الرجوع: شريطٌ يتبدّل ارتفاعه
+ * وتخطيطه بين صفحةٍ وأخرى يُشعر الزبون بأنه انتقل إلى موقعٍ آخر.
+ */
 import CurrencyToggle from './CurrencyToggle.astro';
-interface Props { title?: string; back?: string }
-const { title, back } = Astro.props;
+interface Props { title?: string; back?: string; search?: boolean }
+const { title, back, search = true } = Astro.props;
 ---
-<header class="topbar glass">
-  {back && (
-    <a href={back} class="back" aria-label="رجوع">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
-    </a>
-  )}
-  {title
-    ? <h1 class="ttl">{title}</h1>
-    : <a href="/" class="brand">تالي<span>شام</span></a>}
-  <CurrencyToggle />
+<header class="topbar">
+  <div class="inner glass">
+    {back ? (
+      <a href={back} class="ico" aria-label="رجوع">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+      </a>
+    ) : (
+      <a href="/" class="mark" aria-label="تالي شام — الصفحة الرئيسية">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4.5 4.5h15v15h-15z" /><path d="M12 1.9 22.1 12 12 22.1 1.9 12z" />
+        </svg>
+      </a>
+    )}
+
+    {title
+      ? <h1 class="ttl">{title}</h1>
+      : <a href="/" class="brand">تالي <span>شام</span></a>}
+
+    <div class="acts">
+      <CurrencyToggle />
+      {search && (
+        <a href="/search/" class="ico" aria-label="البحث">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+            ><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5" /></svg>
+        </a>
+      )}
+    </div>
+  </div>
 </header>
 
 <style>
   .topbar {
     position: sticky; top: 0; z-index: 20;
-    margin: 8px; padding: 10px 12px;
-    display: flex; align-items: center; gap: 10px;
+    /* الحاوية مرجعٌ للتلاشي المطلق تحتها */
+    isolation: isolate;
+    padding: 8px var(--gutter) 0;
+    /* خلفيةٌ صلبة تحت الشريط نفسه: بلا هذا يمرّ النصّ المنساب فوق حافته
+       العليا فيُقرأ سطران متراكبان. والتلاشي تحته وحده — لا خطّ حادّ. */
+    background: var(--ground);
   }
-  .brand { font-weight: 800; font-size: var(--step-1); letter-spacing: -0.02em; }
+  .topbar::after {
+    content: ''; position: absolute; inset-inline: 0; inset-block-start: 100%;
+    block-size: 16px; pointer-events: none;
+    background: linear-gradient(var(--ground), transparent);
+  }
+  .inner {
+    max-inline-size: var(--content); margin-inline: auto;
+    padding: 7px 10px;
+    display: flex; align-items: center; gap: 10px;
+    border-radius: var(--r-l);
+  }
+
+  .mark {
+    inline-size: 34px; block-size: 34px; flex: none;
+    display: grid; place-items: center; border-radius: var(--r-s);
+    color: var(--brass);
+    background: color-mix(in srgb, var(--brass) 12%, transparent);
+  }
+  .mark svg {
+    inline-size: 19px; block-size: 19px;
+    fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round;
+  }
+
+  .brand {
+    font-weight: 800; font-size: var(--step-1); line-height: 1.2;
+    display: flex; gap: 5px; align-items: baseline;
+  }
   .brand span { color: var(--brass); }
-  .ttl { font-size: var(--step-0); font-weight: 800; flex: 1; }
-  .back { display: grid; place-items: center; min-width: 32px; min-height: 32px; }
-  .topbar :global(.curtoggle) { margin-inline-start: auto; }
+  .ttl {
+    font-size: var(--step-0); font-weight: 800; flex: 1; min-inline-size: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .acts { margin-inline-start: auto; display: flex; align-items: center; gap: 6px; }
+  .ico {
+    inline-size: 36px; block-size: 36px; flex: none;
+    display: grid; place-items: center; border-radius: var(--r-s);
+    color: var(--ink-2);
+  }
+  .ico:active { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 </style>

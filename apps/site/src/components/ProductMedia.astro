@@ -1,0 +1,116 @@
+---
+/**
+ * إطار صورة المنتج.
+ *
+ * يعرض الصورة الحقيقية إن وُجدت، وإلا رسماً مولَّداً يقول نوع المنتج
+ * ولونه وعلامته (انظر `lib/artwork.ts`). الإطار واحدٌ في الحالتين
+ * بنسبة 4:5 — فلا يقفز التخطيط يوم تصل الصور.
+ */
+import { artKind, brandHue, bodyColor, isLight, shape } from '../lib/artwork';
+
+interface Props {
+  brand: string;
+  brandName?: string;
+  category: string;
+  name: string;
+  colorCode?: string | null;
+  src?: string | null;
+  alt?: string;
+  ratio?: string;
+  /** رابطٌ يُفتح: يستعمله زر «شاهد» في صفحة المنتج */
+  class?: string;
+}
+
+const {
+  brand, brandName, category, name, colorCode = null,
+  src = null, alt = '', ratio = '4 / 5', class: cls = '',
+} = Astro.props;
+
+const kind = artKind(category, `${name} ${category}`);
+const s = shape(kind);
+const hue = brandHue(brand);
+const fill = bodyColor(colorCode);
+const light = isLight(fill);
+/* الخطوط فوق جسمٍ فاتح تكون داكنة والعكس — وإلا اختفت التفاصيل */
+const stroke = light ? 'rgba(16,27,28,.34)' : 'rgba(255,255,255,.42)';
+const id = `${brand}-${kind}-${Math.abs(hashOf(name)) % 9973}`;
+
+function hashOf(t: string) {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+  return h;
+}
+---
+
+<div class={`pm ${cls}`} style={`--pm-ratio:${ratio}; --pm-h1:${hue}; --pm-h2:${hue + 26}`}>
+  {src ? (
+    <img src={src} alt={alt || name} loading="lazy" decoding="async" width="600" height="750" />
+  ) : (
+    <svg viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice"
+      role="img" aria-label={alt || name} class="pm__art">
+      <defs>
+        <linearGradient id={`b${id}`} x1="0.15" y1="0" x2="0.85" y2="1">
+          <stop offset="0" stop-color={fill} stop-opacity="1" />
+          <stop offset="1" stop-color={fill} stop-opacity="0.74" />
+        </linearGradient>
+      </defs>
+
+      {/* الأرضية والضوء في CSS لا هنا: شدّتهما تختلف بين النهار والليل،
+          وقيمةٌ مضمَّنة في SVG لا تعرف السمة التي تُعرض فيها. */}
+      <g class="pm__dev">
+        <path d={s.body} fill={`url(#b${id})`} />
+        {s.screen && <path d={s.screen} fill="rgba(10,16,17,.32)" />}
+        {(s.mark ?? []).map((d) => <path d={d} fill={stroke} />)}
+        {s.line.map((d) => (
+          <path d={d} fill="none" stroke={stroke} stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        ))}
+      </g>
+    </svg>
+  )}
+
+  {brandName && <span class="pm__brand">{brandName}</span>}
+  <slot />
+</div>
+
+<style>
+  .pm {
+    --pm-a1: 0.38;   /* شدّة لون العلامة في الأعلى */
+    --pm-a2: 0.14;
+    --pm-lit: 0.26;  /* الضوء العلويّ */
+    position: relative;
+    aspect-ratio: var(--pm-ratio);
+    border-radius: var(--r-m);
+    overflow: hidden;
+    isolation: isolate;
+    background:
+      radial-gradient(80% 58% at 22% 4%, rgba(255, 255, 255, var(--pm-lit)), transparent 70%),
+      linear-gradient(148deg,
+        hsl(var(--pm-h1) 62% 60% / var(--pm-a1)),
+        hsl(var(--pm-h2) 52% 42% / var(--pm-a2))),
+      var(--surface-3);
+  }
+  /* الليل يحتاج شدّةً أقلّ: اللون نفسه فوق أرضيةٍ سوداء يصير صارخاً */
+  @media (prefers-color-scheme: dark) {
+    .pm { --pm-a1: 0.3; --pm-a2: 0.1; --pm-lit: 0.07; }
+  }
+  :global(:root[data-theme='dark']) .pm { --pm-a1: 0.3; --pm-a2: 0.1; --pm-lit: 0.07; }
+  :global(:root[data-theme='light']) .pm { --pm-a1: 0.38; --pm-a2: 0.14; --pm-lit: 0.26; }
+  .pm img, .pm__art { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; }
+  /* الجهاز لا يلمس الحافة، والظلّ يرفعه عن الأرضية فلا يبدو ملصقاً عليها */
+  .pm__dev {
+    transform: scale(var(--pm-scale, 0.86)); transform-origin: 60px 60px;
+    filter: drop-shadow(0 3px 5px rgba(10, 16, 17, 0.22));
+  }
+
+  /* اسم العلامة لاتينيّ عمداً: هكذا تُطبع على الأجهزة نفسها */
+  .pm__brand {
+    position: absolute; inset-block-end: 7px; inset-inline-start: 9px;
+    font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-2); opacity: 0.5;
+    font-family: var(--font-mono);
+  }
+
+  /* البطاقة تكبّر الجهاز قليلاً عند اللمس — إشارةٌ بأن الصورة قابلة للفتح */
+  :global(.card:active) .pm__dev { transform: scale(calc(var(--pm-scale, 0.86) + 0.04)); }
+  .pm__dev { transition: transform var(--dur-in) var(--ease-in); }
+</style>

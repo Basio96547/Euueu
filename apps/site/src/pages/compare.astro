@@ -55,7 +55,11 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
 <Base title="المقارنة" description="قارن حتى أربعة أجهزة في جدول فروق واحد — تالي شام" active="search">
   <Header title="المقارنة" back="/" />
 
-  <div class="wrap">
+  <main class="container">
+    <div class="pagehead">
+      <p class="eyebrow">جدول فروق</p>
+      <h1>المقارنة</h1>
+    </div>
     <p class="lead" data-lead>
       اختر حتى أربعة أجهزة لمقارنتها. تُحفظ المقارنة في متصفحك، ورابط الصفحة
       يحملها معك إن أردت مشاركتها.
@@ -85,7 +89,7 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
         وتستطيع فتح صفحتين جنباً إلى جنب: <a href="/c/smartphones/">تصفّح الهواتف</a>.
       </p>
     </noscript>
-  </div>
+  </main>
 
   <script is:inline define:vars={{ DATA: data, ROWS }}>
     (function () {
@@ -178,7 +182,7 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
 </Base>
 
 <style>
-  .wrap { padding: 4px 12px 96px; display: grid; gap: 12px; }
+  .container { display: grid; gap: 12px; }
   .lead { color: var(--ink-2); line-height: 1.8; font-size: var(--step--1); }
   .picker { display: flex; gap: 8px; align-items: center; padding: 12px; border-radius: var(--r-l); flex-wrap: wrap; }
   .picker label { font-weight: 700; font-size: var(--step--1); }

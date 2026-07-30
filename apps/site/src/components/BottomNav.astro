@@ -3,7 +3,7 @@ interface Props { active?: 'home' | 'search' | 'cart' | 'account' }
 const { active = 'home' } = Astro.props;
 const items = [
   { key: 'home', href: '/', label: 'الرئيسية', d: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5' },
-  { key: 'search', href: '/search', label: 'البحث', d: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5' },
+  { key: 'search', href: '/search/', label: 'البحث', d: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-3.5-3.5' },
   { key: 'cart', href: '/app/cart', label: 'السلة', d: 'M6 6h15l-1.6 9H7.5zM6 6 5 3H2' },
   { key: 'account', href: '/app/account', label: 'حسابي', d: 'M12 4.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2M4.5 20c1.6-4 4.3-6 7.5-6s5.9 2 7.5 6' },
 ];

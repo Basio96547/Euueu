@@ -1,82 +1,230 @@
 ---
+/**
+ * الصفحة الرئيسية.
+ *
+ * كانت تبدأ برقاقات الفئات ثم شبكةً من البطاقات مباشرة — أي فهرساً بلا
+ * واجهة. والزبون الذي يفتح الرابط أول مرة لا يعرف من نحن ولا كيف يدفع
+ * ولا لماذا يثق، والفهرس لا يجيب عن شيء من ذلك.
+ *
+ * الفاتحة تجيب عن الثلاثة في ارتفاع شاشةٍ واحدة: من نحن، وكيف تدفع،
+ * وسعر الصرف الذي حُسبت به الأسعار — وهو في سوقٍ يتحرّك سعره يومياً
+ * أهمّ ما يطمئن إليه المشتري.
+ */
 import Base from '../layouts/Base.astro';
 import Header from '../components/Header.astro';
 import ProductCard from '../components/ProductCard.astro';
-import { products, productsInCategory } from '../lib/catalog';
+import { products, productsInCategory, brandList, currentFx } from '../lib/catalog';
 
 const newest = products.filter((p) => p.category !== 'power' && p.category !== 'power-banks').slice(0, 4);
 const power = productsInCategory('power');
 const used = productsInCategory('used-refurbished');
+/* السعر يُقرَّب إلى الألف كما يُقرَّب في الدفع النقدي (الفصل 7) */
+const syp = Math.round(currentFx().rate / 1000) * 1000;
+
 const chips = [
   { slug: 'smartphones', label: 'هواتف ذكية' },
-  { slug: 'used-refurbished', label: 'مستعمل' },
+  { slug: 'used-refurbished', label: 'مستعمل ومجدَّد' },
   { slug: 'power-banks', label: 'بطاريات' },
   { slug: 'chargers', label: 'شواحن' },
   { slug: 'audio', label: 'سماعات' },
   { slug: 'wearables', label: 'ساعات' },
+  { slug: 'protection', label: 'جرابات' },
+];
+
+const pillars = [
+  {
+    t: 'الدفع عند الاستلام',
+    s: 'تفحص الجهاز بيدك ثم تدفع نقداً — بلا أي دفعة مقدَّمة',
+    d: 'M2.5 6h19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-19a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z@M12 9.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2',
+  },
+  {
+    t: 'فحص IMEI موثَّق',
+    s: 'نتيجة الفحص تُطبع على إيصالك وتُسلَّم مع الجهاز',
+    d: 'M12 3l7.5 3v5.5c0 4.4-3 8.1-7.5 9.5-4.5-1.4-7.5-5.1-7.5-9.5V6z@m9 12 2.2 2.2L15.5 10',
+  },
+  {
+    t: 'كفالة مكتوبة',
+    s: 'مدّتها مكتوبة على صفحة الجهاز وفي الإيصال — لا وعدٌ شفهيّ',
+    d: 'M6 3h12a2 2 0 0 1 2 2v16l-8-4-8 4V5a2 2 0 0 1 2-2z',
+  },
 ];
 ---
 
 <Base title="جوالات وملحقات" active="home">
   <Header />
 
-  <nav class="chips" aria-label="الفئات">
-    {chips.map((c) => <a class="chip" href={`/c/${c.slug}`}>{c.label}</a>)}
-  </nav>
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">دمشق · توصيل خلال 24–48 ساعة</p>
+      <h1>جهازك الجديد يصل إليك،<br />وتدفع بعد أن تفحصه.</h1>
+      <p class="lede">
+        هواتف جديدة ومستعملة مفحوصة، وبطاريات وشواحن لانقطاع الكهرباء —
+        بأسعارٍ تُحدَّث يومياً على سعر الصرف.
+      </p>
 
-  <section class="sec">
-    <div class="sec-h"><h2>وصل حديثاً</h2><a href="/c/smartphones">الكل</a></div>
-    <div class="grid2">{newest.map((p) => <ProductCard product={p} />)}</div>
-  </section>
+      <div class="cta">
+        <a class="btn" href="/c/smartphones/">تصفّح الهواتف</a>
+        <a class="btn btn--quiet" href="/c/used-refurbished/">مستعمل بكفالة</a>
+      </div>
 
-  <section class="sec">
-    <div class="sec-h">
-      <h2>لانقطاع الكهرباء</h2><a href="/c/power">الكل</a>
-    </div>
-    <p class="sec-note">بطاريات محمولة وشواحن شمسية — من أعلى الفئات دوراناً بعد الجوالات.</p>
-    <div class="grid2">{power.slice(0, 4).map((p) => <ProductCard product={p} />)}</div>
-  </section>
+      <p class="fx tnum">
+        <span class="dot" aria-hidden="true"></span>
+        <span>سعر اليوم: <b>1 دولار = {syp.toLocaleString('en-US')} ل.س</b></span>
+        <a href="/help/">كيف نحسب؟</a>
+      </p>
+    </section>
 
-  <section class="sec">
-    <div class="sec-h"><h2>مستعمل ومجدَّد بكفالة</h2><a href="/c/used-refurbished">الكل</a></div>
-    <p class="sec-note">كل جهاز مفحوص، مع صور حقيقية له ونسبة صحة بطاريته ونتيجة فحص IMEI.</p>
-    <div class="grid2">{used.slice(0, 4).map((p) => <ProductCard product={p} />)}</div>
-  </section>
+    <ul class="pillars">
+      {pillars.map((p) => (
+        <li>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            {p.d.split('@').map((d) => <path d={d} />)}
+          </svg>
+          <div><b>{p.t}</b><span>{p.s}</span></div>
+        </li>
+      ))}
+    </ul>
 
-  <section class="sec trust">
-    <div class="trust-item glass">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.2" /><circle cx="12" cy="12" r="2.6" /></svg>
-      <div><b>الدفع عند الاستلام</b><span>تفحص الجهاز قبل أن تدفع</span></div>
-    </div>
-    <div class="trust-item glass">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.4-3 8.1-7.5 9.5-4.5-1.4-7.5-5.1-7.5-9.5V6z" /><path d="m9 12 2.2 2.2L15.5 10" /></svg>
-      <div><b>فحص IMEI موثَّق</b><span>يُطبع على إيصالك مع الجهاز</span></div>
-    </div>
-  </section>
+    <nav class="chip-row" aria-label="الفئات">
+      {chips.map((c) => <a class="chip" href={`/c/${c.slug}/`}>{c.label}</a>)}
+    </nav>
+
+    <section class="sec">
+      <div class="sec-h">
+        <div>
+          <p class="eyebrow">وصل حديثاً</p>
+          <h2>أحدث ما دخل المحل</h2>
+        </div>
+        <a class="more" href="/c/smartphones/">الكل
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+        </a>
+      </div>
+      <div class="card-grid">{newest.map((p) => <ProductCard product={p} />)}</div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h">
+        <div>
+          <p class="eyebrow">لانقطاع الكهرباء</p>
+          <h2>بطاريات وشواحن</h2>
+        </div>
+        <a class="more" href="/c/power/">الكل
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+        </a>
+      </div>
+      <p class="sec-note">من أعلى الفئات دوراناً بعد الجوالات — بطاريات محمولة وشواحن شمسية.</p>
+      <div class="card-grid">{power.slice(0, 4).map((p) => <ProductCard product={p} />)}</div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h">
+        <div>
+          <p class="eyebrow">مفحوص قطعةً قطعة</p>
+          <h2>مستعمل ومجدَّد بكفالة</h2>
+        </div>
+        <a class="more" href="/c/used-refurbished/">الكل
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+        </a>
+      </div>
+      <p class="sec-note">لكل جهاز نسبة صحة بطاريته ونتيجة فحص IMEI الخاصة به — مكتوبةً على صفحته.</p>
+      <div class="card-grid">{used.slice(0, 4).map((p) => <ProductCard product={p} />)}</div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><h2>العلامات</h2></div>
+      <div class="brands">
+        {brandList.map((b) => (
+          <a class="brand-tile" href={`/b/${b.slug}/`}>
+            <span class="lat">{b.name.en ?? b.name.ar}</span>
+            <span class="ar">{b.name.ar}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <section class="sec">
+      <a class="ask" href="/help/">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"
+          ><path d="M21 12a9 9 0 1 1-3.4-7" /><path d="M9.6 9.2a2.6 2.6 0 1 1 3.4 2.5c-.7.3-1 .9-1 1.6v.4" /><path d="M12 17.4h.01" /></svg>
+        <div>
+          <b>لست متأكداً أيّ جهاز يناسبك؟</b>
+          <span>مركز المساعدة يشرح الفرق بين النسخ والمصادر والكفالات.</span>
+        </div>
+        <svg class="icon go" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+      </a>
+    </section>
+  </main>
 </Base>
 
 <style>
-  .chips { display: flex; gap: 7px; padding: 12px 12px 4px; overflow-x: auto; scrollbar-width: none; }
-  .chips::-webkit-scrollbar { display: none; }
-  .chip {
-    flex: none; padding: 9px 14px; border-radius: 999px;
-    font-size: var(--step--1); font-weight: 700;
-    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
-    white-space: nowrap; min-height: var(--tap-min); display: grid; place-items: center;
+  /* ————— الفاتحة ————— */
+  .hero { display: grid; gap: 12px; padding-block: 22px 6px; max-inline-size: 34rem; }
+  .hero h1 { font-size: var(--step-3); line-height: 1.22; }
+  .lede { font-size: var(--step-0); color: var(--ink-2); line-height: 1.7; }
+  .cta { display: flex; gap: 9px; flex-wrap: wrap; margin-block-start: 4px; }
+  .cta .btn { flex: 1 1 auto; min-inline-size: 9.5rem; }
+
+  .fx {
+    display: flex; align-items: center; gap: 8px;
+    font-size: var(--step--1); color: var(--ink-2);
+    padding: 9px 12px; margin-block-start: 6px;
+    border-radius: var(--r-s);
+    background: color-mix(in srgb, var(--jade) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--jade) 24%, transparent);
   }
-  .sec { padding: 16px 12px 0; display: grid; gap: 10px; }
-  .sec-h { display: flex; align-items: baseline; justify-content: space-between; }
-  .sec-h h2 { font-size: var(--step-1); font-weight: 800; letter-spacing: -0.01em; }
-  .sec-h a { font-size: var(--step--1); color: var(--brass); font-weight: 700; }
-  .sec-note { font-size: var(--step--1); color: var(--ink-2); margin-block-start: -4px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .trust { grid-template-columns: 1fr; gap: 8px; }
-  .trust-item { display: flex; gap: 10px; align-items: center; padding: 12px; }
-  .trust-item .icon { color: var(--brass); flex: none; }
-  .trust-item b { display: block; font-size: var(--step--1); }
-  .trust-item span { font-size: 0.72rem; color: var(--ink-2); }
-  @media (min-width: 640px) {
-    .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-    .trust { grid-template-columns: 1fr 1fr; }
+  .fx b { color: var(--ink); white-space: nowrap; }
+  .fx a { color: var(--jade); font-weight: 700; margin-inline-start: auto; white-space: nowrap; }
+  .fx .dot {
+    inline-size: 7px; block-size: 7px; border-radius: 50%; flex: none;
+    background: var(--jade); box-shadow: 0 0 0 3px color-mix(in srgb, var(--jade) 22%, transparent);
+  }
+
+  /* ————— الأعمدة الثلاثة ————— */
+  .pillars {
+    display: grid; margin-block-start: 18px;
+    border: 1px solid var(--line); border-radius: var(--r-l);
+    background: var(--surface); overflow: hidden;
+  }
+  .pillars li {
+    display: flex; gap: 11px; align-items: flex-start; padding: 12px 13px;
+    border-block-end: 1px solid var(--line-2);
+  }
+  .pillars li:last-child { border-block-end: 0; }
+  .pillars .icon { color: var(--brass); margin-block-start: 3px; }
+  .pillars b { display: block; font-size: var(--step--1); line-height: 1.5; }
+  .pillars span { font-size: var(--step--2); color: var(--ink-2); line-height: 1.6; }
+
+  .chip-row { margin-block-start: 20px; }
+
+  /* ————— العلامات ————— */
+  .brands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .brand-tile {
+    display: grid; gap: 1px; place-items: center; text-align: center;
+    padding: 12px 4px; border-radius: var(--r-m);
+    background: var(--surface); border: 1px solid var(--line);
+  }
+  .brand-tile .lat {
+    font-family: var(--font-mono); font-size: 0.62rem; font-weight: 800;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--brass);
+  }
+  .brand-tile .ar { font-size: var(--step--2); color: var(--ink-2); font-weight: 700; }
+
+  /* ————— لافتة المساعدة ————— */
+  .ask {
+    display: flex; gap: 11px; align-items: center; padding: 14px;
+    border-radius: var(--r-l); background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  .ask > .icon { color: var(--brass); flex: none; }
+  .ask b { display: block; font-size: var(--step--1); line-height: 1.5; }
+  .ask span { font-size: var(--step--2); color: var(--ink-2); line-height: 1.6; }
+  .ask .go { color: var(--ink-3); margin-inline-start: auto; }
+
+  @media (min-width: 560px) {
+    .hero { padding-block: 34px 10px; }
+    .cta .btn { flex: 0 0 auto; }
+    .pillars { grid-template-columns: repeat(3, 1fr); }
+    .pillars li { border-block-end: 0; border-inline-end: 1px solid var(--line-2); flex-direction: column; }
+    .pillars li:last-child { border-inline-end: 0; }
   }
 </style>

@@ -10,33 +10,57 @@ export function getStaticPaths() {
 
 const { category } = Astro.props;
 const items = productsInCategory(category.slug);
+
+/* الفئات الشقيقة تحت الأب نفسه: تنقّلٌ جانبيّ بلا رجوعٍ إلى الرئيسية.
+   من فتح «شواحن» غالباً يريد «كابلات» — لا الصفحة الأولى.
+   وزرّ «تصفية» المعطَّل حُذف: زرٌّ لا يعمل يُنقص الثقة ولا يضيف شيئاً. */
+const parent = category.path.includes('.') ? category.path.slice(0, category.path.lastIndexOf('.')) : null;
+const siblings = parent
+  ? categories.filter((c) => c.path.startsWith(parent + '.') && !c.path.slice(parent.length + 1).includes('.'))
+  : categories.filter((c) => c.depth === 0);
+
+/* من الأدنى سعراً إلى الأعلى: المشتري في هذا السوق يبدأ من الميزانية */
+const sorted = [...items].sort((a, b) => a.variants[0]!.priceUsdCents - b.variants[0]!.priceUsdCents);
+const cheapest = sorted[0]?.variants[0]?.priceUsdCents ?? 0;
 ---
 
 <Base title={category.name.ar} description={`${category.name.ar} في سوريا — أسعار محدَّثة ودفع عند الاستلام`} active="search">
   <Header title={category.name.ar} back="/" />
 
-  <div class="bar">
-    <span class="count tnum">{items.length} نتيجة</span>
-    <button class="filterbtn" type="button" disabled>تصفية</button>
-  </div>
+  <main class="container">
+    <div class="head">
+      <h1>{category.name.ar}</h1>
+      <p class="meta tnum">
+        {items.length} منتجاً{cheapest > 0 && <> · يبدأ من <b data-usd={cheapest}></b></>}
+      </p>
+    </div>
 
-  {items.length === 0 ? (
-    <p class="empty">لا توجد منتجات في هذه الفئة بعد.</p>
-  ) : (
-    <div class="grid2">{items.map((p) => <ProductCard product={p} />)}</div>
-  )}
+    {siblings.length > 1 && (
+      <nav class="chip-row" aria-label="فئات قريبة">
+        {siblings.map((c) => (
+          <a class="chip" href={`/c/${c.slug}/`} aria-current={c.slug === category.slug ? 'page' : undefined}>
+            {c.name.ar}
+          </a>
+        ))}
+      </nav>
+    )}
+
+    {items.length === 0 ? (
+      <div class="empty">
+        <p>لا توجد منتجات في هذه الفئة بعد.</p>
+        <a class="btn btn--quiet" href="/search/">ابحث في الكتالوج كلّه</a>
+      </div>
+    ) : (
+      <div class="card-grid">{sorted.map((p) => <ProductCard product={p} />)}</div>
+    )}
+  </main>
 </Base>
 
 <style>
-  .bar { display: flex; align-items: center; gap: 10px; padding: 4px 12px 10px; }
-  .count { font-size: var(--step--1); color: var(--ink-3); font-weight: 700; }
-  .filterbtn {
-    margin-inline-start: auto; font: inherit; font-size: var(--step--1); font-weight: 700;
-    background: var(--brass); color: #0b1416; border: 0; border-radius: 999px;
-    padding: 8px 16px; min-height: 36px; cursor: pointer;
-  }
-  .filterbtn[disabled] { opacity: 0.45; cursor: not-allowed; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 12px; }
-  .empty { padding: 40px 12px; text-align: center; color: var(--ink-3); }
-  @media (min-width: 640px) { .grid2 { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+  .head { padding-block: 16px 12px; display: grid; gap: 4px; }
+  .head h1 { font-size: var(--step-2); }
+  .meta { font-size: var(--step--1); color: var(--ink-3); font-weight: 700; }
+  .meta b { color: var(--brass); }
+  .chip-row { margin-block-end: 14px; }
+  .empty { padding: 52px 0; text-align: center; display: grid; gap: 14px; justify-items: center; color: var(--ink-3); }
 </style>
