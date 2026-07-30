@@ -4,10 +4,10 @@
  * محرك البحث لا يقرأ الصفحة كما يقرؤها الإنسان: يقرأ ما يُصرَّح به.
  * وما لا يُصرَّح به يُستنتَج أو يُهمَل — والاستنتاج في سوقٍ صغير يُخطئ.
  *
- * ما هنا حقائق يعرفها المتجر عن نفسه فقط. ولا عنوانَ شارعٍ ولا رقمَ
- * هاتفٍ حقيقي بعدُ، ولن يُخترعا: بياناتٌ منظَّمة كاذبة أسوأ من غيابها —
- * تُصحَّح في نتائج البحث بعد أشهر، ويقصد الزبون عنواناً لا وجود له.
- * يُملأ الناقص أدناه حين يصير معروفاً.
+ * ما هنا حقائق يعرفها المتجر عن نفسه فقط، ولا يُخترع منها شيء: بياناتٌ
+ * منظَّمة كاذبة أسوأ من غيابها — تُصحَّح في نتائج البحث بعد أشهر، ويقصد
+ * الزبون عنواناً لا وجود له. فالحقل الذي لا نعرفه يبقى فارغاً ومعلَّماً،
+ * وعنوانُ المحل هو الفارغ الوحيد الباقي.
  */
 
 export const SITE = {
@@ -20,9 +20,11 @@ export const SITE = {
   countryName: 'سوريا',
   locale: 'ar_SY',
   lang: 'ar',
-  /** يُملأ حين يُعرف: عنوان المحل ورقمه المعلَن ونطاق التسليم */
+  /** يُملأ حين يُعرف: عنوان المحل ونطاق التسليم */
   streetAddress: null as string | null,
-  telephone: null as string | null,
+  /** الرقم المعلَن — بصيغة E.164 كما تطلبه schema.org */
+  telephone: '+963993223887',
+  whatsapp: '963993223887',
   founded: '2026',
 } as const;
 
@@ -54,6 +56,14 @@ export function organizationLd(base: string) {
     currenciesAccepted: 'SYP, USD',
     paymentAccepted: 'نقداً عند الاستلام',
     ...(SITE.telephone ? { telephone: SITE.telephone } : {}),
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer service',
+      telephone: SITE.telephone,
+      availableLanguage: ['ar', 'en'],
+      areaServed: SITE.country,
+    },
+    sameAs: [`https://wa.me/${SITE.whatsapp}`],
   };
 }
 

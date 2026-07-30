@@ -18,8 +18,9 @@ import { products, productsInCategory, brandList, currentFx } from '../lib/catal
 const newest = products.filter((p) => p.category !== 'power' && p.category !== 'power-banks').slice(0, 4);
 const power = productsInCategory('power');
 const used = productsInCategory('used-refurbished');
-/* السعر يُقرَّب إلى الألف كما يُقرَّب في الدفع النقدي (الفصل 7) */
-const syp = Math.round(currentFx().rate / 1000) * 1000;
+/* سعر الصرف يُعرض كما هو: تقريبه إلى ألفٍ كان صحيحاً بالليرة القديمة،
+   وصار يمحوه بعد حذف الصفرين (128.5 ← صفر). والكسر يُعرض إن وُجد. */
+const syp = currentFx().rate.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 const chips = [
   { slug: 'smartphones', label: 'هواتف ذكية' },
@@ -69,7 +70,7 @@ const pillars = [
 
       <p class="fx tnum">
         <span class="dot" aria-hidden="true"></span>
-        <span>سعر اليوم: <b>1 دولار = {syp.toLocaleString('en-US')} ل.س</b></span>
+        <span>سعر اليوم: <b>1 دولار = {syp} ل.س</b></span>
         <a href="/prices/">جدول الأسعار</a>
       </p>
     </section>

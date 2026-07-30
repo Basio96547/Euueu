@@ -62,7 +62,8 @@ const MANUAL = {
             AND substr("order_no", 4, 4) NOT GLOB '*[^0-9]*'
             AND substr("order_no", 9, 6) NOT GLOB '*[^0-9]*')`,
     'CHECK ("total_usd_cents" >= 0)',
-    'CHECK ("total_syp" % 1000 = 0)',
+    /* عشرة لا ألف: حُذف صفران من الليرة في 2026-01-01 */
+    'CHECK ("total_syp" % 10 = 0)',
     'CHECK ("tax_rate_bp" BETWEEN 0 AND 10000)',
     'CHECK ("confirmation_attempts" <= 3)',
     `CHECK ("payment_status" <> 'COLLECTED' OR "collected_at" IS NOT NULL)`,

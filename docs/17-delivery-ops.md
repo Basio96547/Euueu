@@ -29,7 +29,7 @@
 | `rating_avg` | `NUMERIC(3,2)` | متوسط تقييم العملاء (القسم 14) |
 | `active`, `created_at`, `updated_at` | | |
 
-كل الجداول في هذا القسم امتداد لنموذج البيانات في القسم رقم 3: المعرّفات `UUIDv7`، والأسماء snake_case جمعاً، والمبالغ المرجعية `*_usd_cents BIGINT`، والمبالغ النقدية بالليرة مقرَّبة لأقرب 1000.
+كل الجداول في هذا القسم امتداد لنموذج البيانات في القسم رقم 3: المعرّفات `UUIDv7`، والأسماء snake_case جمعاً، والمبالغ المرجعية `*_usd_cents BIGINT`، والمبالغ النقدية بالليرة مقرَّبة لأقرب 10.
 
 انتقالات الحالة: `AVAILABLE → ON_ROUTE` عند بدء جولة، والعودة إلى `AVAILABLE` عند إقفالها، و`OFF_DUTY` خارج الوردية، و`SUSPENDED` يدوياً أو **آلياً** عند تجاوز السقف النقدي 24 ساعة أو تكرار فروقات التسوية (القسم 9). المندوب في `SUSPENDED` أو `OFF_DUTY` لا يظهر في أي اقتراح إسناد.
 
@@ -130,7 +130,7 @@ stateDiagram-v2
 
 السقف النقدي هو ضابط المخاطرة الأول. عند بلوغ `sum(collected) ≥ cash_cap_usd_cents` تتحول الجولة إلى `CASH_CAP_HIT`، ويحجب التطبيق زر التحصيل للمحطات التالية حتى يُسجَّل تسليم حصيلة مقبول. السقوف الافتراضية: 800 دولار للمندوب الجديد (أقل من 90 يوماً)، و2000 دولار بعد ثلاثة أشهر بلا فروقات، و3500 دولار للمندوب المودِع تأميناً.
 
-`cash_handovers`: `id`, `courier_id`, `route_id`, `handover_no VARCHAR(16)` مطبوع مسبقاً على الإيصال الورقي، `amount_syp BIGINT` (مقرَّب لأقرب 1000)، `orders_count`, `fx_rate_used`, `amount_usd_cents`, `received_by UUID FK users`, `state ENUM('DECLARED','RECEIVED','DISPUTED','VOID')`, `declared_at`, `received_at`, `variance_syp BIGINT`, `denomination_breakdown JSONB` (عدّ الفئات النقدية)، `proof_media_id`, `settlement_id UUID FK cash_settlements`, `notes`.
+`cash_handovers`: `id`, `courier_id`, `route_id`, `handover_no VARCHAR(16)` مطبوع مسبقاً على الإيصال الورقي، `amount_syp BIGINT` (مقرَّب لأقرب 10)، `orders_count`, `fx_rate_used`, `amount_usd_cents`, `received_by UUID FK users`, `state ENUM('DECLARED','RECEIVED','DISPUTED','VOID')`, `declared_at`, `received_at`, `variance_syp BIGINT`, `denomination_breakdown JSONB` (عدّ الفئات النقدية)، `proof_media_id`, `settlement_id UUID FK cash_settlements`, `notes`.
 
 السقف ليس تعبيراً عن انعدام الثقة بل عن واقع سوق تُنقل فيه ملايين الليرات ورقاً في حقيبة على دراجة، وفئة العملة الكبرى لا تكفي فيصبح مبلغ طلب واحد حزمة ضخمة. لذلك يقاس السقف بالمرجع الدولاري لا بالليرة، فلا يتآكل مع كل تحرك في سعر الصرف، ويُترجَم على شاشة المندوب إلى مبلغ بالليرة بسعر اليوم. ونظراً لانقطاع الكهرباء وتعذّر العدّ الآلي، يبقى **الإيصال الورقي المرقَّم مسبقاً** هو المستند الأصلي، ورقمه (`handover_no`) يُدخَل في النظام لربط الورق بالسجل الرقمي.
 
@@ -149,7 +149,7 @@ stateDiagram-v2
 
 `courier_commissions`: `id`, `courier_id`, `plan_id`, `period_start DATE`, `period_end DATE`, `delivered_count`, `failed_courier_fault_count`, `gross_usd_cents`, `penalty_usd_cents`, `bonus_usd_cents`, `net_usd_cents`, `fx_rate_id`, `net_syp BIGINT`, `state ENUM('DRAFT','APPROVED','PAID','ON_HOLD')`, `approved_by`, `paid_at`, `payout_proof_media_id`، بقيد `UNIQUE(courier_id, period_start, period_end)`.
 
-الدورة نصف شهرية (1–15، 16–نهاية الشهر): مهمة `commissions.calculate` تنشئ `DRAFT`، ثم يراجع مدير العمليات ويعتمد، والصرف نقداً خلال ثلاثة أيام عمل بالليرة بسعر يوم الاعتماد مقرَّباً لأقرب 1000. الخصم: كل محاولة فاشلة بـ `courier_fault = true` تخصم 60 سنتاً، وأي فرق نقدي غير مسوّى يضع الدورة في `ON_HOLD` حتى الإقفال.
+الدورة نصف شهرية (1–15، 16–نهاية الشهر): مهمة `commissions.calculate` تنشئ `DRAFT`، ثم يراجع مدير العمليات ويعتمد، والصرف نقداً خلال ثلاثة أيام عمل بالليرة بسعر يوم الاعتماد مقرَّباً لأقرب 10. الخصم: كل محاولة فاشلة بـ `courier_fault = true` تخصم 60 سنتاً، وأي فرق نقدي غير مسوّى يضع الدورة في `ON_HOLD` حتى الإقفال.
 
 ### 17.7 مكاتب النقل البري
 

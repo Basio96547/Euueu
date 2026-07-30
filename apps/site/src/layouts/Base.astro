@@ -102,7 +102,7 @@ const ld = graph(base, [organizationLd(base), websiteLd(base), ...schema]);
         var fx = window.__FX__ || { rate: 0 };
         var pref = localStorage.getItem('currency_pref') || 'SYP';
 
-        function roundCash(s) { return Math.round(s / 1000) * 1000; }
+        function roundCash(s) { return Math.round(s / 10) * 10; }   // أصغر ورقة: 10 ل.س
         function fmtSyp(c) { return roundCash((c * fx.rate) / 100).toLocaleString('en-US') + ' ل.س'; }
         function fmtUsd(c) {
           return (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $';

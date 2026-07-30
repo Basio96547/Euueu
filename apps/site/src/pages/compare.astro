@@ -109,7 +109,7 @@ const ROWS = Object.keys(data[0]?.rows ?? {});
       function money(c) {
         var pref = localStorage.getItem('currency_pref') || 'SYP';
         if (pref === 'USD') return (c / 100).toFixed(2) + ' $';
-        return (Math.round((c * fx.rate) / 100 / 1000) * 1000).toLocaleString('en-US') + ' ل.س';
+        return (Math.round((c * fx.rate) / 100 / 10) * 10).toLocaleString('en-US') + ' ل.س';
       }
 
       function read() {

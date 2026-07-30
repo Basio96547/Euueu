@@ -3,345 +3,1377 @@
   "meta": {
     "version": "1.0.0",
     "generated_for": "talisham.com",
-    "currency_note": "كل المبالغ *_usd_cents أعداد صحيحة بسنتات الدولار. العرض بالليرة يُحسب من fx_rates.",
+    "currency_note": "كل المبالغ *_usd_cents أعداد صحيحة بسنتات الدولار. العرض بالليرة السورية الجديدة يُحسب من fx_rates، ويُقرَّب لأقرب عشر ليرات.",
     "is_demo": true,
-    "counts": { "brands": 8, "categories": 12, "products": 22 }
+    "counts": {
+      "brands": 8,
+      "categories": 12,
+      "products": 22
+    }
   },
-
   "fx_rates": [
-    { "base": "USD", "quote": "SYP", "rate": 12850.0, "valid_hours": 24, "safety_margin_bp": 300, "note": "سعر تجريبي — يُستبدل بسعر حقيقي قبل الإطلاق" }
+    {
+      "base": "USD",
+      "quote": "SYP",
+      "rate": 128.5,
+      "valid_hours": 24,
+      "safety_margin_bp": 300,
+      "note": "سعر تجريبي بالليرة السورية الجديدة — نتيجةُ قسمة السعر القديم على مئة بعد حذف الصفرين في 2026-01-01. يُستبدل بالسعر الحقيقي من اللوحة قبل الإطلاق."
+    }
   ],
-
   "brands": [
-    { "slug": "apple",   "name": { "ar": "آبل", "en": "Apple" },   "country_of_origin": "US", "is_featured": true,  "sort_order": 1 },
-    { "slug": "samsung", "name": { "ar": "سامسونغ", "en": "Samsung" }, "country_of_origin": "KR", "is_featured": true, "sort_order": 2 },
-    { "slug": "xiaomi",  "name": { "ar": "شاومي", "en": "Xiaomi" }, "country_of_origin": "CN", "is_featured": true,  "sort_order": 3 },
-    { "slug": "honor",   "name": { "ar": "هونر", "en": "Honor" },   "country_of_origin": "CN", "is_featured": false, "sort_order": 4 },
-    { "slug": "infinix", "name": { "ar": "إنفينكس", "en": "Infinix" }, "country_of_origin": "CN", "is_featured": false, "sort_order": 5 },
-    { "slug": "tecno",   "name": { "ar": "تكنو", "en": "Tecno" },   "country_of_origin": "CN", "is_featured": false, "sort_order": 6 },
-    { "slug": "realme",  "name": { "ar": "ريلمي", "en": "Realme" }, "country_of_origin": "CN", "is_featured": false, "sort_order": 7 },
-    { "slug": "nokia",   "name": { "ar": "نوكيا", "en": "Nokia" },  "country_of_origin": "FI", "is_featured": false, "sort_order": 8 }
+    {
+      "slug": "apple",
+      "name": {
+        "ar": "آبل",
+        "en": "Apple"
+      },
+      "country_of_origin": "US",
+      "is_featured": true,
+      "sort_order": 1
+    },
+    {
+      "slug": "samsung",
+      "name": {
+        "ar": "سامسونغ",
+        "en": "Samsung"
+      },
+      "country_of_origin": "KR",
+      "is_featured": true,
+      "sort_order": 2
+    },
+    {
+      "slug": "xiaomi",
+      "name": {
+        "ar": "شاومي",
+        "en": "Xiaomi"
+      },
+      "country_of_origin": "CN",
+      "is_featured": true,
+      "sort_order": 3
+    },
+    {
+      "slug": "honor",
+      "name": {
+        "ar": "هونر",
+        "en": "Honor"
+      },
+      "country_of_origin": "CN",
+      "is_featured": false,
+      "sort_order": 4
+    },
+    {
+      "slug": "infinix",
+      "name": {
+        "ar": "إنفينكس",
+        "en": "Infinix"
+      },
+      "country_of_origin": "CN",
+      "is_featured": false,
+      "sort_order": 5
+    },
+    {
+      "slug": "tecno",
+      "name": {
+        "ar": "تكنو",
+        "en": "Tecno"
+      },
+      "country_of_origin": "CN",
+      "is_featured": false,
+      "sort_order": 6
+    },
+    {
+      "slug": "realme",
+      "name": {
+        "ar": "ريلمي",
+        "en": "Realme"
+      },
+      "country_of_origin": "CN",
+      "is_featured": false,
+      "sort_order": 7
+    },
+    {
+      "slug": "nokia",
+      "name": {
+        "ar": "نوكيا",
+        "en": "Nokia"
+      },
+      "country_of_origin": "FI",
+      "is_featured": false,
+      "sort_order": 8
+    }
   ],
-
   "categories": [
-    { "slug": "phones",            "path": "phones",                     "depth": 0, "name": { "ar": "الجوالات", "en": "Phones" }, "sort_order": 1 },
-    { "slug": "smartphones",       "path": "phones.smartphones",         "depth": 1, "name": { "ar": "هواتف ذكية", "en": "Smartphones" }, "sort_order": 1 },
-    { "slug": "feature-phones",    "path": "phones.feature_phones",      "depth": 1, "name": { "ar": "هواتف بسيطة", "en": "Feature Phones" }, "sort_order": 2 },
-    { "slug": "used-refurbished",  "path": "phones.used_refurbished",    "depth": 1, "name": { "ar": "مستعمل ومجدَّد", "en": "Used & Refurbished" }, "sort_order": 3 },
-    { "slug": "accessories",       "path": "accessories",                "depth": 0, "name": { "ar": "الملحقات", "en": "Accessories" }, "sort_order": 2 },
-    { "slug": "power",             "path": "accessories.power",          "depth": 1, "name": { "ar": "الطاقة", "en": "Power" }, "sort_order": 1 },
-    { "slug": "power-banks",       "path": "accessories.power.banks",    "depth": 2, "name": { "ar": "بطاريات محمولة", "en": "Power Banks" }, "sort_order": 1 },
-    { "slug": "chargers",          "path": "accessories.power.chargers", "depth": 2, "name": { "ar": "شواحن", "en": "Chargers" }, "sort_order": 2 },
-    { "slug": "cables",            "path": "accessories.power.cables",   "depth": 2, "name": { "ar": "كابلات", "en": "Cables" }, "sort_order": 3 },
-    { "slug": "audio",             "path": "accessories.audio",          "depth": 1, "name": { "ar": "سماعات", "en": "Audio" }, "sort_order": 2 },
-    { "slug": "protection",        "path": "accessories.protection",     "depth": 1, "name": { "ar": "الحماية", "en": "Protection" }, "sort_order": 3 },
-    { "slug": "wearables",         "path": "wearables",                  "depth": 0, "name": { "ar": "الأجهزة القابلة للارتداء", "en": "Wearables" }, "sort_order": 3 }
+    {
+      "slug": "phones",
+      "path": "phones",
+      "depth": 0,
+      "name": {
+        "ar": "الجوالات",
+        "en": "Phones"
+      },
+      "sort_order": 1
+    },
+    {
+      "slug": "smartphones",
+      "path": "phones.smartphones",
+      "depth": 1,
+      "name": {
+        "ar": "هواتف ذكية",
+        "en": "Smartphones"
+      },
+      "sort_order": 1
+    },
+    {
+      "slug": "feature-phones",
+      "path": "phones.feature_phones",
+      "depth": 1,
+      "name": {
+        "ar": "هواتف بسيطة",
+        "en": "Feature Phones"
+      },
+      "sort_order": 2
+    },
+    {
+      "slug": "used-refurbished",
+      "path": "phones.used_refurbished",
+      "depth": 1,
+      "name": {
+        "ar": "مستعمل ومجدَّد",
+        "en": "Used & Refurbished"
+      },
+      "sort_order": 3
+    },
+    {
+      "slug": "accessories",
+      "path": "accessories",
+      "depth": 0,
+      "name": {
+        "ar": "الملحقات",
+        "en": "Accessories"
+      },
+      "sort_order": 2
+    },
+    {
+      "slug": "power",
+      "path": "accessories.power",
+      "depth": 1,
+      "name": {
+        "ar": "الطاقة",
+        "en": "Power"
+      },
+      "sort_order": 1
+    },
+    {
+      "slug": "power-banks",
+      "path": "accessories.power.banks",
+      "depth": 2,
+      "name": {
+        "ar": "بطاريات محمولة",
+        "en": "Power Banks"
+      },
+      "sort_order": 1
+    },
+    {
+      "slug": "chargers",
+      "path": "accessories.power.chargers",
+      "depth": 2,
+      "name": {
+        "ar": "شواحن",
+        "en": "Chargers"
+      },
+      "sort_order": 2
+    },
+    {
+      "slug": "cables",
+      "path": "accessories.power.cables",
+      "depth": 2,
+      "name": {
+        "ar": "كابلات",
+        "en": "Cables"
+      },
+      "sort_order": 3
+    },
+    {
+      "slug": "audio",
+      "path": "accessories.audio",
+      "depth": 1,
+      "name": {
+        "ar": "سماعات",
+        "en": "Audio"
+      },
+      "sort_order": 2
+    },
+    {
+      "slug": "protection",
+      "path": "accessories.protection",
+      "depth": 1,
+      "name": {
+        "ar": "الحماية",
+        "en": "Protection"
+      },
+      "sort_order": 3
+    },
+    {
+      "slug": "wearables",
+      "path": "wearables",
+      "depth": 0,
+      "name": {
+        "ar": "الأجهزة القابلة للارتداء",
+        "en": "Wearables"
+      },
+      "sort_order": 3
+    }
   ],
-
   "products": [
     {
       "slug": "iphone-15-pro-max",
-      "brand": "apple", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "آيفون 15 برو ماكس", "en": "iPhone 15 Pro Max" },
-      "short_desc": { "ar": "تيتانيوم، شريحة A17 Pro، كاميرا 48 ميغابكسل، شحن USB-C.", "en": "Titanium, A17 Pro, 48MP camera, USB-C." },
-      "spec": { "screen_size_in": 6.7, "chipset": "A17 Pro", "battery_mah": 4441, "camera_main_mp": 48, "network_gen": "5G", "os": "iOS" },
+      "brand": "apple",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "آيفون 15 برو ماكس",
+        "en": "iPhone 15 Pro Max"
+      },
+      "short_desc": {
+        "ar": "تيتانيوم، شريحة A17 Pro، كاميرا 48 ميغابكسل، شحن USB-C.",
+        "en": "Titanium, A17 Pro, 48MP camera, USB-C."
+      },
+      "spec": {
+        "screen_size_in": 6.7,
+        "chipset": "A17 Pro",
+        "battery_mah": 4441,
+        "camera_main_mp": 48,
+        "network_gen": "5G",
+        "os": "iOS"
+      },
       "variants": [
-        { "sku": "IP15PM-256-NT-ZA", "storage_gb": 256, "ram_gb": 8, "color_code": "natural-titanium", "color_name": { "ar": "تيتانيوم طبيعي", "en": "Natural Titanium" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": "ZA/A",
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 94000, "compare_at_price_usd_cents": 99000, "cost_price_usd_cents": 86000, "demo_stock": 3 },
-        { "sku": "IP15PM-256-BT-LL", "storage_gb": 256, "ram_gb": 8, "color_code": "blue-titanium", "color_name": { "ar": "تيتانيوم أزرق", "en": "Blue Titanium" },
-          "network_gen": "5G", "sim_type": "ESIM", "dual_sim": false, "esim_only": true, "part_code": "LL/A",
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "US", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 88000, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 81000, "demo_stock": 2 }
+        {
+          "sku": "IP15PM-256-NT-ZA",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "natural-titanium",
+          "color_name": {
+            "ar": "تيتانيوم طبيعي",
+            "en": "Natural Titanium"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": "ZA/A",
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 94000,
+          "compare_at_price_usd_cents": 99000,
+          "cost_price_usd_cents": 86000,
+          "demo_stock": 3
+        },
+        {
+          "sku": "IP15PM-256-BT-LL",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "blue-titanium",
+          "color_name": {
+            "ar": "تيتانيوم أزرق",
+            "en": "Blue Titanium"
+          },
+          "network_gen": "5G",
+          "sim_type": "ESIM",
+          "dual_sim": false,
+          "esim_only": true,
+          "part_code": "LL/A",
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "US",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 88000,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 81000,
+          "demo_stock": 2
+        }
       ]
     },
     {
       "slug": "iphone-13",
-      "brand": "apple", "category": "used-refurbished", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "آيفون 13 مستعمل", "en": "iPhone 13 (Used)" },
-      "short_desc": { "ar": "حالة ممتازة، بطارية مفحوصة، كفالة محل 3 أشهر.", "en": "Grade A, tested battery, 3-month store warranty." },
-      "spec": { "screen_size_in": 6.1, "chipset": "A15 Bionic", "battery_mah": 3240, "camera_main_mp": 12, "network_gen": "5G", "os": "iOS" },
+      "brand": "apple",
+      "category": "used-refurbished",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "آيفون 13 مستعمل",
+        "en": "iPhone 13 (Used)"
+      },
+      "short_desc": {
+        "ar": "حالة ممتازة، بطارية مفحوصة، كفالة محل 3 أشهر.",
+        "en": "Grade A, tested battery, 3-month store warranty."
+      },
+      "spec": {
+        "screen_size_in": 6.1,
+        "chipset": "A15 Bionic",
+        "battery_mah": 3240,
+        "camera_main_mp": 12,
+        "network_gen": "5G",
+        "os": "iOS"
+      },
       "variants": [
-        { "sku": "IP13-128-MDN-ZA-U", "storage_gb": 128, "ram_gb": 4, "color_code": "midnight", "color_name": { "ar": "أسود منتصف الليل", "en": "Midnight" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": "ZA/A",
-          "condition": "USED_A", "battery_health_pct": 89, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 3,
-          "price_usd_cents": 42000, "compare_at_price_usd_cents": 46000, "cost_price_usd_cents": 37500, "demo_stock": 2 }
+        {
+          "sku": "IP13-128-MDN-ZA-U",
+          "storage_gb": 128,
+          "ram_gb": 4,
+          "color_code": "midnight",
+          "color_name": {
+            "ar": "أسود منتصف الليل",
+            "en": "Midnight"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": "ZA/A",
+          "condition": "USED_A",
+          "battery_health_pct": 89,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 3,
+          "price_usd_cents": 42000,
+          "compare_at_price_usd_cents": 46000,
+          "cost_price_usd_cents": 37500,
+          "demo_stock": 2
+        }
       ]
     },
     {
       "slug": "iphone-12-refurbished",
-      "brand": "apple", "category": "used-refurbished", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "آيفون 12 مجدَّد", "en": "iPhone 12 (Refurbished)" },
-      "short_desc": { "ar": "مجدَّد بقطع أصلية، بطارية جديدة، كفالة محل 6 أشهر.", "en": "Refurbished with genuine parts, new battery, 6-month warranty." },
-      "spec": { "screen_size_in": 6.1, "chipset": "A14 Bionic", "battery_mah": 2815, "camera_main_mp": 12, "network_gen": "5G", "os": "iOS" },
+      "brand": "apple",
+      "category": "used-refurbished",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "آيفون 12 مجدَّد",
+        "en": "iPhone 12 (Refurbished)"
+      },
+      "short_desc": {
+        "ar": "مجدَّد بقطع أصلية، بطارية جديدة، كفالة محل 6 أشهر.",
+        "en": "Refurbished with genuine parts, new battery, 6-month warranty."
+      },
+      "spec": {
+        "screen_size_in": 6.1,
+        "chipset": "A14 Bionic",
+        "battery_mah": 2815,
+        "camera_main_mp": 12,
+        "network_gen": "5G",
+        "os": "iOS"
+      },
       "variants": [
-        { "sku": "IP12-128-BLU-LL-R", "storage_gb": 128, "ram_gb": 4, "color_code": "blue", "color_name": { "ar": "أزرق", "en": "Blue" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": false, "esim_only": false, "part_code": "LL/A",
-          "condition": "REFURBISHED", "battery_health_pct": 100, "device_origin": "US", "warranty_type": "STORE", "warranty_months": 6,
-          "price_usd_cents": 33000, "compare_at_price_usd_cents": 36000, "cost_price_usd_cents": 28500, "demo_stock": 4 }
+        {
+          "sku": "IP12-128-BLU-LL-R",
+          "storage_gb": 128,
+          "ram_gb": 4,
+          "color_code": "blue",
+          "color_name": {
+            "ar": "أزرق",
+            "en": "Blue"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": "LL/A",
+          "condition": "REFURBISHED",
+          "battery_health_pct": 100,
+          "device_origin": "US",
+          "warranty_type": "STORE",
+          "warranty_months": 6,
+          "price_usd_cents": 33000,
+          "compare_at_price_usd_cents": 36000,
+          "cost_price_usd_cents": 28500,
+          "demo_stock": 4
+        }
       ]
     },
     {
       "slug": "iphone-11",
-      "brand": "apple", "category": "used-refurbished", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "آيفون 11 مستعمل", "en": "iPhone 11 (Used)" },
-      "short_desc": { "ar": "حالة جيدة، خدوش خفيفة على الإطار، بطارية 84%.", "en": "Grade B, light frame scratches, 84% battery." },
-      "spec": { "screen_size_in": 6.1, "chipset": "A13 Bionic", "battery_mah": 3110, "camera_main_mp": 12, "network_gen": "4G", "os": "iOS" },
+      "brand": "apple",
+      "category": "used-refurbished",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "آيفون 11 مستعمل",
+        "en": "iPhone 11 (Used)"
+      },
+      "short_desc": {
+        "ar": "حالة جيدة، خدوش خفيفة على الإطار، بطارية 84%.",
+        "en": "Grade B, light frame scratches, 84% battery."
+      },
+      "spec": {
+        "screen_size_in": 6.1,
+        "chipset": "A13 Bionic",
+        "battery_mah": 3110,
+        "camera_main_mp": 12,
+        "network_gen": "4G",
+        "os": "iOS"
+      },
       "variants": [
-        { "sku": "IP11-64-BLK-ZA-U", "storage_gb": 64, "ram_gb": 4, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": "4G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": "ZA/A",
-          "condition": "USED_B", "battery_health_pct": 84, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 3,
-          "price_usd_cents": 21000, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 18000, "demo_stock": 3 }
+        {
+          "sku": "IP11-64-BLK-ZA-U",
+          "storage_gb": 64,
+          "ram_gb": 4,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": "4G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": "ZA/A",
+          "condition": "USED_B",
+          "battery_health_pct": 84,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 3,
+          "price_usd_cents": 21000,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 18000,
+          "demo_stock": 3
+        }
       ]
     },
     {
       "slug": "samsung-galaxy-a16",
-      "brand": "samsung", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "سامسونغ جالكسي A16", "en": "Samsung Galaxy A16" },
-      "short_desc": { "ar": "شاشة 6.7 بوصة، بطارية 5000 مللي أمبير، شريحتان.", "en": "6.7-inch display, 5000mAh battery, dual SIM." },
-      "spec": { "screen_size_in": 6.7, "chipset": "Exynos 1330", "battery_mah": 5000, "camera_main_mp": 50, "network_gen": "5G", "os": "Android" },
+      "brand": "samsung",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "سامسونغ جالكسي A16",
+        "en": "Samsung Galaxy A16"
+      },
+      "short_desc": {
+        "ar": "شاشة 6.7 بوصة، بطارية 5000 مللي أمبير، شريحتان.",
+        "en": "6.7-inch display, 5000mAh battery, dual SIM."
+      },
+      "spec": {
+        "screen_size_in": 6.7,
+        "chipset": "Exynos 1330",
+        "battery_mah": 5000,
+        "camera_main_mp": 50,
+        "network_gen": "5G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "SMA16-128-BLK-GULF", "storage_gb": 128, "ram_gb": 4, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 14500, "compare_at_price_usd_cents": 15900, "cost_price_usd_cents": 12800, "demo_stock": 8 },
-        { "sku": "SMA16-128-BLU-GULF", "storage_gb": 128, "ram_gb": 4, "color_code": "blue", "color_name": { "ar": "أزرق", "en": "Blue" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 14500, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 12800, "demo_stock": 5 }
+        {
+          "sku": "SMA16-128-BLK-GULF",
+          "storage_gb": 128,
+          "ram_gb": 4,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 14500,
+          "compare_at_price_usd_cents": 15900,
+          "cost_price_usd_cents": 12800,
+          "demo_stock": 8
+        },
+        {
+          "sku": "SMA16-128-BLU-GULF",
+          "storage_gb": 128,
+          "ram_gb": 4,
+          "color_code": "blue",
+          "color_name": {
+            "ar": "أزرق",
+            "en": "Blue"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 14500,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 12800,
+          "demo_stock": 5
+        }
       ]
     },
     {
       "slug": "samsung-galaxy-a35",
-      "brand": "samsung", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "سامسونغ جالكسي A35", "en": "Samsung Galaxy A35" },
-      "short_desc": { "ar": "شاشة AMOLED 120 هرتز، مقاومة للماء IP67.", "en": "120Hz AMOLED, IP67 water resistant." },
-      "spec": { "screen_size_in": 6.6, "chipset": "Exynos 1380", "battery_mah": 5000, "camera_main_mp": 50, "network_gen": "5G", "os": "Android" },
+      "brand": "samsung",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "سامسونغ جالكسي A35",
+        "en": "Samsung Galaxy A35"
+      },
+      "short_desc": {
+        "ar": "شاشة AMOLED 120 هرتز، مقاومة للماء IP67.",
+        "en": "120Hz AMOLED, IP67 water resistant."
+      },
+      "spec": {
+        "screen_size_in": 6.6,
+        "chipset": "Exynos 1380",
+        "battery_mah": 5000,
+        "camera_main_mp": 50,
+        "network_gen": "5G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "SMA35-128-NVY-GULF", "storage_gb": 128, "ram_gb": 6, "color_code": "navy", "color_name": { "ar": "كحلي", "en": "Navy" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 23000, "compare_at_price_usd_cents": 24900, "cost_price_usd_cents": 20500, "demo_stock": 6 }
+        {
+          "sku": "SMA35-128-NVY-GULF",
+          "storage_gb": 128,
+          "ram_gb": 6,
+          "color_code": "navy",
+          "color_name": {
+            "ar": "كحلي",
+            "en": "Navy"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 23000,
+          "compare_at_price_usd_cents": 24900,
+          "cost_price_usd_cents": 20500,
+          "demo_stock": 6
+        }
       ]
     },
     {
       "slug": "samsung-galaxy-s23",
-      "brand": "samsung", "category": "used-refurbished", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "سامسونغ جالكسي S23 مستعمل", "en": "Samsung Galaxy S23 (Used)" },
-      "short_desc": { "ar": "حالة ممتازة، بطارية 91%، مع العلبة الأصلية.", "en": "Grade A, 91% battery, original box." },
-      "spec": { "screen_size_in": 6.1, "chipset": "Snapdragon 8 Gen 2", "battery_mah": 3900, "camera_main_mp": 50, "network_gen": "5G", "os": "Android" },
+      "brand": "samsung",
+      "category": "used-refurbished",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "سامسونغ جالكسي S23 مستعمل",
+        "en": "Samsung Galaxy S23 (Used)"
+      },
+      "short_desc": {
+        "ar": "حالة ممتازة، بطارية 91%، مع العلبة الأصلية.",
+        "en": "Grade A, 91% battery, original box."
+      },
+      "spec": {
+        "screen_size_in": 6.1,
+        "chipset": "Snapdragon 8 Gen 2",
+        "battery_mah": 3900,
+        "camera_main_mp": 50,
+        "network_gen": "5G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "SMS23-256-GRN-EU-U", "storage_gb": 256, "ram_gb": 8, "color_code": "green", "color_name": { "ar": "أخضر", "en": "Green" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "USED_A", "battery_health_pct": 91, "device_origin": "EURO", "warranty_type": "STORE", "warranty_months": 3,
-          "price_usd_cents": 43000, "compare_at_price_usd_cents": 47000, "cost_price_usd_cents": 38000, "demo_stock": 1 }
+        {
+          "sku": "SMS23-256-GRN-EU-U",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "green",
+          "color_name": {
+            "ar": "أخضر",
+            "en": "Green"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "USED_A",
+          "battery_health_pct": 91,
+          "device_origin": "EURO",
+          "warranty_type": "STORE",
+          "warranty_months": 3,
+          "price_usd_cents": 43000,
+          "compare_at_price_usd_cents": 47000,
+          "cost_price_usd_cents": 38000,
+          "demo_stock": 1
+        }
       ]
     },
     {
       "slug": "xiaomi-redmi-14c",
-      "brand": "xiaomi", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "شاومي ريدمي 14C", "en": "Xiaomi Redmi 14C" },
-      "short_desc": { "ar": "الأفضل في فئته سعراً، بطارية 5160 مللي أمبير.", "en": "Best value, 5160mAh battery." },
-      "spec": { "screen_size_in": 6.88, "chipset": "Helio G81", "battery_mah": 5160, "camera_main_mp": 50, "network_gen": "4G", "os": "Android" },
+      "brand": "xiaomi",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "شاومي ريدمي 14C",
+        "en": "Xiaomi Redmi 14C"
+      },
+      "short_desc": {
+        "ar": "الأفضل في فئته سعراً، بطارية 5160 مللي أمبير.",
+        "en": "Best value, 5160mAh battery."
+      },
+      "spec": {
+        "screen_size_in": 6.88,
+        "chipset": "Helio G81",
+        "battery_mah": 5160,
+        "camera_main_mp": 50,
+        "network_gen": "4G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "XR14C-128-GRY-ASIA", "storage_gb": 128, "ram_gb": 4, "color_code": "gray", "color_name": { "ar": "رمادي", "en": "Gray" },
-          "network_gen": "4G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 10500, "compare_at_price_usd_cents": 11500, "cost_price_usd_cents": 9200, "demo_stock": 12 }
+        {
+          "sku": "XR14C-128-GRY-ASIA",
+          "storage_gb": 128,
+          "ram_gb": 4,
+          "color_code": "gray",
+          "color_name": {
+            "ar": "رمادي",
+            "en": "Gray"
+          },
+          "network_gen": "4G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 10500,
+          "compare_at_price_usd_cents": 11500,
+          "cost_price_usd_cents": 9200,
+          "demo_stock": 12
+        }
       ]
     },
     {
       "slug": "xiaomi-redmi-note-14",
-      "brand": "xiaomi", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "شاومي ريدمي نوت 14", "en": "Xiaomi Redmi Note 14" },
-      "short_desc": { "ar": "كاميرا 108 ميغابكسل وشحن سريع 45 واط.", "en": "108MP camera, 45W fast charging." },
-      "spec": { "screen_size_in": 6.67, "chipset": "Dimensity 7025", "battery_mah": 5500, "camera_main_mp": 108, "network_gen": "5G", "os": "Android" },
+      "brand": "xiaomi",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "شاومي ريدمي نوت 14",
+        "en": "Xiaomi Redmi Note 14"
+      },
+      "short_desc": {
+        "ar": "كاميرا 108 ميغابكسل وشحن سريع 45 واط.",
+        "en": "108MP camera, 45W fast charging."
+      },
+      "spec": {
+        "screen_size_in": 6.67,
+        "chipset": "Dimensity 7025",
+        "battery_mah": 5500,
+        "camera_main_mp": 108,
+        "network_gen": "5G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "XRN14-256-BLK-ASIA", "storage_gb": 256, "ram_gb": 8, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 18500, "compare_at_price_usd_cents": 19900, "cost_price_usd_cents": 16400, "demo_stock": 7 }
+        {
+          "sku": "XRN14-256-BLK-ASIA",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 18500,
+          "compare_at_price_usd_cents": 19900,
+          "cost_price_usd_cents": 16400,
+          "demo_stock": 7
+        }
       ]
     },
     {
       "slug": "poco-x6",
-      "brand": "xiaomi", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "بوكو X6", "en": "POCO X6" },
-      "short_desc": { "ar": "أداء عالٍ للألعاب بشاشة AMOLED 120 هرتز.", "en": "Gaming performance, 120Hz AMOLED." },
-      "spec": { "screen_size_in": 6.67, "chipset": "Snapdragon 7s Gen 2", "battery_mah": 5100, "camera_main_mp": 64, "network_gen": "5G", "os": "Android" },
+      "brand": "xiaomi",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "بوكو X6",
+        "en": "POCO X6"
+      },
+      "short_desc": {
+        "ar": "أداء عالٍ للألعاب بشاشة AMOLED 120 هرتز.",
+        "en": "Gaming performance, 120Hz AMOLED."
+      },
+      "spec": {
+        "screen_size_in": 6.67,
+        "chipset": "Snapdragon 7s Gen 2",
+        "battery_mah": 5100,
+        "camera_main_mp": 64,
+        "network_gen": "5G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "PX6-256-WHT-ASIA", "storage_gb": 256, "ram_gb": 8, "color_code": "white", "color_name": { "ar": "أبيض", "en": "White" },
-          "network_gen": "5G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 24500, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 21800, "demo_stock": 4 }
+        {
+          "sku": "PX6-256-WHT-ASIA",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "white",
+          "color_name": {
+            "ar": "أبيض",
+            "en": "White"
+          },
+          "network_gen": "5G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 24500,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 21800,
+          "demo_stock": 4
+        }
       ]
     },
     {
       "slug": "honor-x8b",
-      "brand": "honor", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "هونر X8b", "en": "Honor X8b" },
-      "short_desc": { "ar": "تصميم نحيف وكاميرا 108 ميغابكسل.", "en": "Slim design, 108MP camera." },
-      "spec": { "screen_size_in": 6.7, "chipset": "Snapdragon 680", "battery_mah": 4500, "camera_main_mp": 108, "network_gen": "4G", "os": "Android" },
+      "brand": "honor",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "هونر X8b",
+        "en": "Honor X8b"
+      },
+      "short_desc": {
+        "ar": "تصميم نحيف وكاميرا 108 ميغابكسل.",
+        "en": "Slim design, 108MP camera."
+      },
+      "spec": {
+        "screen_size_in": 6.7,
+        "chipset": "Snapdragon 680",
+        "battery_mah": 4500,
+        "camera_main_mp": 108,
+        "network_gen": "4G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "HX8B-256-CYN-GULF", "storage_gb": 256, "ram_gb": 8, "color_code": "cyan", "color_name": { "ar": "سماوي", "en": "Cyan" },
-          "network_gen": "4G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 17500, "compare_at_price_usd_cents": 18900, "cost_price_usd_cents": 15400, "demo_stock": 5 }
+        {
+          "sku": "HX8B-256-CYN-GULF",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "cyan",
+          "color_name": {
+            "ar": "سماوي",
+            "en": "Cyan"
+          },
+          "network_gen": "4G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 17500,
+          "compare_at_price_usd_cents": 18900,
+          "cost_price_usd_cents": 15400,
+          "demo_stock": 5
+        }
       ]
     },
     {
       "slug": "infinix-smart-9",
-      "brand": "infinix", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "إنفينكس سمارت 9", "en": "Infinix Smart 9" },
-      "short_desc": { "ar": "خيار اقتصادي ببطارية تدوم يومين.", "en": "Budget pick, two-day battery." },
-      "spec": { "screen_size_in": 6.7, "chipset": "Helio G50", "battery_mah": 5000, "camera_main_mp": 48, "network_gen": "4G", "os": "Android" },
+      "brand": "infinix",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "إنفينكس سمارت 9",
+        "en": "Infinix Smart 9"
+      },
+      "short_desc": {
+        "ar": "خيار اقتصادي ببطارية تدوم يومين.",
+        "en": "Budget pick, two-day battery."
+      },
+      "spec": {
+        "screen_size_in": 6.7,
+        "chipset": "Helio G50",
+        "battery_mah": 5000,
+        "camera_main_mp": 48,
+        "network_gen": "4G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "ISM9-128-GRN-ASIA", "storage_gb": 128, "ram_gb": 4, "color_code": "green", "color_name": { "ar": "أخضر", "en": "Green" },
-          "network_gen": "4G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 8500, "compare_at_price_usd_cents": 9200, "cost_price_usd_cents": 7400, "demo_stock": 15 }
+        {
+          "sku": "ISM9-128-GRN-ASIA",
+          "storage_gb": 128,
+          "ram_gb": 4,
+          "color_code": "green",
+          "color_name": {
+            "ar": "أخضر",
+            "en": "Green"
+          },
+          "network_gen": "4G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 8500,
+          "compare_at_price_usd_cents": 9200,
+          "cost_price_usd_cents": 7400,
+          "demo_stock": 15
+        }
       ]
     },
     {
       "slug": "tecno-spark-30",
-      "brand": "tecno", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "تكنو سبارك 30", "en": "Tecno Spark 30" },
-      "short_desc": { "ar": "شاشة 120 هرتز وذاكرة 256 جيجابايت بسعر منخفض.", "en": "120Hz display, 256GB at a low price." },
-      "spec": { "screen_size_in": 6.78, "chipset": "Helio G91", "battery_mah": 5000, "camera_main_mp": 50, "network_gen": "4G", "os": "Android" },
+      "brand": "tecno",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "تكنو سبارك 30",
+        "en": "Tecno Spark 30"
+      },
+      "short_desc": {
+        "ar": "شاشة 120 هرتز وذاكرة 256 جيجابايت بسعر منخفض.",
+        "en": "120Hz display, 256GB at a low price."
+      },
+      "spec": {
+        "screen_size_in": 6.78,
+        "chipset": "Helio G91",
+        "battery_mah": 5000,
+        "camera_main_mp": 50,
+        "network_gen": "4G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "TSP30-256-BLK-ASIA", "storage_gb": 256, "ram_gb": 8, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": "4G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 13500, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 11900, "demo_stock": 9 }
+        {
+          "sku": "TSP30-256-BLK-ASIA",
+          "storage_gb": 256,
+          "ram_gb": 8,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": "4G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 13500,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 11900,
+          "demo_stock": 9
+        }
       ]
     },
     {
       "slug": "realme-c65",
-      "brand": "realme", "category": "smartphones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "ريلمي C65", "en": "Realme C65" },
-      "short_desc": { "ar": "شحن سريع 45 واط في الفئة الاقتصادية.", "en": "45W fast charging in the budget tier." },
-      "spec": { "screen_size_in": 6.67, "chipset": "Helio G85", "battery_mah": 5000, "camera_main_mp": 50, "network_gen": "4G", "os": "Android" },
+      "brand": "realme",
+      "category": "smartphones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "ريلمي C65",
+        "en": "Realme C65"
+      },
+      "short_desc": {
+        "ar": "شحن سريع 45 واط في الفئة الاقتصادية.",
+        "en": "45W fast charging in the budget tier."
+      },
+      "spec": {
+        "screen_size_in": 6.67,
+        "chipset": "Helio G85",
+        "battery_mah": 5000,
+        "camera_main_mp": 50,
+        "network_gen": "4G",
+        "os": "Android"
+      },
       "variants": [
-        { "sku": "RC65-128-GLD-ASIA", "storage_gb": 128, "ram_gb": 6, "color_code": "gold", "color_name": { "ar": "ذهبي", "en": "Gold" },
-          "network_gen": "4G", "sim_type": "NANO", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 11500, "compare_at_price_usd_cents": 12500, "cost_price_usd_cents": 10100, "demo_stock": 10 }
+        {
+          "sku": "RC65-128-GLD-ASIA",
+          "storage_gb": 128,
+          "ram_gb": 6,
+          "color_code": "gold",
+          "color_name": {
+            "ar": "ذهبي",
+            "en": "Gold"
+          },
+          "network_gen": "4G",
+          "sim_type": "NANO",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 11500,
+          "compare_at_price_usd_cents": 12500,
+          "cost_price_usd_cents": 10100,
+          "demo_stock": 10
+        }
       ]
     },
     {
       "slug": "nokia-110",
-      "brand": "nokia", "category": "feature-phones", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "نوكيا 110", "en": "Nokia 110" },
-      "short_desc": { "ar": "هاتف بسيط ببطارية تدوم أسبوعاً، مناسب لانقطاع الكهرباء.", "en": "Feature phone, week-long battery." },
-      "spec": { "screen_size_in": 1.8, "chipset": "—", "battery_mah": 1000, "camera_main_mp": 0.3, "network_gen": "2G", "os": "S30+" },
+      "brand": "nokia",
+      "category": "feature-phones",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "نوكيا 110",
+        "en": "Nokia 110"
+      },
+      "short_desc": {
+        "ar": "هاتف بسيط ببطارية تدوم أسبوعاً، مناسب لانقطاع الكهرباء.",
+        "en": "Feature phone, week-long battery."
+      },
+      "spec": {
+        "screen_size_in": 1.8,
+        "chipset": "—",
+        "battery_mah": 1000,
+        "camera_main_mp": 0.3,
+        "network_gen": "2G",
+        "os": "S30+"
+      },
       "variants": [
-        { "sku": "NK110-DS-BLK-ASIA", "storage_gb": 0, "ram_gb": 0, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": "2G", "sim_type": "MINI", "dual_sim": true, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 6,
-          "price_usd_cents": 2200, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 1700, "demo_stock": 25 }
+        {
+          "sku": "NK110-DS-BLK-ASIA",
+          "storage_gb": 0,
+          "ram_gb": 0,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": "2G",
+          "sim_type": "MINI",
+          "dual_sim": true,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 6,
+          "price_usd_cents": 2200,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 1700,
+          "demo_stock": 25
+        }
       ]
     },
-
     {
       "slug": "powerbank-20000mah",
-      "brand": "xiaomi", "category": "power-banks", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "بطارية محمولة 20000 مللي أمبير", "en": "Power Bank 20000mAh" },
-      "short_desc": { "ar": "شحن سريع 22.5 واط، تشحن الجوال أربع مرات — ضرورية مع انقطاع الكهرباء.", "en": "22.5W fast charging, four full phone charges." },
-      "spec": { "capacity_mah": 20000, "output_watt": 22.5, "connector_type": "USB-C" },
+      "brand": "xiaomi",
+      "category": "power-banks",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "بطارية محمولة 20000 مللي أمبير",
+        "en": "Power Bank 20000mAh"
+      },
+      "short_desc": {
+        "ar": "شحن سريع 22.5 واط، تشحن الجوال أربع مرات — ضرورية مع انقطاع الكهرباء.",
+        "en": "22.5W fast charging, four full phone charges."
+      },
+      "spec": {
+        "capacity_mah": 20000,
+        "output_watt": 22.5,
+        "connector_type": "USB-C"
+      },
       "variants": [
-        { "sku": "PB-20K-BLK", "storage_gb": null, "ram_gb": null, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 6,
-          "price_usd_cents": 3800, "compare_at_price_usd_cents": 4200, "cost_price_usd_cents": 3100, "demo_stock": 30 }
+        {
+          "sku": "PB-20K-BLK",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 6,
+          "price_usd_cents": 3800,
+          "compare_at_price_usd_cents": 4200,
+          "cost_price_usd_cents": 3100,
+          "demo_stock": 30
+        }
       ]
     },
     {
       "slug": "solar-charger-24w",
-      "brand": "xiaomi", "category": "power", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "شاحن شمسي محمول 24 واط", "en": "Portable Solar Charger 24W" },
-      "short_desc": { "ar": "ثلاثة ألواح قابلة للطي، منفذان USB — يعمل بلا كهرباء.", "en": "Foldable three-panel, dual USB." },
-      "spec": { "output_watt": 24, "connector_type": "USB-A" },
+      "brand": "xiaomi",
+      "category": "power",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "شاحن شمسي محمول 24 واط",
+        "en": "Portable Solar Charger 24W"
+      },
+      "short_desc": {
+        "ar": "ثلاثة ألواح قابلة للطي، منفذان USB — يعمل بلا كهرباء.",
+        "en": "Foldable three-panel, dual USB."
+      },
+      "spec": {
+        "output_watt": 24,
+        "connector_type": "USB-A"
+      },
       "variants": [
-        { "sku": "SOLAR-24W-BLK", "storage_gb": null, "ram_gb": null, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 6,
-          "price_usd_cents": 4500, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 3600, "demo_stock": 12 }
+        {
+          "sku": "SOLAR-24W-BLK",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 6,
+          "price_usd_cents": 4500,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 3600,
+          "demo_stock": 12
+        }
       ]
     },
     {
       "slug": "charger-33w-usbc",
-      "brand": "xiaomi", "category": "chargers", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "شاحن سريع 33 واط USB-C", "en": "33W USB-C Fast Charger" },
-      "short_desc": { "ar": "شاحن أصلي بمنفذ USB-C وحماية من ارتفاع الفولتية.", "en": "Genuine USB-C charger with surge protection." },
-      "spec": { "output_watt": 33, "connector_type": "USB-C" },
+      "brand": "xiaomi",
+      "category": "chargers",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "شاحن سريع 33 واط USB-C",
+        "en": "33W USB-C Fast Charger"
+      },
+      "short_desc": {
+        "ar": "شاحن أصلي بمنفذ USB-C وحماية من ارتفاع الفولتية.",
+        "en": "Genuine USB-C charger with surge protection."
+      },
+      "spec": {
+        "output_watt": 33,
+        "connector_type": "USB-C"
+      },
       "variants": [
-        { "sku": "CHG-33W-WHT", "storage_gb": null, "ram_gb": null, "color_code": "white", "color_name": { "ar": "أبيض", "en": "White" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 6,
-          "price_usd_cents": 1200, "compare_at_price_usd_cents": 1500, "cost_price_usd_cents": 900, "demo_stock": 40 }
+        {
+          "sku": "CHG-33W-WHT",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "white",
+          "color_name": {
+            "ar": "أبيض",
+            "en": "White"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 6,
+          "price_usd_cents": 1200,
+          "compare_at_price_usd_cents": 1500,
+          "cost_price_usd_cents": 900,
+          "demo_stock": 40
+        }
       ]
     },
     {
       "slug": "cable-usbc-lightning",
-      "brand": "apple", "category": "cables", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "كابل USB-C إلى Lightning", "en": "USB-C to Lightning Cable" },
-      "short_desc": { "ar": "كابل مضفور بطول متر، معتمد MFi.", "en": "1m braided, MFi certified." },
-      "spec": { "connector_type": "USB-C to Lightning", "length_m": 1 },
+      "brand": "apple",
+      "category": "cables",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "كابل USB-C إلى Lightning",
+        "en": "USB-C to Lightning Cable"
+      },
+      "short_desc": {
+        "ar": "كابل مضفور بطول متر، معتمد MFi.",
+        "en": "1m braided, MFi certified."
+      },
+      "spec": {
+        "connector_type": "USB-C to Lightning",
+        "length_m": 1
+      },
       "variants": [
-        { "sku": "CBL-CL-1M-WHT", "storage_gb": null, "ram_gb": null, "color_code": "white", "color_name": { "ar": "أبيض", "en": "White" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 3,
-          "price_usd_cents": 700, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 450, "demo_stock": 50 }
+        {
+          "sku": "CBL-CL-1M-WHT",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "white",
+          "color_name": {
+            "ar": "أبيض",
+            "en": "White"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 3,
+          "price_usd_cents": 700,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 450,
+          "demo_stock": 50
+        }
       ]
     },
     {
       "slug": "tws-earbuds-pro",
-      "brand": "xiaomi", "category": "audio", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "سماعات لاسلكية TWS", "en": "TWS Wireless Earbuds" },
-      "short_desc": { "ar": "عزل ضوضاء نشط، بطارية 28 ساعة مع العلبة.", "en": "ANC, 28h battery with case." },
-      "spec": { "connector_type": "USB-C", "battery_mah": 480 },
+      "brand": "xiaomi",
+      "category": "audio",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "سماعات لاسلكية TWS",
+        "en": "TWS Wireless Earbuds"
+      },
+      "short_desc": {
+        "ar": "عزل ضوضاء نشط، بطارية 28 ساعة مع العلبة.",
+        "en": "ANC, 28h battery with case."
+      },
+      "spec": {
+        "connector_type": "USB-C",
+        "battery_mah": 480
+      },
       "variants": [
-        { "sku": "TWS-PRO-BLK", "storage_gb": null, "ram_gb": null, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "STORE", "warranty_months": 6,
-          "price_usd_cents": 2500, "compare_at_price_usd_cents": 2900, "cost_price_usd_cents": 1900, "demo_stock": 20 }
+        {
+          "sku": "TWS-PRO-BLK",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "STORE",
+          "warranty_months": 6,
+          "price_usd_cents": 2500,
+          "compare_at_price_usd_cents": 2900,
+          "cost_price_usd_cents": 1900,
+          "demo_stock": 20
+        }
       ]
     },
     {
       "slug": "case-iphone-15-pro-max",
-      "brand": "apple", "category": "protection", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "جراب آيفون 15 برو ماكس", "en": "iPhone 15 Pro Max Case" },
-      "short_desc": { "ar": "جراب سيليكون مع حماية للكاميرا.", "en": "Silicone case with camera protection." },
-      "spec": { "material": "silicone" },
+      "brand": "apple",
+      "category": "protection",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "جراب آيفون 15 برو ماكس",
+        "en": "iPhone 15 Pro Max Case"
+      },
+      "short_desc": {
+        "ar": "جراب سيليكون مع حماية للكاميرا.",
+        "en": "Silicone case with camera protection."
+      },
+      "spec": {
+        "material": "silicone"
+      },
       "variants": [
-        { "sku": "CASE-IP15PM-BLK", "storage_gb": null, "ram_gb": null, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "ASIA", "warranty_type": "NONE", "warranty_months": 0,
-          "price_usd_cents": 900, "compare_at_price_usd_cents": null, "cost_price_usd_cents": 550, "demo_stock": 35 }
+        {
+          "sku": "CASE-IP15PM-BLK",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "ASIA",
+          "warranty_type": "NONE",
+          "warranty_months": 0,
+          "price_usd_cents": 900,
+          "compare_at_price_usd_cents": null,
+          "cost_price_usd_cents": 550,
+          "demo_stock": 35
+        }
       ]
     },
     {
       "slug": "smartwatch-fit-3",
-      "brand": "honor", "category": "wearables", "status": "PUBLISHED", "is_demo": true,
-      "name": { "ar": "ساعة ذكية فِت 3", "en": "Smartwatch Fit 3" },
-      "short_desc": { "ar": "قياس النبض والأكسجين، بطارية 10 أيام.", "en": "Heart rate & SpO2, 10-day battery." },
-      "spec": { "screen_size_in": 1.96, "battery_mah": 400, "connector_type": "magnetic" },
+      "brand": "honor",
+      "category": "wearables",
+      "status": "PUBLISHED",
+      "is_demo": true,
+      "name": {
+        "ar": "ساعة ذكية فِت 3",
+        "en": "Smartwatch Fit 3"
+      },
+      "short_desc": {
+        "ar": "قياس النبض والأكسجين، بطارية 10 أيام.",
+        "en": "Heart rate & SpO2, 10-day battery."
+      },
+      "spec": {
+        "screen_size_in": 1.96,
+        "battery_mah": 400,
+        "connector_type": "magnetic"
+      },
       "variants": [
-        { "sku": "SW-FIT3-BLK", "storage_gb": null, "ram_gb": null, "color_code": "black", "color_name": { "ar": "أسود", "en": "Black" },
-          "network_gen": null, "sim_type": null, "dual_sim": false, "esim_only": false, "part_code": null,
-          "condition": "NEW", "battery_health_pct": null, "device_origin": "GULF", "warranty_type": "STORE", "warranty_months": 12,
-          "price_usd_cents": 6000, "compare_at_price_usd_cents": 6800, "cost_price_usd_cents": 5100, "demo_stock": 8 }
+        {
+          "sku": "SW-FIT3-BLK",
+          "storage_gb": null,
+          "ram_gb": null,
+          "color_code": "black",
+          "color_name": {
+            "ar": "أسود",
+            "en": "Black"
+          },
+          "network_gen": null,
+          "sim_type": null,
+          "dual_sim": false,
+          "esim_only": false,
+          "part_code": null,
+          "condition": "NEW",
+          "battery_health_pct": null,
+          "device_origin": "GULF",
+          "warranty_type": "STORE",
+          "warranty_months": 12,
+          "price_usd_cents": 6000,
+          "compare_at_price_usd_cents": 6800,
+          "cost_price_usd_cents": 5100,
+          "demo_stock": 8
+        }
       ]
     }
   ],
-
   "product_compatibility": [
-    { "accessory": "case-iphone-15-pro-max", "phone": "iphone-15-pro-max", "note": { "ar": "مطابق تماماً", "en": "Exact fit" } },
-    { "accessory": "cable-usbc-lightning", "phone": "iphone-13", "note": { "ar": "يدعم الشحن السريع", "en": "Supports fast charge" } },
-    { "accessory": "cable-usbc-lightning", "phone": "iphone-12-refurbished", "note": { "ar": "يدعم الشحن السريع", "en": "Supports fast charge" } },
-    { "accessory": "cable-usbc-lightning", "phone": "iphone-11", "note": { "ar": "يدعم الشحن السريع", "en": "Supports fast charge" } },
-    { "accessory": "charger-33w-usbc", "phone": "xiaomi-redmi-note-14", "note": { "ar": "الشاحن الأصلي للجهاز", "en": "Original charger" } },
-    { "accessory": "charger-33w-usbc", "phone": "poco-x6", "note": { "ar": "متوافق", "en": "Compatible" } }
+    {
+      "accessory": "case-iphone-15-pro-max",
+      "phone": "iphone-15-pro-max",
+      "note": {
+        "ar": "مطابق تماماً",
+        "en": "Exact fit"
+      }
+    },
+    {
+      "accessory": "cable-usbc-lightning",
+      "phone": "iphone-13",
+      "note": {
+        "ar": "يدعم الشحن السريع",
+        "en": "Supports fast charge"
+      }
+    },
+    {
+      "accessory": "cable-usbc-lightning",
+      "phone": "iphone-12-refurbished",
+      "note": {
+        "ar": "يدعم الشحن السريع",
+        "en": "Supports fast charge"
+      }
+    },
+    {
+      "accessory": "cable-usbc-lightning",
+      "phone": "iphone-11",
+      "note": {
+        "ar": "يدعم الشحن السريع",
+        "en": "Supports fast charge"
+      }
+    },
+    {
+      "accessory": "charger-33w-usbc",
+      "phone": "xiaomi-redmi-note-14",
+      "note": {
+        "ar": "الشاحن الأصلي للجهاز",
+        "en": "Original charger"
+      }
+    },
+    {
+      "accessory": "charger-33w-usbc",
+      "phone": "poco-x6",
+      "note": {
+        "ar": "متوافق",
+        "en": "Compatible"
+      }
+    }
   ]
 }

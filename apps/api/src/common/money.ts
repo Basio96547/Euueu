@@ -1,5 +1,6 @@
 /** المعادلة المرجعية — نسخة الخادم. المرجع: packages/ui/src/money.ts والفصل 7 §7.11 */
-export const CASH_STEP = 1000;
+/* عشرة لا ألف: حُذف صفران من الليرة في 2026-01-01، وأصغر ورقة عشر ليرات */
+export const CASH_STEP = 10;
 export const roundCash = (syp: number) => Math.round(syp / CASH_STEP) * CASH_STEP;
 export const toSypRaw = (usdCents: number, rate: number) => (usdCents * rate) / 100;
 

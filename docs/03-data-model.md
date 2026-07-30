@@ -24,6 +24,9 @@
 
 قاعدة البيانات PostgreSQL 16 مع Prisma ORM. الاصطلاحات مُلزِمة عبر كل الجداول:
 
+> **الليرة الجديدة (2026-01-01).** حُذف صفران من العملة: كل مئة ليرة قديمة = ليرة جديدة واحدة. وحدة التقريب النقدي صارت **10 ل.س** بدل 1000 — وهي الوحدة نفسها بالضبط لا وحدة أدقّ، لأن ألف القديمة هي عشرة الجديدة. الرقم معرَّف مرة واحدة في `packages/ui/src/money.ts` (`CASH_ROUNDING_STEP`) و`apps/api/src/common/money.ts` (`CASH_STEP`)، والقيد في القاعدة `CHECK (total_syp % 10 = 0)` بعد ترحيل `0002_new_pound.sql`.
+
+
 | البند | القاعدة |
 |---|---|
 | تسمية الجداول | `snake_case` بصيغة الجمع (`product_variants`, `returns`, `audit_logs`, `users`)، والنماذج في Prisma بصيغة `PascalCase` مع `@@map` |
@@ -31,7 +34,7 @@
 | المعرّف العام | كل كيان يظهر في رابط عام أو في استجابة لغير مالكه يحمل `public_id CHAR(12) UNIQUE NOT NULL` مولَّداً عشوائياً (Base32 بلا حروف ملتبسة). **السبب**: UUIDv7 يحمل طابعاً زمنياً، فمن معرّفَي طلبين يمكن تقدير عدد الطلبات اليومية — وهي معلومة تجارية لا يجوز تسريبها في رابط. المعرّف الداخلي لا يخرج في أي استجابة عامة |
 | الطوابع الزمنية | `created_at`, `updated_at` من نوع `TIMESTAMPTZ` مخزّنة بـ UTC، والعرض بتوقيت `Asia/Damascus` في طبقة الواجهة |
 | المبالغ المالية | **التخزين المرجعي بالدولار الأمريكي**: أعداد صحيحة بالسنتات في أعمدة `*_usd_cents BIGINT` حصراً (ممنوع `FLOAT` وممنوع `NUMERIC`/`Decimal` للمبالغ). عمود `currency CHAR(3)` يخصّ **العرض** فقط وافتراضه `SYP`. المبالغ المشتقّة بالليرة السورية تُحسب من `fx_rates` وتُخزَّن فقط حيث يلزم تثبيتها (`orders`, `refunds`, `cash_settlements`) في أعمدة `*_syp BIGINT` بالليرة الكاملة بلا كسور |
-| التقريب النقدي | كل مبلغ يُطلب نقداً من العميل يُقرَّب لأقرب **1000 ليرة سورية** ويُخزَّن مقرَّباً (`CHECK (x % 1000 = 0)`) لأن الفئات النقدية الصغيرة غير متداولة عملياً |
+| التقريب النقدي | كل مبلغ يُطلب نقداً من العميل يُقرَّب لأقرب **10 ليرات سورية جديدة** ويُخزَّن مقرَّباً (`CHECK (x % 10 = 0)`) لأن الفئات النقدية الصغيرة غير متداولة عملياً |
 | النصوص المعروضة | `JSONB` بمفتاحين `ar` و`en` (راجع 3.6) |
 | الحذف | حذف ناعم (soft delete) عبر `deleted_at TIMESTAMPTZ NULL` للكيانات ذات المرجعية التاريخية |
 | الحالات | أنواع `ENUM` أصلية في PostgreSQL لا سلاسل نصية حرة |
@@ -170,10 +173,10 @@ CREATE CONSTRAINT TRIGGER trg_units_match_levels
 |---|---|---|
 | `carts` | `id`, `user_id FK NULL`, `anon_token UUID NULL`, `display_currency CHAR(3) DEFAULT 'SYP'`, `coupon_id FK NULL`, `expires_at`, `merged_into_id` | `CHECK (user_id IS NOT NULL OR anon_token IS NOT NULL)` |
 | `cart_items` | `id`, `cart_id FK`, `variant_id FK`, `qty SMALLINT`, `unit_price_usd_cents BIGINT`, `added_at` | `UNIQUE(cart_id, variant_id)`، `CHECK (qty BETWEEN 1 AND 10)` |
-| `orders` | `id`, `order_no VARCHAR(14)`, `user_id FK`, `status order_status`, `shipping_address_id FK`, `subtotal_usd_cents BIGINT`, `discount_total_usd_cents BIGINT`, `shipping_total_usd_cents BIGINT`, `tax_rate_bp INT DEFAULT 0`, `tax_amount_usd_cents BIGINT`, `total_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `fx_rate_id FK`, `total_syp BIGINT`, `rounding_diff_syp INT NOT NULL DEFAULT 0`, `fx_stale BOOLEAN NOT NULL DEFAULT false`, `price_locked_until TIMESTAMPTZ`, `currency CHAR(3) DEFAULT 'SYP'`, `payment_method payment_method NOT NULL DEFAULT 'COD'`, `payment_status payment_status NOT NULL DEFAULT 'PENDING'`, `collected_amount_syp BIGINT NULL`, `collected_at TIMESTAMPTZ NULL`, `collected_by UUID NULL`, `settlement_id FK NULL`, `confirmation_attempts SMALLINT DEFAULT 0`, `confirmed_by UUID NULL`, `confirmed_at TIMESTAMPTZ NULL`, `confirmation_notes TEXT NULL`, `coupon_id`, `placed_at`, `notes` | `UNIQUE(order_no)`، `CHECK (order_no ~ '^TS-[0-9]{4}-[0-9]{6}$')`، `CHECK (total_usd_cents >= 0)`، `CHECK (total_syp % 1000 = 0)`، `CHECK (tax_rate_bp BETWEEN 0 AND 10000)`، `CHECK (confirmation_attempts <= 3)`، `CHECK (payment_status <> 'COLLECTED' OR collected_at IS NOT NULL)` |
+| `orders` | `id`, `order_no VARCHAR(14)`, `user_id FK`, `status order_status`, `shipping_address_id FK`, `subtotal_usd_cents BIGINT`, `discount_total_usd_cents BIGINT`, `shipping_total_usd_cents BIGINT`, `tax_rate_bp INT DEFAULT 0`, `tax_amount_usd_cents BIGINT`, `total_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `fx_rate_id FK`, `total_syp BIGINT`, `rounding_diff_syp INT NOT NULL DEFAULT 0`, `fx_stale BOOLEAN NOT NULL DEFAULT false`, `price_locked_until TIMESTAMPTZ`, `currency CHAR(3) DEFAULT 'SYP'`, `payment_method payment_method NOT NULL DEFAULT 'COD'`, `payment_status payment_status NOT NULL DEFAULT 'PENDING'`, `collected_amount_syp BIGINT NULL`, `collected_at TIMESTAMPTZ NULL`, `collected_by UUID NULL`, `settlement_id FK NULL`, `confirmation_attempts SMALLINT DEFAULT 0`, `confirmed_by UUID NULL`, `confirmed_at TIMESTAMPTZ NULL`, `confirmation_notes TEXT NULL`, `coupon_id`, `placed_at`, `notes` | `UNIQUE(order_no)`، `CHECK (order_no ~ '^TS-[0-9]{4}-[0-9]{6}$')`، `CHECK (total_usd_cents >= 0)`، `CHECK (total_syp % 10 = 0)`، `CHECK (tax_rate_bp BETWEEN 0 AND 10000)`، `CHECK (confirmation_attempts <= 3)`، `CHECK (payment_status <> 'COLLECTED' OR collected_at IS NOT NULL)` |
 | `order_items` | `id`, `order_id FK`, `variant_id FK`, `device_unit_id FK NULL`, `sku_snapshot`, `name_snapshot JSONB`, `part_code_snapshot`, `qty`, `unit_price_usd_cents BIGINT`, `line_total_usd_cents BIGINT` | فهرس `(order_id)`، لا حذف ناعم |
 | `cash_settlements` | `id`, `settlement_no VARCHAR(16)`, `collector_type collector_type`, `collector_id UUID`, `settlement_date DATE`, `orders_count INT`, `expected_amount_syp BIGINT`, `collected_amount_syp BIGINT`, `variance_syp BIGINT`, `delivery_commission_syp BIGINT`, `state settlement_state`, `reconciled_at`, `reconciled_by`, `notes` | `UNIQUE(collector_type, collector_id, settlement_date)`، `CHECK (variance_syp = collected_amount_syp - expected_amount_syp)` |
-| `refunds` | `id`, `order_id FK`, `return_id FK NULL`, `method refund_method NOT NULL DEFAULT 'CASH'`, `amount_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `amount_syp BIGINT`, `imei_verified BOOLEAN DEFAULT false`, `device_matched BOOLEAN DEFAULT false`, `state refund_state`, `approved_by`, `disbursed_at`, `receipt_media_id FK NULL` | `CHECK (amount_syp % 1000 = 0)`، `CHECK (state <> 'DISBURSED' OR (imei_verified AND device_matched))` — لا استرداد نقدي إلا بعد فحص IMEI ومطابقة الجهاز المُعاد بالجهاز المُسلَّم |
+| `refunds` | `id`, `order_id FK`, `return_id FK NULL`, `method refund_method NOT NULL DEFAULT 'CASH'`, `amount_usd_cents BIGINT`, `fx_rate NUMERIC(14,4)`, `amount_syp BIGINT`, `imei_verified BOOLEAN DEFAULT false`, `device_matched BOOLEAN DEFAULT false`, `state refund_state`, `approved_by`, `disbursed_at`, `receipt_media_id FK NULL` | `CHECK (amount_syp % 10 = 0)`، `CHECK (state <> 'DISBURSED' OR (imei_verified AND device_matched))` — لا استرداد نقدي إلا بعد فحص IMEI ومطابقة الجهاز المُعاد بالجهاز المُسلَّم |
 | `phone_blocklist` | `id`, `phone_e164`, `reason`, `failed_deliveries_count`, `wasted_shipping_usd_cents`, `blocked_until`, `created_by` | `UNIQUE(phone_e164) WHERE blocked_until > now()` |
 
 **حساب مبالغ الطلب** (كل المبالغ المرجعية بالسنتات الأمريكية):
@@ -187,7 +190,7 @@ total_usd_cents = subtotal_usd_cents - discount_total_usd_cents
 total_syp = round_to_1000( total_usd_cents * fx_rate / 100 )
 ```
 
-`tax_rate_bp` حقل رسوم **قابل للتهيئة بنقاط أساس** وقيمته الافتراضية `0`، أي لا رسوم مطبَّقة ما لم يفعّلها المدير. الأسعار المعروضة للعميل **نهائية وشاملة** أي رسوم مطبَّقة؛ لا يوجد أي مبلغ رسوم مستخرج من الإجمالي، ولا نسبة ثابتة مضمّنة في أي عمود. تُصدَر للطلب فاتورة/إيصال PDF قابل للطباعة يُرفَق مع الشحنة، ويُطبَع عليه المبلغ النقدي **مقرَّباً لأقرب 1000 ليرة** كما يظهر تماماً على شاشة المندوب.
+`tax_rate_bp` حقل رسوم **قابل للتهيئة بنقاط أساس** وقيمته الافتراضية `0`، أي لا رسوم مطبَّقة ما لم يفعّلها المدير. الأسعار المعروضة للعميل **نهائية وشاملة** أي رسوم مطبَّقة؛ لا يوجد أي مبلغ رسوم مستخرج من الإجمالي، ولا نسبة ثابتة مضمّنة في أي عمود. تُصدَر للطلب فاتورة/إيصال PDF قابل للطباعة يُرفَق مع الشحنة، ويُطبَع عليه المبلغ النقدي **مقرَّباً لأقرب 10 ليرات** كما يظهر تماماً على شاشة المندوب.
 
 **تثبيت سعر الصرف**: عند إنشاء الطلب تُنسَخ قيمة السعر السارية من `fx_rates` إلى `orders.fx_rate` مع `fx_rate_id` للأثر، ويُضبط `price_locked_until = placed_at + interval '48 hours'`. بعد انقضاء النافذة يمنع النظام الشحن ويُعيد التسعير بسعر الصرف الجاري مع إشعار العميل قبل التجهيز.
 
@@ -327,7 +330,7 @@ model Order {
 
   fxRate           Decimal  @map("fx_rate") @db.Decimal(14, 4)   // نسبة لا مبلغ
   fxRateId         String   @map("fx_rate_id") @db.Uuid
-  totalSyp         BigInt   @map("total_syp") @db.BigInt         // مقرَّب لأقرب 1000
+  totalSyp         BigInt   @map("total_syp") @db.BigInt         // مقرَّب لأقرب 10
   priceLockedUntil DateTime @map("price_locked_until") @db.Timestamptz(3)
   currency         String   @default("SYP") @db.Char(3)
 

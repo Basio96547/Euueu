@@ -47,14 +47,14 @@ export class FxService {
       where: { deletedAt: null }, take: 500,
       select: { sku: true, priceUsdCents: true, product: { select: { name: true } } },
     });
-    const round = (n: number) => Math.round(n / 1000) * 1000;
+    const round = (n: number) => Math.round(n / 10) * 10;
     const rows = variants.map((v) => {
       const cents = Number(v.priceUsdCents);
       const before = round((cents * cur.rate) / 100);
       const after = round((cents * rate) / 100);
       return { sku: v.sku, name: (v.product.name as any).ar, before, after, delta: after - before };
     });
-    const changed = rows.filter((r) => Math.abs(r.delta) >= 1000);
+    const changed = rows.filter((r) => Math.abs(r.delta) >= 10);
     const protectedOrders = await this.prisma.order.count({
       where: { priceLockedUntil: { gt: new Date() }, status: 'PENDING_CONFIRMATION' },
     });

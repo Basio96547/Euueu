@@ -326,7 +326,7 @@ export class OrdersService {
       const u = await this.prisma.user.findUnique({ where: { publicId: buyerPublicId } });
       if (u) return u;
     }
-    const phone = orderPhone && /^\+9639[0-9]{8}$/.test(orderPhone) ? orderPhone : '+963900000000';
+    const phone = orderPhone && /^\+9639[0-9]{8}$/.test(orderPhone) ? orderPhone : '+963993223887';
     return this.prisma.user.upsert({
       where: { phoneE164: phone },
       update: {},

@@ -26,7 +26,7 @@
 
 -- ——— المبالغ غير سالبة، والمبلغ النقدي مقرَّب لأقرب 1000 ———
 -- CHECK (total_usd_cents >= 0)
--- CHECK (total_syp % 1000 = 0)
+-- CHECK (total_syp % 10 = 0)   -- عشرة لا ألف: الليرة الجديدة
 -- CHECK (tax_rate_bp BETWEEN 0 AND 10000)
 -- CHECK (confirmation_attempts <= 3)
 -- CHECK (payment_status <> 'COLLECTED' OR collected_at IS NOT NULL)

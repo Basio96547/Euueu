@@ -109,7 +109,7 @@ sequenceDiagram
 
 - كل المبالغ المرجعية أعداد صحيحة **بالسنتات الأمريكية** (`*_usd_cents BIGINT`)، والليرة السورية مشتقّة للعرض والتحصيل.
 - `taxRateBp` حقل رسوم قابل للتهيئة بنقاط الأساس وقيمته الافتراضية `0`، والأسعار المعروضة **نهائية وشاملة** أي رسوم مطبَّقة.
-- `grandTotalSypRaw = round(grandTotalUsdCents × fx.rate / 100)`، والمبلغ المستحق نقداً `codAmountSyp = round(grandTotalSypRaw / 1000) × 1000` وهو ما يُخزَّن في `orders.total_syp` (قيد `CHECK (total_syp % 1000 = 0)` في القسم رقم 3) وهو وحده ما يُطبع على الإيصال ويظهر على شاشة المندوب.
+- `grandTotalSypRaw = round(grandTotalUsdCents × fx.rate / 100)`، والمبلغ المستحق نقداً `codAmountSyp = round(grandTotalSypRaw / 1000) × 1000` وهو ما يُخزَّن في `orders.total_syp` (قيد `CHECK (total_syp % 10 = 0)` في القسم رقم 3) وهو وحده ما يُطبع على الإيصال ويظهر على شاشة المندوب.
 - الواجهة تتيح تبديل العرض بين الليرة والدولار بزر واحد؛ التبديل يغيّر العرض فقط ولا يغيّر المبلغ المستحق نقداً.
 - أي تعارض بعلامة `requiresConsent` يوقف `POST /orders` حتى يوافق العميل صراحة على القيمة الجديدة.
 
@@ -313,7 +313,7 @@ flowchart LR
 
 ```text
 raw_syp        = round(total_usd_cents × orders.fx_rate / 100)
-orders.total_syp = round(raw_syp / 1000) × 1000        -- تقريب لأقرب 1000 ليرة
+orders.total_syp = round(raw_syp / 1000) × 1000        -- تقريب لأقرب 10 ليرات
 cod_amount_syp = orders.total_syp                       -- ما يُطبع ويُطلب من العميل
 ```
 
@@ -392,7 +392,7 @@ cod_amount_syp = orders.total_syp                       -- ما يُطبع وي�
 - **النافذة الزمنية:** 7 أيام من `orders.delivered_at` للأجهزة والملحقات معاً، ويُحسب اليوم السابع بنهايته بتوقيت `Asia/Damascus`.
 - **شروط القبول:** العلبة والملحقات كاملة، الجهاز بالحالة نفسها المسلَّمة، وإيصال المتجر. يُرفض الإرجاع عند: كسر أو سائل، أو تفعيل قفل التنشيط (Activation Lock / FRP)، أو غياب ملحق أساسي، أو أثر فتح/صيانة خارجية.
 - **فحص IMEI إلزامي:** يُطابق IMEI الجهاز المُعاد مع `device_units.imei` المرتبط بـ `order_items.device_unit_id`؛ عدم التطابق = رفض فوري بالرمز `IMEI_MISMATCH`. تُسجَّل النتيجة في `returns.imei_checked` وفي `device_units.imei_check_status`.
-- **الاسترداد النقدي:** عند `COMPLETED` يُنشأ صف في `refunds` بـ `method='CASH'` و`amount_usd_cents` و`fx_rate` و`amount_syp` مقرَّباً لأقرب 1000 ليرة، ولا يُصرف (`state='DISBURSED'`) إلا بعد `imei_verified AND device_matched`. الصرف نقداً من المعرض أو عبر المندوب مع `receipt_media_id` كإثبات.
+- **الاسترداد النقدي:** عند `COMPLETED` يُنشأ صف في `refunds` بـ `method='CASH'` و`amount_usd_cents` و`fx_rate` و`amount_syp` مقرَّباً لأقرب 10 ليرات، ولا يُصرف (`state='DISBURSED'`) إلا بعد `imei_verified AND device_matched`. الصرف نقداً من المعرض أو عبر المندوب مع `receipt_media_id` كإثبات.
 - **الاستبدال:** يُنشأ طلب بديل مرتبط بـ `orders.replacement_of`، لا تُحصَّل عنه قيمة جديدة إن كان بالقيمة نفسها (`payment_status='COLLECTED'` موروث)، ويُشحن بعد اجتياز الفحص، ويحتفظ بتاريخ بدء ضمان الجهاز الأصلي.
 
 حالات جدول `returns` (العمود `state return_state`):
