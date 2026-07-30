@@ -170,7 +170,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         متجرٍ يعمل وهو مفتوح: العطل الظاهر يُصلَح، والمفتوح لا يُكتشف
         إلا يوم يُستغلّ. والرسالة تقول الأمر الذي يُغلقه بالضبط.
       */
-      if (secretIsDefault && env.NODE_ENV === 'production') {
+      /* الصحّة والتهيئة تمرّان: أوّلهما ما يُسأل عنه حين يتعطّل شيء،
+         وثانيتهما ما يُصلح قاعدةً فارغة — وكلتاهما بلا رمز أصلاً. */
+      const openPaths = path === '/api/v1/health' || path === '/api/v1/ready'
+        || path.startsWith('/api/v1/bootstrap');
+      if (!openPaths && secretIsDefault && env.NODE_ENV === 'production') {
         return Response.json({
           error: {
             code: 'JWT_SECRET_MISSING',
