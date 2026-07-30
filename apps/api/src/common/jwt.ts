@@ -52,10 +52,15 @@ function sign(payload: Claims) {
 
 export function issue(sub: string, role: string, tv: number, sid?: string) {
   const now = Math.floor(Date.now() / 1000);
+  /* معرّف رمز التحديث يُعاد مع الرمز: الجلسة تحفظه لتعرف أيُّ رمزٍ هو
+     الصالح الآن. وبدونه لا تدوير — إذ لا سبيل إلى تمييز الجديد من
+     القديم، وكلاهما موقَّعٌ توقيعاً صحيحاً. */
+  const refreshJti = randomUUID();
   return {
     accessToken: sign({ sub, role, tv, sid, jti: randomUUID(), exp: now + 15 * 60, typ: 'access' }),
-    refreshToken: sign({ sub, role, tv, sid, jti: randomUUID(), exp: now + 30 * 86400, typ: 'refresh' }),
+    refreshToken: sign({ sub, role, tv, sid, jti: refreshJti, exp: now + 30 * 86400, typ: 'refresh' }),
     expiresIn: 15 * 60,
+    refreshJti,
   };
 }
 

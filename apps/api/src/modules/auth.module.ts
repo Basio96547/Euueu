@@ -121,7 +121,7 @@ export class AuthService {
     });
 
     const sid = await this.openSession(user.id, meta);
-    const tokens = issue(user.publicId, user.role, user.tokenVersion, sid);
+    const tokens = await this.mint(user, sid);
     return { ...tokens, user: { publicId: user.publicId, role: user.role, phone: user.phoneE164 } };
   }
 
@@ -142,6 +142,23 @@ export class AuthService {
     return session.id;
   }
 
+  /**
+   * إصدار رموزٍ لجلسة، وتسجيل رمز التحديث فيها.
+   * كلُّ إصدارٍ يمرّ من هنا — فلا يوجد رمزُ تحديثٍ صالحٌ لا تعرفه جلسته.
+   */
+  private async mint(user: { publicId: string; role: string; tokenVersion: number }, sid: string) {
+    const t = issue(user.publicId, user.role, user.tokenVersion, sid);
+    await this.prisma.session.update({
+      where: { id: sid },
+      data: { refreshJti: t.refreshJti, prevJti: null, prevAt: null },
+    });
+    const { refreshJti, ...tokens } = t;
+    return tokens;
+  }
+
+  /** مهلة الرحمة: لسانان يُجدّدان معاً لا يُطرد صاحبهما */
+  private static readonly ROTATE_GRACE_MS = 60_000;
+
   async refresh(token: string) {
     const claims = verify(token);
     if (!claims || claims.typ !== 'refresh') {
@@ -151,16 +168,61 @@ export class AuthService {
     if (!user || user.tokenVersion !== claims.tv) {
       throw Errors.badRequest('SESSION_REVOKED', 'أُبطلت الجلسة', 'Session revoked');
     }
-    /* جلسة مُبطَلة لا تُجدَّد: وإلا كان إسقاط الجهاز الضائع مهلةَ ربع
-       ساعة يستأنف بعدها من تلقاء نفسه. */
-    if (claims.sid) {
-      const session = await this.prisma.session.findUnique({ where: { id: claims.sid } });
-      if (!session || session.revokedAt) {
-        throw Errors.badRequest('SESSION_REVOKED', 'أُبطلت هذه الجلسة', 'Session revoked');
-      }
-      await this.prisma.session.update({ where: { id: claims.sid }, data: { lastSeenAt: new Date() } });
+
+    /* بلا `sid` لا جلسة تُدوَّر: رمزٌ صدر قبل هذا الترحيل. يُرفض ويُطلب
+       دخولٌ جديد — أهونُ من إبقاء رمزٍ أبديٍّ لا يُبطله شيء. */
+    if (!claims.sid) {
+      throw Errors.badRequest('SESSION_REVOKED',
+        'انتهت صلاحية جلستك — سجّل الدخول من جديد', 'Session revoked');
     }
-    return issue(user.publicId, user.role, user.tokenVersion, claims.sid);
+
+    const session = await this.prisma.session.findUnique({ where: { id: claims.sid } });
+    if (!session || session.revokedAt) {
+      throw Errors.badRequest('SESSION_REVOKED', 'أُبطلت هذه الجلسة', 'Session revoked');
+    }
+
+    const now = Date.now();
+    const current = session.refreshJti;
+    const isCurrent = current === claims.jti;
+    // السابق مقبولٌ ثوانيَ معدودة: لسانان يُجدّدان في اللحظة نفسها
+    const isRecentPrev = Boolean(
+      session.prevJti && session.prevJti === claims.jti &&
+      session.prevAt && now - session.prevAt.getTime() < AuthService.ROTATE_GRACE_MS,
+    );
+
+    /* رمزٌ ليس الحاليَّ ولا السابقَ القريب: نسخةٌ ثانية تعيش في يدٍ أخرى.
+       وهذا هو الدليل الوحيد الذي يعطيه النظام على تسريب — فلا يُهدَر.
+       تُبطَل العائلة كلها: الضحية تدخل ثانيةً برمز هاتفها، والسارق لا
+       يملك هاتفاً يدخل به. وإخراجُ الضحية دقيقةً أهونُ من بقاء السارق شهراً.
+
+       و`current === null` جلسةٌ فُتحت قبل هذا الترحيل: تُدوَّر ولا تُتّهم. */
+    if (current !== null && !isCurrent && !isRecentPrev) {
+      await this.prisma.session.update({
+        where: { id: session.id },
+        data: { revokedAt: new Date(), revokedReason: 'REUSE_DETECTED' },
+      });
+      await this.notify.send({
+        type: 'auth.reuse', level: 'P0', to: user.phoneE164,
+        entityId: session.id, entityType: 'sessions', inApp: false,
+        title: 'دخولٌ مشبوه — أُغلقت جلستك',
+        body: 'استُعمل رمزُ دخولٍ قديم لحسابك، وهو ما يحدث حين تُنسخ الجلسة. أغلقنا الجلسة احتياطاً. سجّل الدخول من جديد، وإن لم تكن أنت فغيّر رقمك المسجَّل.',
+      }).catch(() => {});
+      throw Errors.badRequest('SESSION_REVOKED',
+        'أُغلقت الجلسة لاستعمال رمزٍ قديم — سجّل الدخول من جديد', 'Refresh token reuse detected');
+    }
+
+    const t = issue(user.publicId, user.role, user.tokenVersion, session.id);
+    await this.prisma.session.update({
+      where: { id: session.id },
+      data: {
+        refreshJti: t.refreshJti,
+        // الحالي يصير السابق: هو ما سيصل به اللسان الثاني بعد لحظة
+        prevJti: current, prevAt: new Date(),
+        lastSeenAt: new Date(),
+      },
+    });
+    const { refreshJti, ...tokens } = t;
+    return tokens;
   }
 
   /**
@@ -211,7 +273,7 @@ export class AuthService {
     });
 
     const sid = await this.openSession(user.id, meta);
-    const tokens = issue(user.publicId, user.role, user.tokenVersion, sid);
+    const tokens = await this.mint(user, sid);
     return { ...tokens, user: { publicId: user.publicId, role: user.role, phone: user.phoneE164 } };
   }
 

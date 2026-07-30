@@ -257,6 +257,34 @@ chk "رمز الدخول لا يدخل الصندوق" "$(curl -s "$API/me/notif
 T2=$(tok "$CUST")
 chk "رمز دخولٍ ثانٍ يصدر في اليوم نفسه" "$([ -n "$T2" ] && echo OK)" 'OK'
 
+echo "══ تدوير رمز التحديث وكشف سرقته ══"
+# رمز التحديث كان يعيش ثلاثين يوماً ولا يُبطَل عند التجديد: من سرقه ملك
+# الحساب شهراً، والسرقة لا تترك أثراً. الآن لكل جلسة رمزٌ واحد صالح.
+RP="+96393$(printf '%07d' $((RANDOM * RANDOM % 10000000)))"
+RR=$(curl -s -X POST $API/auth/otp/request -H 'content-type: application/json' -d "{\"phone\":\"$RP\"}")
+RC=$(echo "$RR"|grep -o '"devCode":"[0-9]*"'|cut -d'"' -f4)
+RJ=$(curl -s -X POST $API/auth/otp/verify -H 'content-type: application/json' -d "{\"phone\":\"$RP\",\"code\":\"$RC\"}")
+RT1=$(echo "$RJ"|grep -o '"refreshToken":"[^"]*"'|cut -d'"' -f4)
+
+# التجديد يُعطي رمزاً مختلفاً — وإلا فلا تدوير أصلاً
+R2J=$(curl -s -X POST $API/auth/refresh -H 'content-type: application/json' -d "{\"refreshToken\":\"$RT1\"}")
+RT2=$(echo "$R2J"|grep -o '"refreshToken":"[^"]*"'|cut -d'"' -f4)
+chk "التجديد ينجح" "$R2J" '"accessToken"'
+[ -n "$RT2" ] && [ "$RT1" != "$RT2" ] && ok "الرمز الجديد غير القديم" || no "التدوير" "متطابقان"
+
+# والجديد يعمل
+chk "الرمز الجديد صالح" "$(curl -s -X POST $API/auth/refresh -H 'content-type: application/json' -d "{\"refreshToken\":\"$RT2\"}")" '"accessToken"'
+
+# ═══ السرقة ═══
+# RT1 استُعمل مرتين الآن ومضت عليه دورتان — فهو خارج مهلة الرحمة منطقياً:
+# ليس الحاليَّ ولا السابقَ. استعمالُه دليلُ نسخةٍ ثانية في يدٍ أخرى.
+RE=$(curl -s -X POST $API/auth/refresh -H 'content-type: application/json' -d "{\"refreshToken\":\"$RT1\"}")
+chk "الرمز المسروق يُرفض" "$RE" 'SESSION_REVOKED'
+
+# وأهمّ من رفضه: العائلة كلها تُبطَل — فلا ينفع السارقَ رمزُه الأحدث أيضاً
+chk "العائلة كلها أُبطلت" "$(curl -s -X POST $API/auth/refresh -H 'content-type: application/json' -d "{\"refreshToken\":\"$RT2\"}")" 'SESSION_REVOKED'
+chk "والسبب مسجَّل في الدفتر" "$(dbq "select revoked_reason from sessions where revoked_reason='REUSE_DETECTED' limit 1")" 'REUSE_DETECTED'
+
 echo "══ سلامة الثوابت ══"
 DRIFT=$(dbq "select count(*) from inventory_levels l where l.reserved <> coalesce((select sum(qty) from inventory_reservations r where r.variant_id=l.variant_id and r.warehouse_id=l.warehouse_id),0)")
 [ "$DRIFT" = "0" ] && ok "لا انحراف في عدّاد الحجز" || no "انحراف الحجز" "$DRIFT"
