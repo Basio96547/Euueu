@@ -137,7 +137,19 @@ export function currentFx() {
   return { rate: fx.rate as number, validUntil: until.toISOString(), safetyMarginBp: fx.safety_margin_bp ?? 300 };
 }
 
-export const isDemoMode = () => (process.env.DEMO_MODE ?? 'true') === 'true';
+/**
+ * وضع التجربة حقيقةٌ عن البيانات لا مفتاحٌ في الإعداد.
+ *
+ * كان متغيّر بيئة غير معرَّف في أي مكان، فيسقط دائماً إلى `true`: شريط
+ * «بيانات تجريبية» يعلو كل صفحة إلى الأبد، ولو امتلأ المتجر ببضاعةٍ
+ * حقيقية. ومفتاحٌ في اللوحة يُكتب في القاعدة ولا يقرؤه أحد.
+ *
+ * والسؤال الحقيقي ليس «هل الوضع تجريبي؟» بل «هل ما يراه الزائر بضاعةٌ
+ * تجريبية؟» — وجوابه في البضاعة نفسها. فحين يُنشر أول منتجٍ حقيقي يختفي
+ * الشريط وحده، ولا ينتظر أحداً يتذكّر إطفاءه.
+ */
+export const isDemoMode = () =>
+  products.length === 0 || products.every((p) => p.isDemo);
 
 /* ——— تسميات عربية للقيم المعدودة ——— */
 export const CONDITION_AR: Record<Variant['condition'], string> = {

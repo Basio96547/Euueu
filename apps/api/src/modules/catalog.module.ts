@@ -2,15 +2,39 @@ import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { Errors } from '../common/errors.js';
 
-const demoMode = () => (process.env.DEMO_MODE ?? 'true') === 'true';
-
 export class CatalogService {
   constructor(
     private prisma: PrismaService,
   ) {}
 
-  private where() {
-    return { status: 'PUBLISHED' as const, deletedAt: null, ...(demoMode() ? {} : { isDemo: false }) };
+  /**
+   * هل تُعرض البضاعة التجريبية؟
+   *
+   * كان الجواب متغيّر بيئة `DEMO_MODE` غير معرَّف في أي مكان، فيسقط دائماً
+   * إلى `true`: متجرٌ يعرض بضاعته الحقيقية مختلطةً بالتجريبية إلى الأبد،
+   * وينتظر أن يتذكّر أحدٌ إطفاء مفتاح لا يعرف بوجوده.
+   *
+   * والسؤال الصحيح ليس عن مفتاح بل عن الرفّ: ما دام خالياً من الحقيقي
+   * تُعرض التجريبية ليكون في المتجر ما يُرى؛ وبمجرّد نشر أول منتجٍ حقيقي
+   * تختفي التجريبية وحدها. لا خطوة يدوية، ولا لحظة يظهر فيها الاثنان معاً.
+   *
+   * ويبقى `DEMO_MODE=true` تجاوزاً صريحاً لمن أراد إبقاءها للعرض.
+   */
+  private async showDemo(): Promise<boolean> {
+    if (process.env.DEMO_MODE === 'true') return true;
+    const real = await this.prisma.product.findFirst({
+      where: { isDemo: false, status: 'PUBLISHED', deletedAt: null },
+      select: { id: true },
+    });
+    return !real;
+  }
+
+  private async where() {
+    return {
+      status: 'PUBLISHED' as const,
+      deletedAt: null,
+      ...((await this.showDemo()) ? {} : { isDemo: false }),
+    };
   }
 
   async list(categorySlug?: string, limit = 24) {
@@ -25,7 +49,7 @@ export class CatalogService {
       categoryIds = subtree.map((c) => c.id);
     }
     return this.prisma.product.findMany({
-      where: { ...this.where(), ...(categoryIds ? { categoryId: { in: categoryIds } } : {}) },
+      where: { ...(await this.where()), ...(categoryIds ? { categoryId: { in: categoryIds } } : {}) },
       take: Math.min(limit, 100),
       include: {
         brand: true,
@@ -36,7 +60,7 @@ export class CatalogService {
 
   async bySlug(slug: string) {
     const p = await this.prisma.product.findFirst({
-      where: { slug, ...this.where() },
+      where: { slug, ...(await this.where()) },
       include: {
         brand: true,
         variants: { where: { deletedAt: null }, include: { levels: true }, orderBy: { isDefault: 'desc' } },

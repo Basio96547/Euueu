@@ -12,7 +12,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "▸ بناء الموقع الساكن…"
+# الموقع يُبنى من القاعدة لا من ملف البذرة: بلا هذا لا يظهر منتجٌ يُدخله
+# صاحب المتجر من اللوحة مهما فعل — الصفحات مجمَّدة على ما في المستودع.
+# والفشل لا يُسقط البناء: `lib/catalog.ts` يعود إلى البذرة ويطبع سبب
+# العودة، فنشرةٌ بكتالوج أمس خيرٌ من نشرةٍ لا تقع.
 PUBLIC_SITE_URL="${PUBLIC_SITE_URL:-https://talisham.com}" \
+PUBLIC_API_URL="${PUBLIC_API_URL:-https://talisham.com/api/v1}" \
   pnpm --filter @talisham/site run build
 
 echo "▸ بناء تطبيق العميل…"
