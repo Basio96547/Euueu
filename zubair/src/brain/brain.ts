@@ -287,6 +287,7 @@ export class Zubair {
       hasGeneralization: generalized !== null,
       recallScore: recall.bestScore,
       vocab: this.lexicon.size,
+      unknownCount: percept.unknown.length,
     }));
 
     /* ١٢. العُقد القاعدية: أي استجابة أختار؟
@@ -312,7 +313,11 @@ export class Zubair {
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
       strategy: decision.strategy, stage, percept, understanding, recall, fact, generalized,
-      intero, unknownWords: percept.unknown, askedBefore: this.askedWords,
+      intero, unknownWords: percept.unknown,
+      /* موضوع سؤالك يُضاف إلى ما سأل عنه في هذه النبضة وحدها: طفل يُسأل «شو
+       * القطة؟» فيردّ «شو القطة؟» يبدو ساخراً لا جاهلاً. إن كان لا يعرف فليقل
+       * «ما بعرف، علّمني» — وهذا ما تفعله استراتيجية الإقرار بالجهل. */
+      askedBefore: topic ? [...this.askedWords, topic] : this.askedWords,
       lexicon: this.lexicon, selfName: this.name, rng: this.rng,
     }));
 

@@ -50,6 +50,19 @@ export interface BasalGangliaState {
 const MEANING_SLICE = 16;
 export const STATE_DIM = MEANING_SLICE + 6 + 6 + 2;
 
+/**
+ * فرقٌ في القيمة يُعدّ حاسماً، فلا يُقترع عليه بل يُؤخذ الأعلى مباشرة.
+ *
+ * أُضيف بعد قياس: بلا هذا الحدّ ظلّت إصابة زبير تهتزّ حول ٦٥٪ في اثنتي عشرة
+ * جولة تعليم بلا تقدّم — لا لأنه لم يتعلّم، بل لأن الاقتراع بحرارة موجبة يخالف
+ * ما تعلّمه في نحو ثلث المرات. فكان يعرف أن «القطة حيوان» ويقول «ما بعرف».
+ *
+ * والاستكشاف بعد أن يتبيّن الفرق ليس استكشافاً بل نسياناً: الطفل يجرّب حين
+ * يشكّ، فإذا أيقن التزم. ويبقى الشكّ محفوظاً: كل تصحيح من الأب يُنزل القيمة
+ * فيعود الفرق غير حاسم فيعود التجريب.
+ */
+const DECISIVE_GAP = 0.35;
+
 export class BasalGanglia implements Lobe<BasalGangliaState> {
   readonly name = 'basalGanglia';
   readonly ar = 'العُقد القاعدية';
@@ -132,7 +145,22 @@ export class BasalGanglia implements Lobe<BasalGangliaState> {
     }
 
     const probs = softmax(masked, temperature);
-    let chosen = sampleCategorical(probs, rng);
+
+    /* الفرق الحاسم يُستغَلّ ولا يُقترع عليه — انظر DECISIVE_GAP أعلاه. */
+    let best = -Infinity;
+    let second = -Infinity;
+    for (let i = 0; i < masked.length; i++) {
+      const q = masked[i]!;
+      if (q > best) {
+        second = best;
+        best = q;
+      } else if (q > second) {
+        second = q;
+      }
+    }
+    const decisive = Number.isFinite(best) && Number.isFinite(second) && best - second >= DECISIVE_GAP;
+
+    let chosen = decisive ? argmax(masked) : sampleCategorical(probs, rng);
     // احتراس من احتمالات غير صالحة (كلها أصفار أو NaN): نأخذ الأقوى المسموح
     if (!Number.isFinite(probs[chosen] ?? NaN) || (probs[chosen] ?? 0) <= 0) chosen = argmax(masked);
 

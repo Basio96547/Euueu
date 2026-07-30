@@ -74,6 +74,8 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     hasGeneralization: boolean;
     recallScore: number;
     vocab: number;
+    /** كم كلمة في كلام أبيه لم يسمعها قط — مقياس جهله الحاضر */
+    unknownCount: number;
   }): Strategy[] {
     const allowed: Strategy[] = [];
     const lastTwo = ctx.lastStrategies.slice(-2);
@@ -99,6 +101,11 @@ export class Prefrontal implements Lobe<PrefrontalState> {
         case 'ASK_QUESTION':
           // سؤال أعاده عن نفس الكلمة يُنفّر أباه ولا يُعلّمه شيئاً جديداً
           if (ctx.askedRecently.length >= 3 && stuckOn === 'ASK_QUESTION') continue;
+          /* ومن يملك الجواب ولا يجهل شيئاً حاضراً لا يسأل، وهذا عطلٌ كُشف
+           * بتشغيل التطبيق: سُئل «شو القطة؟» وهو يعرف أنها حيوان فأجاب «شو
+           * القطه؟» — ردّ سؤال أبيه بسؤاله عن الشيء نفسه. والسؤال في موضع
+           * المعرفة ليس فضولاً بل تهرّب، ويُعلّم الأب أن ابنه لا يجيب. */
+          if (ctx.hasFact && ctx.unknownCount === 0) continue;
           break;
         case 'BABBLE':
           // من تعلّم كلمات لا يعود يثغثغ: هذا هو النمو محسوساً
@@ -114,8 +121,8 @@ export class Prefrontal implements Lobe<PrefrontalState> {
         case 'ADMIT':
           break;
       }
-      // تكرار نفس الاستجابة ثلاث مرات متتالية عادة لا قراراً: تُمنع إن وُجد بديل
-      if (stuckOn === strategy) continue;
+      // تكرار العَرَض يُكبَح، وتكرار الكفاءة لا — انظر RUT_PRONE أعلاه
+      if (stuckOn === strategy && RUT_PRONE.has(strategy)) continue;
       allowed.push(strategy);
     }
 
@@ -158,6 +165,22 @@ export interface CerebellumState {
  *  استثناءً، والقاعدة من مثال واحد تُفسد أكثر مما تُصلح. */
 const RULE_MIN_HITS = 2;
 const RULE_CAP = 200;
+
+/**
+ * الاستجابات التي يكون تكرارها عادةً لا قراراً، فتُكبَح عند تواليها.
+ *
+ * الجواب ليس منها بقصد، وهذا إصلاح عطل حقيقي كُشف بتشغيل التطبيق: كانت القاعدة
+ * تمنع **كل** استجابة تكرّرت مرّتين، فكان زبير يجيب صواباً مرّتين ثم يُمنع من
+ * الجواب في الثالثة فيقول «ما بعرف» عن حقيقة يعرفها. وقد ثبّت ذلك إصابته على
+ * ٦٣–٧٥٪ في اثنتي عشرة جولة تعليم بلا تقدّم، وكان يُقرأ ضعفَ تعلّمٍ وهو منعٌ
+ * مفروض عليه: نفس الأسئلة تفشل في كل جولة لا أسئلة مختلفة.
+ *
+ * وأن يجيب المرء صواباً ثلاث مرات متتالية كفاءةٌ لا رُتّة. أما الثغثغة والسؤال
+ * والإقرار بالتلقّي وردّ التحية فتكرارها المتوالي عَرَضٌ لا معنى فيه.
+ */
+const RUT_PRONE: ReadonlySet<Strategy> = new Set<Strategy>([
+  'BABBLE', 'ASK_QUESTION', 'ACKNOWLEDGE', 'GREET_BACK',
+]);
 
 /** لواحق تنويع حين يُكرّر نفس الجملة حرفياً — لا يُعيد نفسه كالببغاء. */
 const VARIANTS: readonly string[] = ['برضو', 'كمان', 'صح؟', 'مثل ما قلت', 'هيك'];

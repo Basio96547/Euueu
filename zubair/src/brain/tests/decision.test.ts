@@ -159,6 +159,7 @@ const inhibitCtx = {
   hasGeneralization: false,
   recallScore: 0,
   vocab: 80,
+  unknownCount: 1,
 };
 
 test('لا يجيب من ذاكرة لا يملكها ولا يعمّم بلا تعميم', () => {
@@ -194,12 +195,22 @@ test('من تعلّم كلمات لا يعود يثغثغ — النمو محس�
   assert.ok(!grown.includes('BABBLE'), 'ومن كبر لا يعود');
 });
 
-test('لا يُكرّر نفسه ثلاثاً، ولا يُعيد سؤالاً سأله', () => {
+test('يكبح تكرار العَرَض لا تكرار الكفاءة', () => {
   const prefrontal = new Prefrontal();
-  const stuck = prefrontal.inhibit(STRATEGIES, {
-    ...inhibitCtx, lastStrategies: ['ADMIT', 'ADMIT'],
+
+  /* العطل الذي ثبّت إصابته على ٦٥٪ اثنتي عشرة جولة: كانت القاعدة تمنع كل
+   * استجابة تكرّرت مرّتين، فيجيب صواباً مرّتين ثم يُمنع من الجواب في الثالثة
+   * فيقول «ما بعرف» عن حقيقة يعرفها. */
+  const answering = prefrontal.inhibit(STRATEGIES, {
+    ...inhibitCtx, hasFact: true, lastStrategies: ['ANSWER_MEMORY', 'ANSWER_MEMORY'],
   });
-  assert.ok(!stuck.includes('ADMIT'), 'تكرار مرتين يمنع الثالثة');
+  assert.ok(answering.includes('ANSWER_MEMORY'),
+    'ثلاثة أجوبة صحيحة متتالية كفاءةٌ لا رُتّة، فلا تُكبَح');
+
+  const babbling = prefrontal.inhibit(STRATEGIES, {
+    ...inhibitCtx, stage: stage(0), vocab: 4, lastStrategies: ['BABBLE', 'BABBLE'],
+  });
+  assert.ok(!babbling.includes('BABBLE'), 'أما الثغثغة المتوالية فعَرَضٌ يُكبَح');
 
   const repeating = prefrontal.inhibit(STRATEGIES, {
     ...inhibitCtx,
@@ -209,18 +220,37 @@ test('لا يُكرّر نفسه ثلاثاً، ولا يُعيد سؤالاً �
   assert.ok(!repeating.includes('ASK_QUESTION'), 'وسؤال أعاده ثلاثاً يُنفّر أباه');
 });
 
+test('من يملك الجواب لا يسأل: السؤال في موضع المعرفة تهرّب', () => {
+  const prefrontal = new Prefrontal();
+  /* العطل الذي كُشف بتشغيل التطبيق: سُئل «شو القطة؟» وهو يعرف أنها حيوان،
+   * فأجاب «شو القطه؟» — ردّ سؤال أبيه بسؤاله عن الشيء نفسه. */
+  const knowing = prefrontal.inhibit(STRATEGIES, { ...inhibitCtx, hasFact: true, unknownCount: 0 });
+  assert.ok(!knowing.includes('ASK_QUESTION'), 'يعرف ولا يجهل شيئاً حاضراً: لا يسأل');
+  assert.ok(knowing.includes('ANSWER_MEMORY'), 'بل يجيب');
+
+  // ومن يعرف الجواب لكن في كلامك كلمة يجهلها، يبقى له أن يسأل عنها
+  const curious = prefrontal.inhibit(STRATEGIES, { ...inhibitCtx, hasFact: true, unknownCount: 2 });
+  assert.ok(curious.includes('ASK_QUESTION'), 'وجهلٌ حاضر يُبيح السؤال ولو ملك جواباً');
+
+  // ومن لا يعرف شيئاً يبقى له السؤال دائماً
+  const ignorant = prefrontal.inhibit(STRATEGIES, { ...inhibitCtx, hasFact: false, unknownCount: 0 });
+  assert.ok(ignorant.includes('ASK_QUESTION'), 'ومن لا يملك جواباً يسأل');
+});
+
 test('لا يُعيد قائمة فارغة أبداً: دماغ مشلول ليس خياراً', () => {
   const prefrontal = new Prefrontal();
   // أقسى حالة يمكن تركيبها: لا حقيقة، لا تعميم، تحية غير مقولة، تكرار، ومفردات كبيرة
   for (const vocab of [0, 5, 11, 12, 80, 5000]) {
     for (const intent of ['ASK', 'PRAISE', 'CORRECT', 'GREET', 'TEACH_FACT', 'UNKNOWN', 'CHITCHAT'] as const) {
       for (const last of [[], ['ADMIT'], ['ADMIT', 'ADMIT'], ['BABBLE', 'BABBLE']] as Strategy[][]) {
+        for (const unknownCount of [0, 3]) {
         const allowed = prefrontal.inhibit(STRATEGIES, {
-          ...inhibitCtx, intent, vocab, lastStrategies: last,
-          askedRecently: ['أ', 'ب', 'ت', 'ث'],
+          ...inhibitCtx, intent, vocab, lastStrategies: last, unknownCount,
+          hasFact: unknownCount === 0, askedRecently: ['أ', 'ب', 'ت', 'ث'],
         });
-        assert.ok(allowed.length > 0, `مسموح واحد على الأقل (قصد=${intent} مفردات=${vocab})`);
+        assert.ok(allowed.length > 0, `مسموح واحد على الأقل (قصد=${intent} مفردات=${vocab} مجهول=${unknownCount})`);
         for (const strategy of allowed) assert.ok(STRATEGIES.includes(strategy));
+        }
       }
     }
   }
