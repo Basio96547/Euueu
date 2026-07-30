@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Zubair } from './brain/brain.js';
 import { browserStorage } from './brain/core/persist.js';
 import type { GrowthMetrics } from './brain/core/types.js';
+import type { Feelings } from './brain/lobes/emotion.js';
 import { Chat, type Turn } from './ui/Chat.js';
 import { Growth } from './ui/Growth.js';
 import { BrainMap } from './ui/BrainMap.js';
@@ -19,11 +20,20 @@ export default function App() {
   const [child, setChild] = useState<Zubair | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [metrics, setMetrics] = useState<GrowthMetrics | null>(null);
+  /* مشاعره حالةٌ منفصلة عن أرقامه لأنها تتغيّر بلا أن يتغيّر رقمٌ واحد: مدحةٌ
+   * لا تزيد مفرداته ولا حقائقه، وتقلب شعوره كلَّه. */
+  const [mood, setMood] = useState<{ now: Feelings; list: Zubair['moodList'] } | null>(null);
   const [tab, setTab] = useState<Tab>('chat');
   const [busy, setBusy] = useState(false);
   const [lastSleep, setLastSleep] = useState<string | null>(null);
   const [storageAr, setStorageAr] = useState('');
   const [failed, setFailed] = useState<string | null>(null);
+
+  /** لقطةٌ واحدة لحاله كلِّه بعد كل حدث: أرقامه ومشاعره معاً فلا يفترقان. */
+  const refresh = useCallback((who: Zubair) => {
+    setMetrics(who.metrics);
+    setMood({ now: who.mood, list: who.moodList });
+  }, []);
 
   /* أول تشغيل: يوقظ دماغه من الجهاز إن كان محفوظاً، وإلا وُلد الآن. */
   const started = useRef(false);
@@ -35,12 +45,12 @@ export default function App() {
     Zubair.create({ storage, heritage: true })
       .then(async (created) => {
         setChild(created);
-        setMetrics(created.metrics);
+        refresh(created);
         const hello = await created.greet();
         if (hello) setTurns([{ role: 'child', text: hello.text, out: hello }]);
       })
       .catch(() => setFailed('تعذّر إيقاظ زبير على هذا الجهاز. جرّب متصفّحاً آخر.'));
-  }, []);
+  }, [refresh]);
 
   const send = useCallback(async (text: string) => {
     if (!child || busy) return;
@@ -51,13 +61,13 @@ export default function App() {
       setTurns((previous) => [...previous, { role: 'child', text: out.text, out }]);
       // الحفظ بعد كل درس لا بعد كل جلسة: جوال يُقفل فجأةً لا ينتظر إذناً
       await child.save();
-      setMetrics(child.metrics);
+      refresh(child);
     } catch {
       setTurns((previous) => [...previous, { role: 'child', text: 'تلخبطت…', out: undefined }]);
     } finally {
       setBusy(false);
     }
-  }, [child, busy]);
+  }, [child, busy, refresh]);
 
   const judge = useCallback(async (verdict: 'praise' | 'correct', correction?: string) => {
     if (!child || busy) return;
@@ -75,11 +85,11 @@ export default function App() {
         }
         return copy;
       });
-      setMetrics(child.metrics);
+      refresh(child);
     } finally {
       setBusy(false);
     }
-  }, [child, busy]);
+  }, [child, busy, refresh]);
 
   const sleep = useCallback(async () => {
     if (!child || busy) return;
@@ -87,7 +97,7 @@ export default function App() {
     try {
       const result = await child.sleep(4);
       const after = child.metrics;
-      setMetrics(after);
+      refresh(child);
       setLastSleep(
         `أعاد ${result.replayed} ذكرى، وثبّت ${result.factsFormed} حقيقة جديدة. `
         + `مفرداته ${result.vocabAfter} كلمة، وحقائقه ${after.facts}.`,
@@ -95,7 +105,7 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  }, [child, busy]);
+  }, [child, busy, refresh]);
 
   const backup = useCallback(() => {
     if (!child) return;
@@ -114,7 +124,7 @@ export default function App() {
     setBusy(true);
     try {
       await child.adopt(await file.text());
-      setMetrics(child.metrics);
+      refresh(child);
       setTurns([]);
       setLastSleep('استُعيد دماغه من النسخة.');
     } catch {
@@ -122,11 +132,11 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  }, [child]);
+  }, [child, refresh]);
 
   if (failed) return <div className="app"><div className="center">{failed}</div></div>;
 
-  if (!child || !metrics) {
+  if (!child || !metrics || !mood) {
     return <div className="app"><div className="center">يستيقظ زبير…</div></div>;
   }
 
@@ -181,6 +191,8 @@ export default function App() {
       {tab === 'growth' && (
         <Growth
           metrics={metrics}
+          mood={mood.now}
+          moodList={mood.list}
           computeAr={compute.describeAr}
           computeDetails={compute.details}
           storageAr={storageAr}

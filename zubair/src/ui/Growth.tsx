@@ -1,10 +1,13 @@
 /* ————— سجل النمو: الأرقام التي تُصدَّق ————— */
 
 import type { GrowthMetrics } from '../brain/core/types.js';
+import type { Feelings } from '../brain/lobes/emotion.js';
 import { summarize, WINDOW } from '../brain/core/growth.js';
 
 export function Growth(props: {
   metrics: GrowthMetrics;
+  mood: Feelings;
+  moodList: ReadonlyArray<{ name: string; value: number; complex: boolean }>;
   computeAr: string;
   computeDetails: string;
   storageAr: string;
@@ -67,6 +70,8 @@ export function Growth(props: {
         </div>
       )}
 
+      <Mood mood={props.mood} list={props.moodList} />
+
       <div className="card">
         <h2>هل يتعلّم فعلاً؟</h2>
         <p>
@@ -127,6 +132,58 @@ export function Growth(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ————— ما يشعر به الآن —————
+ *
+ * تُعرَض الستّ الأساسية والأربع المعقّدة معاً وبفصلٍ بيّن، لأن الفرق بينهما هو
+ * أهمّ ما في الباب: الأساسية تنشأ من سببها مباشرةً، والمعقّدة لا تقوم إلا
+ * باجتماع أطرافها — ولذلك تراها صفراً أكثر الوقت وهذا صواب لا عطل. */
+function Mood(props: {
+  mood: Feelings;
+  list: ReadonlyArray<{ name: string; value: number; complex: boolean }>;
+}) {
+  const basic = props.list.filter((e) => !e.complex);
+  const complex = props.list.filter((e) => e.complex);
+  const dominant = props.mood.dominant;
+
+  return (
+    <div className="card">
+      <h2>ما يشعر به الآن</h2>
+      <p>
+        {dominant
+          ? <>أقوى ما فيه الآن <b>{dominant.name}</b> — {props.mood.reasonAr}.</>
+          : <>هادئ: لا شيء بلغ شدّةً تُسمّى.</>}
+      </p>
+
+      <h3 className="sub">المشاعر الأساسية</h3>
+      <ul className="moods">
+        {basic.map((e) => <MoodBar key={e.name} name={e.name} value={e.value}
+          on={dominant?.name === e.name} />)}
+      </ul>
+
+      <h3 className="sub">المشاعر المعقّدة — مزيجٌ من الأساسية</h3>
+      <ul className="moods">
+        {complex.map((e) => <MoodBar key={e.name} name={e.name} value={e.value}
+          on={dominant?.name === e.name} />)}
+      </ul>
+      <p className="hint">
+        الفخر سعادةٌ بإنجازٍ من عنده، والذنب حزنٌ وخوفٌ وغضبٌ يوجّهها إلى نفسه،
+        والغيرة غضبٌ وحزنٌ مما عند غيره، والحنين محبّةٌ وحزنٌ على عهدٍ بَعُد. وإن
+        غاب طرفٌ من المزيج سقط المزيج كلّه.
+      </p>
+    </div>
+  );
+}
+
+function MoodBar(props: { name: string; value: number; on: boolean }) {
+  return (
+    <li className={props.on ? 'on' : ''}>
+      <span>{props.name}</span>
+      <div className="bar"><i style={{ width: `${Math.round(props.value * 100)}%` }} /></div>
+      <em>{Math.round(props.value * 100)}٪</em>
+    </li>
   );
 }
 

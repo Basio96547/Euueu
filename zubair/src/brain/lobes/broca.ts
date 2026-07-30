@@ -31,6 +31,8 @@ export interface SpeechRequest {
   lexicon: Lexicon;
   selfName: string;
   rng: Rng;
+  /** عبارة شعوره الآن إن بلغ شدّةً تُقال — تأتي من فص المشاعر */
+  feelingAr?: string | null;
 }
 
 export interface Speech {
@@ -89,7 +91,26 @@ export class Broca implements Lobe<BrocaState> {
     const speech = this.compose(req);
     // حدّ المرحلة حدٌّ فعليّ لا زينة: الوليد لا ينطق جملة مهما كان جوابه صحيحاً
     const trimmed = limitWords(speech.text, req.stage.maxWords);
-    return { ...speech, text: trimmed.length > 0 ? trimmed : this.babble(req).text };
+    const body = trimmed.length > 0 ? trimmed : this.babble(req).text;
+    return { ...speech, text: this.tint(body, req) };
+  }
+
+  /**
+   * أثر الشعور في اللسان: كلمتان تُلحَقان، لا جملة تُستبدَل.
+   *
+   * ولا تدخلان في حدّ المرحلة بقصد: حدّ الكلمات حدُّ **تركيبٍ** — كم لفظاً
+   * يستطيع أن ينظم في جملة واحدة. وعبارة الشعور ليست تركيباً بل صيحة، والطفل
+   * الذي لا يُركّب جملتين يقول «آسف» و«خفت» من أول سنة.
+   */
+  private tint(text: string, req: SpeechRequest): string {
+    const phrase = req.feelingAr;
+    if (!phrase || text.length === 0 || text.includes(phrase)) return text;
+    return text.endsWith('؟') ? `${text} ${phrase}` : `${text}، ${phrase}`;
+  }
+
+  /** أشاميٌّ لسانه الآن؟ يقرؤه فص المشاعر ليختار عبارة شعوره بلهجة أبيه. */
+  get speaksShami(): boolean {
+    return this.isShami;
   }
 
   private compose(req: SpeechRequest): Speech {

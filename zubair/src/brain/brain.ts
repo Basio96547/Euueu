@@ -28,6 +28,7 @@ import { TemporalLobe } from './lobes/temporal.js';
 import { Hippocampus } from './lobes/hippocampus.js';
 import { Parietal } from './lobes/parietal.js';
 import { Amygdala, Cingulate, Hypothalamus, Insula } from './lobes/limbic.js';
+import { Emotion, type Feelings } from './lobes/emotion.js';
 import { BasalGanglia } from './lobes/basalGanglia.js';
 import { Cerebellum, Prefrontal } from './lobes/prefrontal.js';
 import { Broca } from './lobes/broca.js';
@@ -110,6 +111,7 @@ export class Zubair {
   private readonly hypothalamus = new Hypothalamus();
   private readonly insula = new Insula();
   private readonly cingulate = new Cingulate();
+  private readonly emotion = new Emotion();
   private readonly basalGanglia: BasalGanglia;
   private readonly prefrontal = new Prefrontal();
   private readonly cerebellum = new Cerebellum();
@@ -294,10 +296,14 @@ export class Zubair {
   feel(touch: RawTouch | null, body: RawBody | null, at: number = Date.now()): { kind: SomaticPercept['kind']; intensity: number; valence: number } {
     const percept = this.somatosensory.feel(transduceBody(touch, body));
     this.lastBody = { percept, at };
+    /* الطريق القصير: يشعر قبل أن يفهم. المشاعر تُستدعى في كل إحساس لا عند
+     * الشديد وحده، لأنها هي التي تُميّز المباغت من المستمرّ — وذاك فرق الخوف من
+     * الاشمئزاز، ولا يُعرَف إلا بمقارنة الإحساس بما قبله. */
+    this.emotion.startled(percept.innateValence);
     if (Math.abs(percept.innateValence) > 0.25) {
       // الوسم على متجه الإحساس نفسه: تجربةٌ جسدية تُقترن بحالتها لا بكلام
       const meaning = this.embedBody(percept);
-      this.amygdala.condition(meaning, percept.innateValence, 0.03);
+      this.amygdala.condition(meaning, percept.innateValence, 0.03 * this.emotion.imprint);
     }
     return { kind: percept.kind, intensity: percept.intensity, valence: percept.innateValence };
   }
@@ -327,6 +333,16 @@ export class Zubair {
     return this.heritageVersion;
   }
 
+  /** ما يشعر به الآن: الستّة الأساسية والأربعة المركَّبة، بشدّاتها. */
+  get mood(): Feelings {
+    return this.emotion.feelings;
+  }
+
+  /** قائمة مشاعره للعرض — أساسيّها ثم معقّدها. */
+  get moodList(): Array<{ name: string; value: number; complex: boolean }> {
+    return this.emotion.list();
+  }
+
   /** لهجته كما تعلّمها منك: شامية أم فصحى. تُعرض في سجل نموّه. */
   get dialectAr(): string {
     return this.broca.dialectAr;
@@ -337,7 +353,7 @@ export class Zubair {
     const all = [
       this.brainstem, this.lexicon, this.thalamus, this.temporal, this.hippocampus,
       this.parietal, this.amygdala, this.hypothalamus, this.insula, this.cingulate,
-      this.basalGanglia, this.prefrontal, this.cerebellum, this.broca,
+      this.emotion, this.basalGanglia, this.prefrontal, this.cerebellum, this.broca,
       this.visualCortex, this.auditoryCortex, this.somatosensory, this.inferotemporal,
       this.syntax,
     ];
@@ -594,6 +610,26 @@ export class Zubair {
       valence,
     }));
 
+    /* ١٠٫٥ المشاعر: من الوسم الواحد إلى حالة شعورية.
+     *
+     * موضعها بعد اللوزة والحزام لأنها تقرأ منهما، وقبل العُقد القاعدية لأنها
+     * تُغيّر قراره. ولو وُضعت بعد القرار لصارت زينةً تُعرَض ولا تفعل شيئاً. */
+    const feelings = timed(this.emotion, 'شعر بما جرى', 'cpu', () => this.emotion.perceive({
+      valence,
+      conflict: conflict.level,
+      intero,
+      novelty: percept.tokens.length > 0 ? unknownContent.length / percept.tokens.length : 0,
+      othersHave: OTHER_OWNERS.has(this.syntax.possession(percept) ?? ''),
+      awayMs: vitals.awayMs,
+    }));
+    if (feelings.dominant) {
+      trace.push({
+        lobe: this.emotion.name, ar: this.emotion.ar,
+        note: `${feelings.dominant.name} ${Math.round(feelings.dominant.intensity * 100)}٪ — ${feelings.reasonAr}`,
+        where: 'cpu', ms: 0,
+      });
+    }
+
     /* ١١. الفص الجبهي: الهدف والكبح */
     const stage = stageOf(this.lexicon.size);
     const goal = timed(this.prefrontal, 'حدّد هدفه', 'cpu', () => this.prefrontal.goal(intero, understanding));
@@ -617,8 +653,12 @@ export class Zubair {
      * يعرف. الملل والفضول يزيدان التجريب، وثقته تنقصه. القيست: بحرارة لا تهبط
      * مع المعرفة ظلّ يُقرّ بجهله في أربعين بالمئة من أسئلة يعرف جوابها، لأن
      * الاختيار كان شبه موحَّد بين المسموحات. */
+    /* والمشاعر تُزيح الحرارة أو تخفضها: الغاضب يعاند فيجرّب، والخائف يتجمّد على
+     * المأمون، والفرِح يلتزم ما أرضى أباه. هذا هو أثر الشعور في الفعل — وبلا
+     * إزاحةٍ كهذه تبقى المشاعر عرضاً على الشاشة لا حالةً في الدماغ. */
     const temperature = clamp(
-      0.22 + 0.9 * conflict.level + 0.35 * intero.boredom + 0.25 * intero.curiosity - 0.5 * intero.confidence,
+      0.22 + 0.9 * conflict.level + 0.35 * intero.boredom + 0.25 * intero.curiosity
+      - 0.5 * intero.confidence + this.emotion.temperatureShift,
       0.12,
       1.8,
     );
@@ -639,6 +679,7 @@ export class Zubair {
        * «ما بعرف، علّمني» — وهذا ما تفعله استراتيجية الإقرار بالجهل. */
       askedBefore: topic ? [...this.askedWords, topic] : this.askedWords,
       lexicon: this.lexicon, selfName: this.name, rng: this.rng,
+      feelingAr: this.emotion.colorAr(stage.id, this.broca.speaksShami),
     }));
 
     /* ١٤. المخيخ: الإتقان ومنع التكرار */
@@ -744,9 +785,15 @@ export class Zubair {
           : `أضعف أن ما رآه «${pending.namedFromSight}»`);
       }
     }
-    this.amygdala.condition(pending.meaning, reward);
+    /* ما يُشعِر يُحفَر أعمق: شدّة شعوره تضاعف معدّل وسم اللوزة. وهذا ثابتٌ في
+     * كل دماغ — تجربةٌ مشحونة تُوسَم من مرة، وباردةٌ تحتاج عشراً. */
+    this.amygdala.condition(pending.meaning, reward, 0.05 * this.emotion.imprint);
     this.thalamus.reinforce(reward);
     const { dopamine } = this.basalGanglia.learn(pending.state, pending.strategy, reward);
+    const feelings = this.emotion.judged({ reward, strategy: pending.strategy, dopamine });
+    if (feelings.dominant) {
+      learned.push(`شعر بـ«${feelings.dominant.name}» — ${feelings.reasonAr}`);
+    }
     this.verdicts.push(reward);
     if (this.verdicts.length > 400) this.verdicts = this.verdicts.slice(-400);
 
@@ -843,6 +890,8 @@ export class Zubair {
 
     this.hypothalamus.onSleep();
     this.brainstem.onSleep();
+    // النوم يهدّئ ما شُعِر به ولا يمحوه: يستيقظ أهدأ لا خالياً
+    this.emotion.onSleep();
     this.sleeps++;
     this.lessonsSinceSleep = 0;
     await this.save();
@@ -885,6 +934,7 @@ export class Zubair {
         hypothalamus: this.hypothalamus.save(),
         insula: this.insula.save(),
         cingulate: this.cingulate.save(),
+        emotion: this.emotion.save(),
         basalGanglia: this.basalGanglia.save(),
         prefrontal: this.prefrontal.save(),
         cerebellum: this.cerebellum.save(),
@@ -930,6 +980,7 @@ export class Zubair {
     this.hypothalamus.load(lobes['hypothalamus'] as never);
     this.insula.load(lobes['insula'] as never);
     this.cingulate.load(lobes['cingulate'] as never);
+    this.emotion.load(lobes['emotion'] as never);
     this.basalGanglia.load(lobes['basalGanglia'] as never);
     this.prefrontal.load(lobes['prefrontal'] as never);
     this.cerebellum.load(lobes['cerebellum'] as never);
@@ -975,6 +1026,9 @@ export class Zubair {
 const QUESTION_WORDS = new Set([
   'ما', 'ماذا', 'شو', 'مين', 'من', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متى', 'كم', 'ايش', 'شنو',
 ]);
+
+/** مَن يُغار مما عنده: أبوه وكل ثالث. ولا يغار المرء مما عنده هو. */
+const OTHER_OWNERS = new Set(['الأب', 'غيره']);
 
 /** أسماء الإشارة بصورتها المطبَّعة: بها يُعرَف أن الأب يشير إلى ما تراه الكاميرا. */
 const DEMONSTRATIVE_KEYS = new Set([

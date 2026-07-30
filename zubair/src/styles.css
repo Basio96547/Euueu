@@ -270,6 +270,33 @@ html, body {
 
 .bar i { display: block; height: 100%; background: var(--leaf); }
 
+/* المشاعر: اسمٌ وشريطٌ ونسبة في سطر واحد. الاسم بعرض ثابت كي تصطفّ الأشرطة
+   فيُقرأ الفرق بينها بنظرة لا بحساب. */
+.sub {
+  margin: 12px 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.moods { list-style: none; margin: 0; padding: 0; }
+
+.moods li {
+  display: grid;
+  grid-template-columns: 5.5em 1fr 3em;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 0;
+  font-size: 13.5px;
+}
+
+.moods li .bar { margin: 0; }
+.moods li em { font-style: normal; color: var(--muted); font-size: 12.5px; text-align: end; font-variant-numeric: tabular-nums; }
+.moods li.on span { color: var(--seed); font-weight: 600; }
+.moods li.on em { color: var(--seed); }
+.moods li.on .bar i { background: var(--seed); }
+
 .trend { font-size: 14px; }
 .trend.up { color: var(--leaf); }
 .trend.down { color: var(--danger); }
