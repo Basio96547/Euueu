@@ -881,6 +881,7 @@ function AccountPage({ nav }: { nav: (to: string) => void }) {
           </div>
         )}
 
+      <Inbox nav={nav} />
       <Addresses />
       <Wishlist />
       <Warranties phone={me.phone} />
@@ -891,6 +892,84 @@ function AccountPage({ nav }: { nav: (to: string) => void }) {
   );
 }
 
+
+/* ————— صندوق الإشعارات —————
+   واتساب التجاري ممنوعٌ على سوريا، ولا مزوّد SMS مضبوطاً، وكلاهما يُرجع
+   «تمّ» وهو محاكاة تكتب في السجلّ. فهذه هي القناة الوحيدة التي تصل فعلاً:
+   الرسالة محفوظةٌ في القاعدة، والزبون يجدها هنا. */
+interface Notif {
+  id: string; type: string; level: string;
+  title: string; body: string; href: string | null;
+  read: boolean; createdAt: string;
+}
+
+function Inbox({ nav }: { nav: (to: string) => void }) {
+  const [box, setBox] = useState<{ unread: number; items: Notif[] } | null>(null);
+
+  const load = () => api.get<{ unread: number; items: Notif[] }>('/me/notifications?limit=20')
+    .then(setBox).catch(() => setBox({ unread: 0, items: [] }));
+  useEffect(() => { load(); }, []);
+
+  if (!box) return null;
+
+  const open = (n: Notif) => {
+    if (!n.read) {
+      api.post(`/me/notifications/${n.id}/read`, {}).then(load).catch(() => {});
+    }
+    if (n.href) nav(n.href);
+  };
+
+  return (
+    <>
+      <h2 style={{ fontSize: 'var(--step-0)', margin: '20px 0 8px',
+                   display: 'flex', alignItems: 'center', gap: 8 }}>
+        الإشعارات
+        {box.unread > 0 && (
+          <span className="tnum" style={{
+            background: 'var(--brass)', color: 'var(--brass-ink)',
+            borderRadius: 999, padding: '1px 8px', fontSize: '.75em',
+          }}>{box.unread}</span>
+        )}
+        {box.unread > 0 && (
+          <button className="btn btn--ghost" style={{ marginInlineStart: 'auto', padding: '4px 10px', fontSize: '.8em' }}
+            onClick={() => api.post('/me/notifications/read-all', {}).then(load).catch(() => {})}>
+            تعليم الكل كمقروء
+          </button>
+        )}
+      </h2>
+
+      {box.items.length === 0 ? (
+        <div className="empty"><p className="muted">لا إشعارات بعد.</p></div>
+      ) : (
+        <div className="card glass">
+          {box.items.map((n) => (
+            <button key={n.id} className="line"
+              style={{
+                width: '100%', textAlign: 'inherit', background: 'none', border: 0,
+                font: 'inherit', color: 'inherit',
+                opacity: n.read ? 0.62 : 1,
+              }}
+              onClick={() => open(n)}>
+              <span className="mid">
+                <b>
+                  {/* نقطةٌ للجديد: الفرق يُرى قبل أن يُقرأ */}
+                  {!n.read && <span aria-hidden="true" style={{
+                    display: 'inline-block', inlineSize: 7, blockSize: 7,
+                    borderRadius: 999, background: 'var(--brass)',
+                    marginInlineEnd: 7, verticalAlign: 'middle',
+                  }} />}
+                  {n.title}
+                </b>
+                <small className="muted">{n.body}</small>
+                <small className="muted">{fmtDate(n.createdAt)}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 /* ————— رمز الخصم ————— */
 function CouponBox({ cart, onChange }: { cart: CartSummary; onChange: (c: CartSummary) => void }) {

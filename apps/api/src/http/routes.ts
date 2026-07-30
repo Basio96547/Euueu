@@ -231,6 +231,15 @@ export function registerRoutes(app: Hono<Ctx>, d: Deps, env: Record<string, unkn
   app.delete(`${P}/me/addresses/:id`, any(), async (c) =>
     ok(c, await d.account.removeAddress(sub(c)!, c.req.param('id'))));
 
+  /* صندوق الإشعارات: القناة الوحيدة التي لا تحتاج مزوّداً ولا تُمنع
+     على بلد — وواتساب التجاري ممنوع على سوريا، ولا مزوّد SMS مضبوط. */
+  app.get(`${P}/me/notifications`, any(), async (c) => ok(c, await d.account.notifications(
+    sub(c)!, Number(c.req.query('limit') ?? 30), c.req.query('before'))));
+  app.post(`${P}/me/notifications/read-all`, any(), async (c) =>
+    ok(c, await d.account.markAllNotificationsRead(sub(c)!)));
+  app.post(`${P}/me/notifications/:id/read`, any(), async (c) =>
+    ok(c, await d.account.markNotificationRead(sub(c)!, c.req.param('id'))));
+
   app.get(`${P}/me/sessions`, any(), async (c) =>
     ok(c, await d.account.sessions(sub(c)!, c.get('user')?.sid)));
   app.delete(`${P}/me/sessions/:id`, any(), async (c) =>

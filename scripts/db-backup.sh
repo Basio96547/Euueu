@@ -49,14 +49,36 @@ fi
 
 TABLES=$(grep -c '^CREATE TABLE' "$OUT" || echo 0)
 gzip -9 "$OUT"
-SIZE=$(du -h "${OUT}.gz" | cut -f1)
+FINAL="${OUT}.gz"
 
-echo "✓ ${OUT}.gz — ${SIZE} · ${TABLES} جدولاً"
-echo "  الاستعادة: bash scripts/db-restore.sh ${OUT}.gz --local"
+# ═══ التشفير ═══
+# النسخة تحمل دفتر الزبائن كاملاً: الأسماء والأرقام السورية والعناوين
+# والمعالم، وأرقام IMEI لكل جهاز بيع. والمستودع عامّ — وأثر GitHub في
+# مستودعٍ عام يُنزّله من شاء. فنسخةٌ خام تخرج من هنا تسريبٌ تامّ لا عطلٌ
+# يُصلَح: العنوان الذي يُنشر لا يُسترجَع.
+#
+# فحيث تُرفع النسخة إلى أي مكان، التشفير شرطٌ لا خيار. ومحلياً على جهاز
+# صاحب المتجر يبقى اختيارياً — القرص نفسه حدُّه.
+if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
+  openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt \
+    -pass env:BACKUP_PASSPHRASE -in "$FINAL" -out "${FINAL}.enc"
+  rm -f "$FINAL"
+  FINAL="${FINAL}.enc"
+elif [ "${REQUIRE_ENCRYPTION:-0}" = "1" ]; then
+  echo "✘ REQUIRE_ENCRYPTION=1 وBACKUP_PASSPHRASE غير مضبوط." >&2
+  echo "  النسخة تحمل أسماء الزبائن وأرقامهم وعناوينهم وأرقام الأجهزة." >&2
+  echo "  لن تُكتب نسخةٌ خام حيث تُرفع. حُذفت." >&2
+  rm -f "$FINAL"
+  exit 1
+fi
+
+SIZE=$(du -h "$FINAL" | cut -f1)
+echo "✓ ${FINAL} — ${SIZE} · ${TABLES} جدولاً$([ "${FINAL##*.}" = "enc" ] && echo ' · مشفَّرة')"
+echo "  الاستعادة: bash scripts/db-restore.sh ${FINAL} --local"
 
 # الاحتفاظ بأربع عشرة نسخة: أسبوعان يكفيان لاكتشاف فسادٍ صامت، وما فوقها
 # يملأ القرص بلا أن يُقرأ.
-ls -1t backups/talisham-*.sql.gz 2>/dev/null | tail -n +15 | while read -r old; do
+ls -1t backups/talisham-*.sql.gz backups/talisham-*.sql.gz.enc 2>/dev/null | tail -n +15 | while read -r old; do
   echo "  حُذفت نسخة قديمة: $(basename "$old")"
   rm -f "$old"
 done

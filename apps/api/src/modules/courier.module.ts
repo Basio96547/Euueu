@@ -362,6 +362,7 @@ export class CourierService {
 
     await this.notify.send({
       type: 'order.delivered', level: 'P2', to: o.shippingAddress.phone, entityId: no,
+      entityType: 'orders', href: `/app/orders/${no}`,
       title: 'تم التسليم', body: `${no} — شكراً لك. إيصالك في حسابك.`,
     });
 

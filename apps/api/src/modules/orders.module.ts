@@ -267,6 +267,7 @@ export class OrdersService {
     // واتساب أولاً بزرَّي تأكيد وإلغاء؛ المكالمة تصعيد لا قاعدة (الفصل 8)
     await this.notify.send({
       type: 'order.created', level: 'P1', to: address.phone, entityId: order.orderNo,
+      entityType: 'orders', href: `/app/orders/${order.orderNo}`,
       title: 'استلمنا طلبك',
       body: `${order.orderNo} — المستحق نقداً ${totals.cashSyp.toLocaleString('en-US')} ل.س. أكّد الطلب بالضغط على «أؤكد».`,
     });

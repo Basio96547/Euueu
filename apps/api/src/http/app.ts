@@ -73,7 +73,7 @@ export interface Deps {
 
 export function buildDeps(db: D1Binding, media?: R2Binding): Deps {
   const prisma = makePrisma(db);
-  const notify = new NotificationsService();
+  const notify = new NotificationsService(prisma);
   const fx = new FxService(prisma);
   const catalog = new CatalogService(prisma);
   const coupons = new CouponsService(prisma);

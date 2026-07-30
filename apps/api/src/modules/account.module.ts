@@ -131,6 +131,65 @@ export class AccountService {
     return { id, revoked: true };
   }
 
+  /* ————————————————— صندوق الإشعارات ————————————————— */
+
+  /**
+   * الصندوق يُقرأ بالحساب وبالرقم معاً.
+   *
+   * الطلب يُقبل من زائرٍ بلا حساب، فإشعاراته تُكتب على رقمه وحده. ثم
+   * يسجّل دخوله بالرقم نفسه فيجب أن يجدها — ولو كُتبت قبل أن يصير له
+   * حساب. ولذلك يُسأل عن الاثنين لا عن المعرّف فقط.
+   *
+   * وغياب الجدول لا يُسقط الشاشة: إن لم يُطبَّق الترحيل بعد، يُعاد صندوقٌ
+   * فارغ — والتطبيق يبقى يعمل كما كان.
+   */
+  async notifications(publicId: string, limit = 30, before?: string) {
+    const u = await this.userOf(publicId);
+    try {
+      const rows = await this.prisma.notification.findMany({
+        where: {
+          OR: [{ userId: u.id }, { phone: u.phoneE164 }],
+          ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(Math.max(limit, 1), 50),
+      });
+      const unread = await this.prisma.notification.count({
+        where: { OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
+      });
+      return {
+        unread,
+        items: rows.map((n) => ({
+          id: n.id, type: n.type, level: n.level,
+          title: n.title, body: n.body, href: n.href,
+          read: Boolean(n.readAt), createdAt: n.createdAt.toISOString(),
+        })),
+        nextCursor: rows.length ? rows[rows.length - 1]!.createdAt.toISOString() : null,
+      };
+    } catch {
+      return { unread: 0, items: [], nextCursor: null };
+    }
+  }
+
+  /** التعليم بالقراءة يخصّ صاحبه: الشرط على الهوية لا على المعرّف وحده */
+  async markNotificationRead(publicId: string, id: string) {
+    const u = await this.userOf(publicId);
+    const r = await this.prisma.notification.updateMany({
+      where: { id, OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { read: r.count > 0 };
+  }
+
+  async markAllNotificationsRead(publicId: string) {
+    const u = await this.userOf(publicId);
+    const r = await this.prisma.notification.updateMany({
+      where: { OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { read: r.count };
+  }
+
   /* ————————————————— قائمة الرغبات ————————————————— */
 
   async wishlist(publicId: string) {

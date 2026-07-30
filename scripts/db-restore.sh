@@ -28,7 +28,7 @@ if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
   echo "الاستعمال: bash scripts/db-restore.sh <نسخة.sql.gz> [--local|--remote --yes-i-mean-it]" >&2
   echo "" >&2
   echo "النسخ المتاحة:" >&2
-  ls -1t backups/talisham-*.sql.gz 2>/dev/null | head -14 | sed 's/^/  /' >&2 || echo "  (لا نسخ)" >&2
+  ls -1t backups/talisham-*.sql.gz backups/talisham-*.sql.gz.enc 2>/dev/null | head -14 | sed 's/^/  /' >&2 || echo "  (لا نسخ)" >&2
   exit 1
 fi
 
@@ -40,7 +40,19 @@ fi
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-gunzip -c "$FILE" > "$TMP/raw.sql"
+
+# النسخة المرفوعة مشفَّرة — المستودع عامّ ودفتر الزبائن لا يُنشر
+if [ "${FILE##*.}" = "enc" ]; then
+  if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+    echo "✘ النسخة مشفَّرة وBACKUP_PASSPHRASE غير مضبوط." >&2
+    exit 1
+  fi
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
+    -pass env:BACKUP_PASSPHRASE -in "$FILE" 2>/dev/null | gunzip -c > "$TMP/raw.sql" || {
+      echo "✘ تعذّر فكّ التشفير — كلمة السرّ خاطئة أو الملف تالف." >&2; exit 1; }
+else
+  gunzip -c "$FILE" > "$TMP/raw.sql"
+fi
 
 # التصدير يُداخل الإنشاء بالإدخال، وهو ترتيبٌ لا يُستعاد. تُعاد الجُمل إلى
 # أربع مراحل قبل التنفيذ — والتفصيل في lib/reorder-dump.py.

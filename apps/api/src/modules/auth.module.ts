@@ -73,7 +73,9 @@ export class AuthService {
 
     // واتساب أولاً وSMS احتياطياً — الموجّه يتولى التصعيد (الفصل 20)
     await this.notify.send({
+      // رمزٌ جديد في كل طلب: منعُ التكرار هنا يمنع الدخول لا الإزعاج
       type: 'auth.otp', level: 'P0', to: phone, entityId: phone,
+      dedupe: false, inApp: false,
       title: 'رمز الدخول',
       body: `رمزك ${code} — صالح ${Math.round(OTP_TTL / 60)} دقائق. لا تشاركه مع أحد.`,
     });

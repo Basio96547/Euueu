@@ -62,6 +62,7 @@ model User {
   ticketsAssigned SupportTicket[]    @relation("TicketAssignee")
   settlements     CashSettlement[]   @relation("SettlementCollector")
   pushSubs        PushSubscription[]
+  notifications   Notification[]
   courier         Courier?
   sessions        Session[]
   wishlist        WishlistItem[]
@@ -896,6 +897,42 @@ model PushSubscription {
   @@index([userId])
   @@index([phone])
   @@map("push_subscriptions")
+}
+
+/// صندوق الإشعارات داخل التطبيق.
+///
+/// كان `IN_APP` مذكوراً في قنوات كل مستوى ولا يُسلَّم إلى أي مكان: الموجّه
+/// يعالج واتساب وSMS فقط، فيُحصى في «المخطَّط» ولا يصل. وواتساب التجاري
+/// ممنوع على سوريا، ولا مزوّد SMS مضبوطاً، والقناتان تُرجعان `ok: true`
+/// وهما محاكاة — فكل إشعارات المتجر تخرج إلى سطر سجلّ ويُقال إنها وصلت.
+///
+/// وهذا الجدول يجعل القناة الوحيدة التي لا تحتاج مزوّداً قناةً حقيقية:
+/// الرسالة تُحفظ، والزبون يفتح التطبيق فيجدها. ويصير منعُ التكرار على
+/// صفوفٍ في القاعدة لا على `Map` في الذاكرة — والعزلات في Worker كثيرة،
+/// فذاكرةُ واحدةٍ لا تعرف ما أرسلته أختها.
+model Notification {
+  id         String    @id @default(uuid())
+  userId     String?   @map("user_id")
+  /// الرقم يبقى ولو لم يُنشأ حساب: الطلب يُقبل من زائر
+  phone      String
+  type       String
+  level      String    @default("P2")
+  title      String
+  body       String
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id")
+  /// وجهة النقر داخل التطبيق — إشعارٌ لا يُفضي إلى شيء نصفُ إشعار
+  href       String?
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([phone, createdAt])
+  @@index([userId, createdAt])
+  /// منع التكرار يسأل عن (الرقم، النوع، الكيان) في آخر يوم
+  @@index([phone, type, entityId])
+  @@map("notifications")
 }
 
 model StockAlert {

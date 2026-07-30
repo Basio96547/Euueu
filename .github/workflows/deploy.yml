@@ -29,6 +29,18 @@ jobs:
       # (`code: 7403`)، وإيقاف كل نشرة لأجل ذلك يعني موقعاً لا يُحدَّث
       # أبداً. البديل ليس تجاهلاً صامتاً: الخطوة التالية تقول ما جرى،
       # والـWorker يهيّئ قاعدته بنفسه مرة واحدة عبر `/api/v1/bootstrap`.
+      # الختم قبل الترحيل: القاعدة الحيّة هُيِّئت عبر `/bootstrap` لا بـ
+      # wrangler، فجداولها موجودة و`d1_migrations` فارغ. ولولا الختم
+      # لبدأ الترحيل من 0001 وسقط بـ«table users already exists»، ومعه
+      # كلُّ ترحيلٍ جديد إلى الأبد. والنصّ يفحص أثر كل ترحيل قبل ختمه،
+      # فلا يختم ما لم يُطبَّق.
+      - name: ختم سجلّ الترحيل
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/db-seal-migrations.sh --remote
+
       - name: ترحيل قاعدة D1
         id: migrate
         continue-on-error: true

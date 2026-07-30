@@ -237,6 +237,26 @@ chk "صرف النقد" "$(curl -s -X POST "$API/admin/returns/$RN2/disburse" -H
 chk "الصرف مرتين ممنوع" "$(curl -s -X POST "$API/admin/returns/$RN2/disburse" -H "$AH" -H 'content-type: application/json' -d '{}')" 'INVALID_TRANSITION'
 chk "حالة الطلب صارت RETURNED" "$(dbq "select status, payment_status from orders where order_no='$N2'")" 'RETURNED REFUNDED'
 
+echo "══ صندوق الإشعارات ══"
+# القناة الوحيدة التي لا تحتاج مزوّداً: واتساب التجاري ممنوع على سوريا،
+# ولا مزوّد SMS مضبوطاً، وكلاهما يُرجع ok وهو محاكاة. فإن لم يصل الإشعار
+# إلى الصندوق لم يصل إلى أي مكان.
+NB=$(curl -s "$API/me/notifications" -H "$UH")
+chk "الصندوق يُقرأ" "$NB" '"items"'
+chk "إشعار الطلب محفوظ" "$NB" 'استلمنا طلبك'
+chk "وله وجهة تُنقر" "$NB" '"href":"/app/orders/'
+NID=$(echo "$NB"|grep -o '"id":"[^"]*"'|head -1|cut -d'"' -f4)
+chk "التعليم بالقراءة" "$(curl -s -X POST "$API/me/notifications/$NID/read" -H "$UH")" '"read":true'
+chk "تعليم الكل" "$(curl -s -X POST "$API/me/notifications/read-all" -H "$UH")" '"read":'
+chk "غير المقروء صار صفراً" "$(curl -s "$API/me/notifications" -H "$UH")" '"unread":0'
+# صندوق غيري ليس صندوقي: التعليم مشروطٌ بالهوية لا بالمعرّف وحده
+chk "لا أعلّم إشعار غيري" "$(curl -s -X POST "$API/me/notifications/$NID/read" -H "authorization: Bearer $CT")" '"read":false'
+# ورمز الدخول لا يُحفظ: الصندوق لا يُقرأ إلا بعد الدخول، وحفظُه يترك سرّاً مكتوباً
+chk "رمز الدخول لا يدخل الصندوق" "$(curl -s "$API/me/notifications" -H "$UH" | grep -c 'رمز الدخول')" '^0$'
+# ومنعُ التكرار لا يمنع رمزاً ثانياً — وإلا لم يدخل أحدٌ مرتين في يوم
+T2=$(tok "$CUST")
+chk "رمز دخولٍ ثانٍ يصدر في اليوم نفسه" "$([ -n "$T2" ] && echo OK)" 'OK'
+
 echo "══ سلامة الثوابت ══"
 DRIFT=$(dbq "select count(*) from inventory_levels l where l.reserved <> coalesce((select sum(qty) from inventory_reservations r where r.variant_id=l.variant_id and r.warehouse_id=l.warehouse_id),0)")
 [ "$DRIFT" = "0" ] && ok "لا انحراف في عدّاد الحجز" || no "انحراف الحجز" "$DRIFT"

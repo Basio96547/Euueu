@@ -8,7 +8,19 @@ name: نسخ احتياطي
 #
 # والتمرين ليس ترفاً: نسخةٌ لم تُستعَد قطّ ملفٌّ يُطمئن صاحبه حتى اليوم
 # الذي يحتاجه — وعندها يكتشف أنها ناقصة أو بصيغةٍ لا تُقرأ. فالاستعادة
-# تُجرَّب أسبوعياً في قاعدةٍ محلية، ويُفتح بلاغٌ إن فشلت.
+# تُجرَّب في كل تشغيل، ويُفتح بلاغٌ إن فشلت.
+#
+# ⚠ شرطان لا يعمل هذا الملف بدونهما — كلاهما بيد صاحب المستودع:
+#
+#   ١. سرّ `BACKUP_PASSPHRASE`. المستودع عامّ، وأثر GitHub في مستودعٍ
+#      عام يُنزّله من شاء. والنسخة تحمل دفتر الزبائن كاملاً: الأسماء
+#      والأرقام والعناوين والمعالم وأرقام IMEI لكل جهاز بيع. فبلا تشفير
+#      لا تُرفع نسخة — وهذا الملف يفشل صراحةً بدل أن ينشرها.
+#
+#   ٢. الجدولة تعمل من الفرع الافتراضي وحده. والفرع الافتراضي هنا
+#      `claude/file-contents-iwk9t0` لا فرع العمل — فما دام هذا الملف
+#      خارج الفرع الافتراضي، لن يُقلعه `schedule` أبداً مهما صحّ توقيته.
+#      يُدمَج إلى الفرع الافتراضي، أو يُنقَل الافتراضي إلى فرع العمل.
 
 on:
   schedule:
@@ -33,28 +45,44 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
 
+      # البوابة أولاً: بلا كلمة سرّ لا تُصدَّر نسخةٌ أصلاً. والفشل هنا
+      # أرخص بما لا يُقاس من ملفٍّ خام يُنشر ثم يُحذف بعد أن نُزِّل.
+      - name: التحقّق من مفتاح التشفير
+        run: |
+          if [ -z "${{ secrets.BACKUP_PASSPHRASE }}" ]; then
+            echo "::error::سرّ BACKUP_PASSPHRASE غير مضبوط."
+            echo "::error::المستودع عامّ، والنسخة تحمل أسماء الزبائن وأرقامهم وعناوينهم وأرقام أجهزتهم."
+            echo "::error::أضِفه من Settings ← Secrets and variables ← Actions."
+            exit 1
+          fi
+
       - name: تصدير القاعدة الحيّة
         id: dump
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          REQUIRE_ENCRYPTION: '1'
         run: bash scripts/db-backup.sh
 
       # الأثر يُحفظ تسعين يوماً: أطول من أي فسادٍ صامت يُكتشف متأخراً،
       # وأقصر من أن يصير مخزناً دائماً لبيانات شخصية.
-      - name: حفظ النسخة
+      # والمسار `*.enc` وحده: لو تسلّل ملفٌّ خام لسببٍ ما، لا يُرفع.
+      - name: حفظ النسخة المشفَّرة
         uses: actions/upload-artifact@v4
         with:
           name: d1-backup-${{ github.run_number }}
-          path: backups/*.sql.gz
+          path: backups/*.sql.gz.enc
           retention-days: 90
           if-no-files-found: error
 
       # التمرين: النسخة تُستعاد فعلاً في قاعدةٍ محلية نظيفة. وهذا وحده
-      # ما يُثبت أنها نسخة لا ملفّ.
+      # ما يُثبت أنها نسخة لا ملفّ — ويثبت أن التشفير قابلٌ للفكّ أيضاً.
       - name: تمرين الاستعادة
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
-          F=$(ls -1t backups/talisham-*.sql.gz | head -1)
+          F=$(ls -1t backups/talisham-*.sql.gz.enc | head -1)
           rm -rf .wrangler/state
           bash scripts/db-restore.sh "$F" --local
 
