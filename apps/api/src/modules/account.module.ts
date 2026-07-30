@@ -171,23 +171,34 @@ export class AccountService {
     }
   }
 
-  /** التعليم بالقراءة يخصّ صاحبه: الشرط على الهوية لا على المعرّف وحده */
+  /* التعليم بالقراءة يخصّ صاحبه: الشرط على الهوية لا على المعرّف وحده.
+     وغياب الجدول لا يُخرج خمسمئة: الترحيل قد لا يكون طُبِّق بعد على
+     القاعدة الحيّة، وشاشةٌ تُظهر «خطأ غير متوقَّع» لأن ميزةً لم تُفعَّل
+     بعدُ أسوأ من شاشةٍ فارغة. */
   async markNotificationRead(publicId: string, id: string) {
     const u = await this.userOf(publicId);
-    const r = await this.prisma.notification.updateMany({
-      where: { id, OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
-      data: { readAt: new Date() },
-    });
-    return { read: r.count > 0 };
+    try {
+      const r = await this.prisma.notification.updateMany({
+        where: { id, OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
+        data: { readAt: new Date() },
+      });
+      return { read: r.count > 0 };
+    } catch {
+      return { read: false };
+    }
   }
 
   async markAllNotificationsRead(publicId: string) {
     const u = await this.userOf(publicId);
-    const r = await this.prisma.notification.updateMany({
-      where: { OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
-      data: { readAt: new Date() },
-    });
-    return { read: r.count };
+    try {
+      const r = await this.prisma.notification.updateMany({
+        where: { OR: [{ userId: u.id }, { phone: u.phoneE164 }], readAt: null },
+        data: { readAt: new Date() },
+      });
+      return { read: r.count };
+    } catch {
+      return { read: 0 };
+    }
   }
 
   /* ————————————————— قائمة الرغبات ————————————————— */

@@ -377,6 +377,17 @@ export default {
           }
         }
 
+        // كل ساعة: مراقبة صلاحية سعر الصرف. البيع يتوقّف تلقائياً عند
+        // التقادم الشديد، وكان يتوقّف بلا إنذار — فيعرف صاحب المتجر
+        // حين يشتكي زبون. والإنذار واحدٌ لكل درجةٍ في اليوم لا كل ساعة.
+        if (minute === 0) {
+          const w = await deps.alerts.fxWatch().catch((e) => {
+            console.error('[cron] مراقبة السعر:', e);
+            return null;
+          });
+          if (w?.warned) console.log(`[cron] إنذار السعر (${w.health}) إلى ${w.warned}`);
+        }
+
         // مرة يومياً: تنفيذ طلبات حذف الحساب التي استحقّ موعدها
         if (minute === 0 && at.getUTCHours() === 1) {
           const del = await deps.account.runDueDeletions().catch((e) => {

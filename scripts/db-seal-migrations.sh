@@ -26,8 +26,26 @@ cd "$(dirname "$0")/.."
 ENV_FLAG="--local"
 for a in "$@"; do [ "$a" = "--remote" ] && ENV_FLAG="--remote"; done
 
-q() { npx wrangler d1 execute talisham "$ENV_FLAG" --command "$1" --json 2>/dev/null; }
+ERRLOG=$(mktemp); trap 'rm -f "$ERRLOG"' EXIT
+q() { npx wrangler d1 execute talisham "$ENV_FLAG" --command "$1" --json 2>"$ERRLOG"; }
 count() { q "$1" | grep -o '"c": *[0-9]*' | grep -o '[0-9]*' | head -1; }
+
+# الاستعلام الفارغ يعني «لا نتيجة» — ولا يقول لماذا. وقد يكون الجدول
+# غائباً، وقد يكون المفتاح بلا صلاحية، وقد تكون الشبكة. وأول تشغيلٍ لهذا
+# النصّ في CI قال «القاعدة غير مهيّأة» بينما السبب `code: 7403`: المفتاح
+# بلا صلاحية D1. رسالةٌ تُرسل صاحبها في الاتجاه الخطأ أسوأ من لا رسالة.
+explain_failure() {
+  if grep -q '7403\|not authorized\|not valid' "$ERRLOG" 2>/dev/null; then
+    echo "✘ المفتاح CLOUDFLARE_API_TOKEN بلا صلاحية D1 (code: 7403)." >&2
+    echo "  امنحه D1:Edit من: Cloudflare ← My Profile ← API Tokens." >&2
+    echo "  ولا يُختَم شيء حتى ذلك: الترحيل كلّه محجوب لا السجلّ وحده." >&2
+  elif grep -qi 'no such table' "$ERRLOG" 2>/dev/null; then
+    echo "✘ لا جدول d1_migrations — القاعدة غير مهيّأة أصلاً." >&2
+  else
+    echo "✘ تعذّر قراءة سجلّ الترحيل. نصّ الخطأ:" >&2
+    sed 's/^/    /' "$ERRLOG" >&2 | head -12
+  fi
+}
 
 # علامةُ كل ترحيل في المخطَّط: استعلامٌ يعيد 1 إن كان أثره موجوداً.
 # الترحيل الذي لا علامة له لا يُختَم — والصمت هنا أأمن من التخمين.
@@ -50,7 +68,7 @@ probe() {
 
 LEDGER=$(count "SELECT count(*) c FROM d1_migrations" || echo "")
 if [ -z "$LEDGER" ]; then
-  echo "✘ لا جدول d1_migrations — القاعدة غير مهيّأة أصلاً." >&2
+  explain_failure
   exit 1
 fi
 echo "▸ في السجلّ الآن: ${LEDGER} ترحيلاً"

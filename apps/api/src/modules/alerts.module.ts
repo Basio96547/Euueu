@@ -141,5 +141,57 @@ export class AlertsService {
       this.running = false;
     }
   }
+
+  /**
+   * إنذار صاحب المتجر قبل أن يتوقّف البيع.
+   *
+   * سعر الصرف يصلح أربعاً وعشرين ساعة، ثم اثنتي عشرة بهامش أمان، ثم
+   * يتوقّف البيع كلياً: `requireSellable` يرمي فيُرفض كل طلب. وهو قرارٌ
+   * صحيح — البيع بسعرٍ ميت في عملةٍ تتحرّك يومياً خسارةٌ مؤكّدة — لكن
+   * لم يكن أحدٌ يُنذَر به. فالمتجر يُظلم فجأةً بلا سابق إشارة، وصاحبه
+   * يعرف حين يشتكي زبون.
+   *
+   * فيُقاس ما تبقّى ويُنذَر عند كل درجة. والدرجة هي كيان الإشعار، فمنع
+   * التكرار يُخرج إنذاراً واحداً لكل درجةٍ في اليوم لا رسالةً كل ساعة.
+   */
+  async fxWatch() {
+    const fx = await this.fx.current().catch(() => null);
+    if (!fx || fx.health === 'FRESH') return { warned: 0 };
+
+    const admins = await this.prisma.user.findMany({
+      where: { role: 'ADMIN', deletedAt: null },
+      select: { phoneE164: true },
+    });
+    if (!admins.length) return { warned: 0 };
+
+    const h = Math.max(0, Math.round(fx.hoursLeft));
+    const msg = {
+      EXPIRING: {
+        level: 'P1' as const, title: 'سعر الصرف يوشك أن ينتهي',
+        body: `بقي ${h} ساعة على انتهاء السعر (${fx.baseRate.toLocaleString('en-US')}). حدّثه من اللوحة قبل أن يتوقّف البيع.`,
+      },
+      STALE_MARGIN: {
+        level: 'P0' as const, title: 'السعر منتهٍ — البيع بهامش أمان',
+        body: `انتهت صلاحية السعر ويُباع الآن بهامش أمان مؤقّت. يتوقّف البيع كلياً خلال ${Math.max(0, 12 + Math.round(fx.hoursLeft))} ساعة.`,
+      },
+      STALE_HALT: {
+        level: 'P0' as const, title: 'توقّف البيع — السعر متقادم',
+        body: 'لا يُقبل أي طلب جديد حتى يُحدَّث سعر الصرف من اللوحة.',
+      },
+    }[fx.health];
+    if (!msg) return { warned: 0 };
+
+    let warned = 0;
+    for (const a of admins) {
+      await this.notify.send({
+        type: 'fx.health', level: msg.level, to: a.phoneE164,
+        // الدرجة هي الكيان: إنذارٌ واحد لكل درجةٍ لا واحدٌ كل ساعة
+        entityId: fx.health, entityType: 'fx_rates',
+        title: msg.title, body: msg.body, href: '/admin/pricing',
+      }).catch(() => {});
+      warned++;
+    }
+    return { warned, health: fx.health };
+  }
 }
 
