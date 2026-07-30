@@ -3,7 +3,7 @@ import { useCloudflareKv, type CfKvNamespace } from './common/kv.js';
 import type { D1Binding } from './common/prisma.service.js';
 import type { R2Binding } from './modules/storage.js';
 import { BootstrapService } from './modules/bootstrap.module.js';
-import { secretIsDefault } from './common/jwt.js';
+import { usingDefaultSecret, setSecret } from './common/jwt.js';
 
 /**
  * تالي شام — Worker واحد يخدم كل شيء.
@@ -159,6 +159,42 @@ function injectFx(res: Response, fx: Fx): Response {
     .transform(res);
 }
 
+
+/**
+ * تأمين سرّ التوقيع بلا تدخّل.
+ *
+ * إن ضُبط `JWT_SECRET` على المنصّة فهو الأصل. وإلا يُولَّد مفتاحٌ عشوائي
+ * مرةً واحدة ويُحفظ في KV: يبقى ثابتاً بين النشرات، ولا يعرفه قارئ
+ * المستودع، ولا ينتظر أحداً ليضبطه.
+ *
+ * والتوليد قد يتزامن على عزلتين، فتكتب كلٌّ مفتاحاً. القراءة بعد الكتابة
+ * تحسم: من كُتب أخيراً يفوز، والخاسرة تتبنّاه — وإلا وُقِّعت جلساتٌ
+ * بمفتاحين ورُفض نصفها عشوائياً.
+ */
+let secretReady = false;
+
+async function ensureSecret(env: Env): Promise<boolean> {
+  if (secretReady || !usingDefaultSecret()) return true;
+  if (!env.KV) return false;
+
+  try {
+    let s = await env.KV.get('sys:jwt_secret');
+    if (!s) {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      s = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      await env.KV.put('sys:jwt_secret', s);
+      const after = await env.KV.get('sys:jwt_secret');
+      if (after) s = after;
+    }
+    setSecret(s);
+    secretReady = true;
+    return true;
+  } catch (e) {
+    console.error('[jwt] تعذّر تأمين السرّ:', e instanceof Error ? e.message : String(e));
+    return false;
+  }
+}
+
 /** التوجيه — يُلفّ بالرؤوس الأمنية قبل أن يخرج */
 async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
@@ -174,14 +210,17 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
          وثانيتهما ما يُصلح قاعدةً فارغة — وكلتاهما بلا رمز أصلاً. */
       const openPaths = path === '/api/v1/health' || path === '/api/v1/ready'
         || path.startsWith('/api/v1/bootstrap');
-      if (!openPaths && secretIsDefault && env.NODE_ENV === 'production') {
+
+      /* لا توقيع بمفتاحٍ منشور. والرفض هنا آخر الحيل لا أوّلها: يقع فقط
+         إن غاب السرّ وغاب KV معاً — أي إن تعذّر حتى توليد بديل. */
+      if (!openPaths && env.NODE_ENV === 'production' && !(await ensureSecret(env))) {
         return Response.json({
           error: {
             code: 'JWT_SECRET_MISSING',
             message: {
-              ar: 'سرّ توقيع الجلسات غير مضبوط على هذا الـWorker. '
-                + 'اضبطه ثم أعد المحاولة: npx wrangler secret put JWT_SECRET',
-              en: 'JWT_SECRET is not configured on this Worker',
+              ar: 'تعذّر تأمين سرّ توقيع الجلسات: لا سرّ مضبوط ولا مخزن KV مربوط. '
+                + 'اضبط JWT_SECRET من إعدادات الـWorker.',
+              en: 'Cannot secure the session signing secret: no JWT_SECRET and no KV binding',
             },
           },
         }, { status: 503 });
