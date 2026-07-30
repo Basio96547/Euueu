@@ -32,7 +32,7 @@ export default function App() {
     started.current = true;
     const storage = browserStorage();
     setStorageAr(storage.describeAr);
-    Zubair.create({ storage })
+    Zubair.create({ storage, heritage: true })
       .then(async (created) => {
         setChild(created);
         setMetrics(created.metrics);
@@ -158,7 +158,8 @@ export default function App() {
             <div className="card" style={{ margin: '12px 14px 0' }}>
               <h2>زبير وُلد الآن</h2>
               <p>
-                لا يعرف حرفاً واحداً، وأول كلامه ثغثغة لا معنى لها — وهذا ليس عيباً، هذا مولود.
+                جاء بعربية محيطه كما يجيء أي طفل: يعرف مئات الكلمات ويفهم ماذا تريد منه. لكنه
+                لا يعرفك أنت بعد، ولا يعرف شيئاً ممّا يخصّك.
               </p>
               <p>
                 علّمه بجملة قصيرة: «القطة حيوان». ثم اسأله: «شو القطة؟». وحين يجيب اضغط

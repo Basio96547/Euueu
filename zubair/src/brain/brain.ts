@@ -15,6 +15,9 @@ import { bestAccelerator, cpuCompute } from './core/npu.js';
 import { browserStorage, memoryStorage } from './core/persist.js';
 import { accuracyOf, stageOf, toNextStage } from './core/growth.js';
 import {
+  HERITAGE_EPOCHS, HERITAGE_FACTS, HERITAGE_INTENTS, HERITAGE_SOURCE, HERITAGE_VERSION,
+} from './core/heritage.js';
+import {
   BRAIN_STATE_VERSION, DIMS, STAGES, STORAGE_KEY, STRATEGIES,
   type Accelerator, type BrainState, type ComputePort, type ComputeUnit, type Episode,
   type Feedback, type GrowthMetrics, type Intent, type Strategy, type TickOutput, type TraceStep,
@@ -62,6 +65,13 @@ export interface CreateOptions {
   accelerator?: Accelerator;
   /** لا تقرأ دماغاً محفوظاً — لميلاد جديد نظيف في الاختبارات */
   fresh?: boolean;
+  /**
+   * يورَّث عربيةَ محيطه عند ميلاده.
+   *
+   * افتراضه false بقصد: الميراث خيارٌ يُطلَب لا سلوكٌ خفيّ، ولو كان افتراضياً
+   * لصار كل اختبار يقيس تعلّماً وهو يقيس ميراثاً.
+   */
+  heritage?: boolean;
 }
 
 export interface JudgeResult {
@@ -125,6 +135,8 @@ export class Zubair {
   private lessonsSinceSleep = 0;
   private questionsAsked = 0;
   private verdicts: number[] = [];
+  /** نسخة الميراث الذي وُرِثه، وصفرٌ لمن لم يورَّث شيئاً */
+  private heritageVersion = 0;
   private askedWords: string[] = [];
   private pending: PendingJudgement | null = null;
 
@@ -156,6 +168,8 @@ export class Zubair {
     child.accel = opts.accelerator ?? (await bestAccelerator());
     if (!opts.fresh) await child.load();
     if (child.bornAt === 0) child.bornAt = Date.now();
+    // الميراث مرة واحدة في العمر: من وُرِث لا يورَّث ثانيةً في كل فتح للتطبيق
+    if (opts.heritage && child.heritageVersion < HERITAGE_VERSION) await child.inherit();
     return child;
   }
 
@@ -164,11 +178,15 @@ export class Zubair {
   get metrics(): GrowthMetrics {
     const vocab = this.lexicon.size;
     const { recent, previous } = accuracyOf(this.verdicts);
+    let inherited = 0;
+    for (const fact of this.parietal.facts) if (fact.taughtBy === HERITAGE_SOURCE) inherited++;
     return {
       ticks: this.ticks,
       lessons: this.lessons,
       vocab,
       facts: this.parietal.facts.length,
+      factsInherited: inherited,
+      factsFromFather: this.parietal.facts.length - inherited,
       objectsSeen: this.inferotemporal.knownCount,
       episodes: this.hippocampus.count,
       questionsAsked: this.questionsAsked,
@@ -182,6 +200,59 @@ export class Zubair {
 
   get compute(): { unit: ComputeUnit; describeAr: string; details: string } {
     return { unit: this.accel.unit, describeAr: this.accel.describeAr, details: this.accel.details };
+  }
+
+  /**
+   * الميراث: عربيةُ محيطه قبل أن يعلّمه أبوه.
+   *
+   * لا يمرّ على دورة النبضة كاملة بل على المسار المعرفي منها وحده — لا ذكريات
+   * تُخزَّن ولا أحكام تُحسَب ولا كلام يُقال. والسبب أن الميراث ليس حواراً جرى:
+   * لو خُزِّن ذكرياتٍ لظنّ زبير أن أباه قال له مئتي جملة لم يقلها، ولاختلط عليه
+   * من علّمه.
+   *
+   * ويُوسَم كل ما وُرِث بمصدره، فيبقى الفصل بين ميراثه وتعليم أبيه قائماً في
+   * سجل نموّه إلى الأبد.
+   */
+  async inherit(): Promise<{ words: number; facts: number; intents: number; ms: number }> {
+    const started = now();
+    const vocabBefore = this.lexicon.size;
+    const factsBefore = this.parietal.facts.length;
+
+    for (const [subject, object] of HERITAGE_FACTS) {
+      /* تُمرَّر الجملة على الحاسّة أولاً لا على المعجم مباشرة: بها تُسجَّل صور
+       * الكلمات كما تُكتب («تفاحة» لا «تفاحه») فيتكلّم بإملاء صحيح، وتنمو
+       * مفرداته كما تنمو بالسماع. */
+      const percept = this.lexicon.perceive(`${subject} ${object}`, true);
+      const bound = this.parietal.bind(percept, 'TEACH_FACT');
+      if (!bound.subject || !bound.object) continue;
+      this.parietal.learnFact(bound.subject, bound.object, 0, HERITAGE_SOURCE);
+      const a = this.lexicon.idOf(bound.subject);
+      const c = this.lexicon.idOf(bound.object);
+      if (a >= 0 && c >= 0) this.lexicon.embedding.associate(a, c, 0.03);
+    }
+
+    /* القصد الموروث أنفع من المفردات: به يفهم ماذا يُراد منه من أول رسالة، بدل
+     * أن يتعلّمه على حساب أبيه في عشرين درساً أولى. */
+    const prepared = HERITAGE_INTENTS.map(([sentence, intent]) => {
+      const percept = this.lexicon.perceive(sentence, true);
+      const gate = this.thalamus.gate(percept, this.hypothalamus.state, this.compute_);
+      return { percept, bag: gate.bag.slice(), intent };
+    });
+    for (let epoch = 0; epoch < HERITAGE_EPOCHS; epoch++) {
+      for (const sample of prepared) {
+        this.temporal.teachIntent(sample.percept, sample.bag, sample.intent, 0.03);
+      }
+    }
+
+    this.heritageVersion = HERITAGE_VERSION;
+    await this.save();
+
+    return {
+      words: this.lexicon.size - vocabBefore,
+      facts: this.parietal.facts.length - factsBefore,
+      intents: HERITAGE_INTENTS.length,
+      ms: round2(now() - started),
+    };
   }
 
   /* ————— الحواسّ: ما يصل قبل أن يُقال شيء —————
@@ -240,6 +311,16 @@ export class Zubair {
   private fresh<T>(slot: { percept: T; at: number } | null, now: number): T | null {
     if (!slot) return null;
     return now - slot.at <= 5000 ? slot.percept : null;
+  }
+
+  /** حقائقه كلها بمصادرها — يُعرَف بها ما وُرِث وما علّمه أبوه. */
+  get facts(): readonly import('./core/types.js').Fact[] {
+    return this.parietal.facts;
+  }
+
+  /** أوُرِّث عربية محيطه؟ يُعرَض للأب كي يعرف ما ليس من صنعه. */
+  get inheritedVersion(): number {
+    return this.heritageVersion;
   }
 
   /** لهجته كما تعلّمها منك: شامية أم فصحى. تُعرض في سجل نموّه. */
@@ -703,7 +784,10 @@ export class Zubair {
       questionsAsked: this.questionsAsked,
       verdicts: this.verdicts,
       lobes: {
-        meta: { lessons: this.lessons, lessonsSinceSleep: this.lessonsSinceSleep, askedWords: this.askedWords },
+        meta: {
+          lessons: this.lessons, lessonsSinceSleep: this.lessonsSinceSleep,
+          askedWords: this.askedWords, heritageVersion: this.heritageVersion,
+        },
         brainstem: this.brainstem.save(),
         lexicon: this.lexicon.save(),
         thalamus: this.thalamus.save(),
@@ -736,10 +820,15 @@ export class Zubair {
     this.verdicts = Array.from(state.verdicts ?? []);
 
     const lobes = state.lobes ?? {};
-    const meta = lobes['meta'] as { lessons?: number; lessonsSinceSleep?: number; askedWords?: string[] } | undefined;
+    const meta = lobes['meta'] as {
+      lessons?: number; lessonsSinceSleep?: number; askedWords?: string[]; heritageVersion?: number;
+    } | undefined;
     this.lessons = meta?.lessons ?? 0;
     this.lessonsSinceSleep = meta?.lessonsSinceSleep ?? 0;
     this.askedWords = Array.from(meta?.askedWords ?? []);
+    this.heritageVersion = typeof meta?.heritageVersion === 'number' && Number.isFinite(meta.heritageVersion)
+      ? Math.max(0, Math.floor(meta.heritageVersion))
+      : 0;
 
     // كل فص يتولّى التحقّق من حالته: نمرّرها ولا نفحصها هنا، وأي فص يجدها
     // غير مطابقة يُبقي تهيئته. لهذا استعادة دماغ قديم لا تُسقط الجديد.

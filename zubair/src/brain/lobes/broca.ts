@@ -204,12 +204,22 @@ export class Broca implements Lobe<BrocaState> {
     // يتكلّم بصورة أبيه لا بالصورة المطبَّعة: «فاكهة» لا «فاكهه»
     const fact = { ...raw, subject: req.lexicon.pretty(raw.subject), object: req.lexicon.pretty(raw.object) };
 
-    // لا لفظ تحفّظ هنا: علّمه أبوه هذا بنفسه، فالتحفّظ في موضع اليقين كذب معكوس
+    /* «علّمتني هيك» لا تُقال إلا لما علّمه أبوه بنفسه.
+     *
+     * وهذا ليس تدقيقاً لغوياً بل صدقاً: زبير يرث عربية محيطه كما يرثها الطفل،
+     * فلو نسب الموروث إلى أبيه لأوهمه أنه علّمه ما لم يعلّمه — وأفسد المقياس
+     * الوحيد الذي يعرف به الأب أن تعليمه ينفع. والمصدر مكتوب في الحقيقة نفسها. */
+    const fromFather = raw.taughtBy.includes('أبوه');
+    const plain = [`${fact.object}`, `${fact.subject} ${fact.object}`];
     const options = req.stage.id <= 1
-      ? [`${fact.object}`, `${fact.subject} ${fact.object}`]
-      : this.isShami
-        ? [`${fact.subject} ${fact.object}`, `${fact.subject} هو ${fact.object}، علّمتني هيك`]
-        : [`${fact.subject} ${fact.object}`, `${fact.subject} هو ${fact.object}، هكذا علّمتني`];
+      ? plain
+      : fromFather
+        ? this.isShami
+          ? [`${fact.subject} ${fact.object}`, `${fact.subject} هو ${fact.object}، علّمتني هيك`]
+          : [`${fact.subject} ${fact.object}`, `${fact.subject} هو ${fact.object}، هكذا علّمتني`]
+        : this.isShami
+          ? [`${fact.subject} ${fact.object}`, `${fact.subject} هو ${fact.object}`]
+          : [`${fact.subject} ${fact.object}`, `${fact.subject} هو ${fact.object}`];
 
     return { text: this.pick(options, req.rng), kind: 'answer', about: fact.subject };
   }

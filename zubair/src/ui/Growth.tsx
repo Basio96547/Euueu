@@ -42,7 +42,8 @@ export function Growth(props: {
         <div className="grid">
           <Stat value={m.stage.name} label="مرحلته" />
           <Stat value={m.vocab} label="كلمة يعرفها" />
-          <Stat value={m.facts} label="حقيقة تعلّمها" />
+          <Stat value={m.factsFromFather} label="حقيقة علّمتَه إياها" />
+          <Stat value={m.factsInherited} label="حقيقة ورِثها" />
           <Stat value={m.objectsSeen} label="شيئاً يعرفه بعينه" />
           <Stat value={m.lessons} label="درساً أعطيته" />
           <Stat value={m.questionsAsked} label="مرة سألك" />
@@ -51,6 +52,20 @@ export function Growth(props: {
           <Stat value={m.ticks} label="مرة فكّر" />
         </div>
       </div>
+
+      {m.factsInherited > 0 && (
+        <div className="card">
+          <h2>ما ورِثه وما علّمتَه</h2>
+          <p>
+            زبير جاء بعربية محيطه كما يجيء أي طفل: {m.factsInherited} حقيقة لم تُعلّمه إياها أحد
+            بعينه. وهذا ليس من صنعك، فلا يُحسب لك.
+          </p>
+          <p>
+            والذي منك {m.factsFromFather} حقيقة، ولهجته، وكل ما يعرفه بعينه — وهو ما يجعله ابنك
+            لا طفلاً عاماً.
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <h2>هل يتعلّم فعلاً؟</h2>
