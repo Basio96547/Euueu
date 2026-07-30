@@ -305,9 +305,9 @@ const desc = `أسعار ${products.length} جهازاً وملحقاً بالل
     background: var(--line); overflow: hidden; margin-block-start: 4px;
   }
   .stats > div { background: var(--surface); padding: 11px 13px; display: grid; gap: 2px; }
-  .stats dt { font-size: var(--step--2); color: var(--ink-3); font-weight: 700; }
+  .stats dt { font-size: var(--step--2); color: var(--ink-3); font-weight: var(--w-strong); }
   /* رقمُ الليرة من سبع خانات: مقاسٌ أكبر يكسره على سطرين داخل خانةٍ ضيّقة */
-  .stats dd { font-size: var(--step-0); font-weight: 800; margin: 0; white-space: nowrap; }
+  .stats dd { font-size: var(--step-0); font-weight: var(--w-strong); margin: 0; white-space: nowrap; }
   @media (min-width: 560px) { .stats dd { font-size: var(--step-1); } }
   @media (min-width: 560px) { .stats { grid-template-columns: repeat(4, 1fr); } }
 
@@ -323,7 +323,7 @@ const desc = `أسعار ${products.length} جهازاً وملحقاً بالل
   */
   table { inline-size: 100%; border-collapse: collapse; font-size: var(--step--1); }
   thead th {
-    text-align: start; font-size: var(--step--2); font-weight: 800; color: var(--ink-3);
+    text-align: start; font-size: var(--step--2); font-weight: var(--w-strong); color: var(--ink-3);
     padding: 10px 9px; border-block-end: 1px solid var(--line); white-space: nowrap;
   }
   tbody tr { border-block-end: 1px solid var(--line-2); }
@@ -332,13 +332,13 @@ const desc = `أسعار ${products.length} جهازاً وملحقاً بالل
   tbody th, tbody td { text-align: start; padding: 11px 9px; vertical-align: top; font-weight: 400; }
   tbody th { inline-size: 52%; }
   tbody td:last-child { inline-size: 30%; }
-  tbody th a { font-weight: 700; color: var(--ink); }
+  tbody th a { font-weight: var(--w-strong); color: var(--ink); }
   tbody th a:hover { color: var(--brass); }
   tbody small { display: block; font-size: var(--step--2); color: var(--ink-3); margin-block-start: 2px; }
-  .cond { font-weight: 700; color: var(--ink-2); }
+  .cond { font-weight: var(--w-strong); color: var(--ink-2); }
   .pr { white-space: nowrap; }
-  .pr b { font-weight: 800; }
-  .pr .out { color: var(--clay); font-weight: 700; }
+  .pr b { font-weight: var(--w-strong); }
+  .pr .out { color: var(--clay); font-weight: var(--w-strong); }
 
   /* ————— النصّ ————— */
   .prose { max-inline-size: 42rem; }
@@ -357,13 +357,13 @@ const desc = `أسعار ${products.length} جهازاً وملحقاً بالل
   details { border-block-end: 1px solid var(--line-2); }
   details:last-child { border-block-end: 0; }
   summary {
-    padding: 13px 14px; font-weight: 700; font-size: var(--step--1);
+    padding: 13px 14px; font-weight: var(--w-strong); font-size: var(--step--1);
     cursor: pointer; list-style: none; display: flex; gap: 10px; align-items: flex-start;
     line-height: 1.55;
   }
   summary::-webkit-details-marker { display: none; }
   summary::before {
-    content: '+'; flex: none; color: var(--brass); font-weight: 800;
+    content: '+'; flex: none; color: var(--brass); font-weight: var(--w-strong);
     inline-size: 16px; text-align: center;
   }
   details[open] summary::before { content: '−'; }
@@ -375,5 +375,5 @@ const desc = `أسعار ${products.length} جهازاً وملحقاً بالل
   .closing { display: grid; gap: 12px; justify-items: start; }
   .closing p { color: var(--ink-2); line-height: var(--lh-body); }
   .closing .alt { font-size: var(--step--1); }
-  .closing .alt a { color: var(--brass); font-weight: 700; }
+  .closing .alt a { color: var(--brass); font-weight: var(--w-strong); }
 </style>

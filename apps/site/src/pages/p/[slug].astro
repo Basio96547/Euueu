@@ -503,7 +503,7 @@ const schema = [
     font-size: var(--step--2); color: var(--ink-3); padding-block-start: 6px;
   }
   .crumbs a { color: var(--ink-3); }
-  .crumbs a:last-child { color: var(--brass); font-weight: 700; }
+  .crumbs a:last-child { color: var(--brass); font-weight: var(--w-strong); }
 
   .pdp :global(.pm--hero) {
     --pm-scale: 0.76;
@@ -520,7 +520,7 @@ const schema = [
 
   .head { display: grid; gap: 5px; }
   .brandline {
-    font-size: var(--step--1); font-weight: 700; color: var(--brass);
+    font-size: var(--step--1); font-weight: var(--w-strong); color: var(--brass);
   }
   .pdp h1 { font-size: var(--step-2); line-height: var(--lh-tight); }
   .lede { font-size: var(--step--1); color: var(--ink-2); line-height: 1.7; }
@@ -533,7 +533,7 @@ const schema = [
     background: var(--surface); border: 1px solid var(--line);
   }
   .avail {
-    font-size: var(--step--2); font-weight: 800; color: var(--jade);
+    font-size: var(--step--2); font-weight: var(--w-strong); color: var(--jade);
     background: color-mix(in srgb, var(--jade) 12%, transparent);
     border-radius: var(--r-pill); padding: 4px 11px;
   }
@@ -542,7 +542,7 @@ const schema = [
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
 
   .cmpbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .cmplink { font-size: var(--step--1); font-weight: 700; color: var(--brass); }
+  .cmplink { font-size: var(--step--1); font-weight: var(--w-strong); color: var(--brass); }
 
   .verify {
     display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: var(--r-m);
@@ -554,16 +554,16 @@ const schema = [
   .verify span { font-size: var(--step--2); color: var(--ink-2); line-height: 1.65; }
 
   .picker { display: grid; gap: 8px; }
-  .picker-h { font-size: var(--step--1); font-weight: 800; color: var(--ink-2); }
+  .picker-h { font-size: var(--step--1); font-weight: var(--w-strong); color: var(--ink-2); }
   .opts { display: flex; gap: 8px; flex-wrap: wrap; }
   .opt {
     min-height: var(--tap-min); padding: 8px 14px; border-radius: var(--r-s);
     border: 1.5px solid var(--line); background: var(--surface);
-    font: inherit; font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    font: inherit; font-size: var(--step--1); font-weight: var(--w-strong); color: var(--ink-2);
     cursor: pointer; display: grid; gap: 1px; text-align: start; line-height: 1.3;
     transition: border-color var(--dur-tap) var(--ease-state), background var(--dur-tap) var(--ease-state);
   }
-  .opt small { font-size: var(--step--2); color: var(--ink-3); font-weight: 600; }
+  .opt small { font-size: var(--step--2); color: var(--ink-3); font-weight: var(--w-strong); }
   .opt[aria-pressed='true'] {
     border-color: var(--brass); color: var(--ink);
     background: color-mix(in srgb, var(--brass) 11%, transparent);
@@ -580,18 +580,18 @@ const schema = [
   }
   .fact:nth-child(odd) { background: color-mix(in srgb, var(--ink) 3%, transparent); }
   .fact dt { color: var(--ink-3); }
-  .fact dd { font-weight: 700; text-align: end; }
+  .fact dd { font-weight: var(--w-strong); text-align: end; }
 
   .cod {
     display: flex; gap: 10px; align-items: center; padding: 12px 13px; border-radius: var(--r-m);
     background: color-mix(in srgb, var(--brass) 11%, transparent);
     border: 1px solid color-mix(in srgb, var(--brass) 26%, transparent);
-    font-size: var(--step--1); font-weight: 700; line-height: 1.55;
+    font-size: var(--step--1); font-weight: var(--w-strong); line-height: 1.55;
   }
   .cod .icon { color: var(--brass); flex: none; }
 
   .rsum { display: flex; align-items: baseline; gap: 10px; }
-  .ravg { font-size: var(--step-3); font-weight: 800; }
+  .ravg { font-size: var(--step-3); font-weight: var(--w-strong); }
   .rstars { color: var(--brass); letter-spacing: 2px; }
   .rbars { display: grid; gap: 4px; }
   .rbar { display: grid; grid-template-columns: 1ch 1fr 3ch; gap: 8px; align-items: center; font-size: var(--step--2); }
@@ -623,7 +623,7 @@ const schema = [
   }
   .buybar .pr { flex: 1; min-inline-size: 0; display: grid; gap: 0; }
   .buybar .pr b {
-    font-size: var(--step-1); font-weight: 800;
+    font-size: var(--step-1); font-weight: var(--w-strong);
     font-variant-numeric: tabular-nums; letter-spacing: -0.015em; white-space: nowrap;
   }
   .buybar .pr small { font-size: var(--step--2); color: var(--ink-3); font-variant-numeric: tabular-nums; }
@@ -644,7 +644,7 @@ const schema = [
     inset-inline: 12px;
     inset-block-end: calc(var(--nav-h) + var(--safe-b) + 84px);
     max-inline-size: calc(var(--content) - 24px); margin-inline: auto;
-    font-size: var(--step--1); font-weight: 700; line-height: 1.55;
+    font-size: var(--step--1); font-weight: var(--w-strong); line-height: 1.55;
     padding: 11px 13px; border-radius: var(--r-m);
     box-shadow: var(--sh-2);
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);

@@ -44,7 +44,7 @@ svg { display: block; }
 */
 h1, h2, h3, h4 {
   line-height: var(--lh-head);
-  font-weight: 800;
+  font-weight: var(--w-strong);
   letter-spacing: 0;
   text-wrap: balance;
 }
@@ -85,15 +85,24 @@ p { text-wrap: pretty; }
   padding-inline: var(--gutter);
 }
 
-/* عنوان قسم: عين النحاس ثم العنوان ثم رابط «الكل» */
-.sec { display: grid; gap: var(--space-3); margin-block-start: var(--space-6); }
+/*
+  عنوان قسم — ورفٌّ يبدأ تحته.
+
+  كان التدرّج بين العنوان وما تحته وزناً وحده، والوزن لا يُصيَّر (انظر
+  `--w-strong` في الرموز). فبُني على ما يُرى فعلاً: خطٌّ يفصل الرفّ عمّا
+  قبله، ومسافةٌ فوق العنوان أكرمُ ممّا تحته — فتُقرأ الكتلة معاً بلا أن
+  يحملها وزنٌ غير موجود.
+*/
+.sec { display: grid; gap: var(--space-3); margin-block-start: var(--space-7); }
 .sec-h {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: baseline; justify-content: space-between;
   gap: var(--space-3);
+  padding-block-end: var(--space-2);
+  border-block-end: 1px solid var(--line);
 }
 .sec-h h2 { font-size: var(--step-2); line-height: var(--lh-tight); }
 .sec-h .more {
-  flex: none; font-size: var(--step--1); font-weight: 800; color: var(--brass);
+  flex: none; font-size: var(--step--1); font-weight: var(--w-strong); color: var(--brass);
   display: inline-flex; align-items: center; gap: 4px;
   min-height: 34px; padding-inline: 2px;
 }
@@ -109,7 +118,7 @@ p { text-wrap: pretty; }
 /* عين: كلمةٌ صغيرة فوق العنوان تسبقها شرطةٌ نحاسية */
 .eyebrow {
   display: flex; align-items: center; gap: 7px;
-  font-size: var(--step--2); font-weight: 800; letter-spacing: 0.04em;
+  font-size: var(--step--2); font-weight: var(--w-strong); letter-spacing: 0.04em;
   color: var(--brass); text-transform: none;
 }
 .eyebrow::before {
@@ -117,11 +126,22 @@ p { text-wrap: pretty; }
   background: currentColor; flex: none;
 }
 
-/* شبكة المنتجات: عمودان على الهاتف ثم تتّسع بلا كسر */
+/*
+  شبكة المنتجات — رفوفٌ لا بطاقاتٌ عائمة.
+
+  كان كلُّ شيء في الصفحة بطاقةً بيضاء مستديرةً بظلّ: الفاتحة، وأعمدة
+  الثقة، والمنتج، والفئة. فصار نسيجُ الصفحة واحداً لا تدرّج فيه — «حساءُ
+  بطاقات» يمسحه البصر بلا أن يقف على شيء.
+
+  والرفُّ يعكس ذلك: صفٌّ من البضاعة على خطٍّ واحد، يفصله عن الذي تحته
+  خطٌّ رفيع لا ظلٌّ وفجوة. فتُقرأ الصفحة صفوفاً، وتظهر البضاعة أكثر في
+  الشاشة الواحدة — وهو ما يريده من يتسوّق فعلاً.
+*/
 .card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+  column-gap: var(--space-3);
 }
 .card-grid > [hidden] { display: none; }
 @media (min-width: 560px) {
@@ -149,7 +169,7 @@ p { text-wrap: pretty; }
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink-2);
-  font: inherit; font-size: var(--step--1); font-weight: 700;
+  font: inherit; font-size: var(--step--1); font-weight: var(--w-strong);
   white-space: nowrap; cursor: pointer;
   transition:
     background var(--dur-tap) var(--ease-state),
@@ -190,7 +210,7 @@ p { text-wrap: pretty; }
   background: var(--btn-bg);
   color: var(--btn-fg);
   font: inherit;
-  font-weight: 800;
+  font-weight: var(--w-strong);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -223,7 +243,7 @@ p { text-wrap: pretty; }
 .tag {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: var(--step--2);
-  font-weight: 700;
+  font-weight: var(--w-strong);
   padding: 3px 8px;
   border-radius: var(--r-xs);
   border: 1px solid var(--line);
@@ -247,7 +267,7 @@ p { text-wrap: pretty; }
 */
 .price { display: grid; gap: 2px; }
 .price__main {
-  font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.015em;
+  font-weight: var(--w-strong); font-variant-numeric: tabular-nums; letter-spacing: -0.015em;
   line-height: 1.2; color: var(--ink);
   /* الليرة السورية رقمٌ من سبع خانات: مقاسٌ لا يتّسع له يكسر السطر بين
      الرقم و«ل.س» — وهو أقبح ما يمكن أن يحدث لسعر. */
@@ -261,7 +281,7 @@ p { text-wrap: pretty; }
   font-variant-numeric: tabular-nums;
 }
 .price__save {
-  font-size: var(--step--2); font-weight: 800; color: var(--clay);
+  font-size: var(--step--2); font-weight: var(--w-strong); color: var(--clay);
   background: color-mix(in srgb, var(--clay) 12%, transparent);
   border-radius: var(--r-xs); padding: 1px 6px; white-space: nowrap;
 }
@@ -282,7 +302,7 @@ p { text-wrap: pretty; }
   position: relative; z-index: 30;
   display: flex; align-items: center; gap: 8px;
   padding: 7px var(--gutter);
-  font-size: var(--step--2); font-weight: 700; line-height: 1.45;
+  font-size: var(--step--2); font-weight: var(--w-strong); line-height: 1.45;
   color: var(--ink-2);
   background: color-mix(in srgb, var(--brass) 14%, var(--surface));
   border-block-end: 1px solid var(--line);
@@ -298,7 +318,7 @@ p { text-wrap: pretty; }
   inset-inline: 14px; bottom: calc(var(--nav-h) + var(--safe-b) + 30px);
   display: flex; align-items: center; gap: 10px;
   padding: 12px 14px; border-radius: var(--r-m);
-  font-size: var(--step--1); font-weight: 700;
+  font-size: var(--step--1); font-weight: var(--w-strong);
   transform: translateY(var(--shift)); opacity: 0; pointer-events: none;
   transition:
     transform var(--dur-out) var(--ease-out),
@@ -369,7 +389,7 @@ p { text-wrap: pretty; }
 }
 .bottomnav a {
   display: grid; justify-items: center; align-content: center; gap: 3px;
-  font-size: var(--step--2); font-weight: 700; color: var(--ink-3);
+  font-size: var(--step--2); font-weight: var(--w-strong); color: var(--ink-3);
   padding: 4px 0; border-radius: var(--r-s); position: relative;
   min-height: calc(var(--tap-min) + 2px);
   transition: color var(--dur-tap) var(--ease-state);
@@ -385,7 +405,7 @@ p { text-wrap: pretty; }
   position: absolute; top: 2px; inset-inline-end: 22%;
   min-inline-size: 16px; block-size: 16px; padding: 0 4px;
   border-radius: 99px; background: var(--brass); color: var(--brass-ink);
-  font-size: 0.6rem; font-weight: 800; display: grid; place-items: center;
+  font-size: 0.6rem; font-weight: var(--w-strong); display: grid; place-items: center;
   transform: scale(0); transition: transform var(--dur-in) var(--ease-in);
 }
 .bottomnav .badge[data-show] { transform: scale(1); }
@@ -409,7 +429,7 @@ p { text-wrap: pretty; }
   .navlinks a {
     display: inline-flex; align-items: center; gap: 7px;
     min-height: 38px; padding: 0 13px; border-radius: var(--r-s);
-    font-size: var(--step--1); font-weight: 700; color: var(--ink-2);
+    font-size: var(--step--1); font-weight: var(--w-strong); color: var(--ink-2);
     transition: background var(--dur-tap) var(--ease-state), color var(--dur-tap) var(--ease-state);
   }
   .navlinks a:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }

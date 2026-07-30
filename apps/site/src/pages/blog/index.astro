@@ -38,7 +38,7 @@ const sorted = [...POSTS].sort((a, b) => b.published.localeCompare(a.published))
   .container { display: grid; gap: 14px; }
   .cards { display: grid; gap: 9px; }
   .card { display: grid; gap: 4px; padding: 14px; border-radius: var(--r-l); color: inherit; text-decoration: none; }
-  .card b { font-size: var(--step-0); font-weight: 800; line-height: 1.5; }
+  .card b { font-size: var(--step-0); font-weight: var(--w-strong); line-height: 1.5; }
   .card small { color: var(--ink-3); line-height: 1.6; }
   .meta { font-size: var(--step--1); color: var(--ink-3); }
   @media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }

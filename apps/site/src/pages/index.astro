@@ -55,6 +55,18 @@ const pillars = [
   <Header />
 
   <main class="container">
+    {/*
+      الطيّة عمودان على الشاشة الواسعة لا عمودٌ واحد ملتصقٌ باليمين.
+
+      كان نصفُ الشاشة الأيسر فارغاً تماماً في البطل — المحتوى كلّه محصورٌ
+      في 34rem على اليمين، والباقي بياضٌ لا يحمل شيئاً. وذلك ليس «مساحةً
+      سالبة» بل تخطيطُ هاتفٍ مُدَّ على حاسوب.
+
+      فصارت أعمدةُ الثقة الثلاثة تشغل النصف الثاني بدل أن تنزل تحته:
+      يرى الزائر ما نبيع **ولماذا يثق** في طيّةٍ واحدة، وهو ترتيبُ
+      الإقناع الصحيح في متجرٍ يُدفع فيه نقداً عند الباب.
+    */}
+    <div class="fold">
     <section class="hero">
       <p class="eyebrow">دمشق · توصيل خلال 24–48 ساعة</p>
       <h1>جهازك الجديد يصل إليك،<br />وتدفع بعد أن تفحصه.</h1>
@@ -85,6 +97,7 @@ const pillars = [
         </li>
       ))}
     </ul>
+    </div>
 
     <nav class="chip-row" aria-label="الفئات">
       {chips.map((c) => <a class="chip" href={`/c/${c.slug}/`}>{c.label}</a>)}
@@ -159,6 +172,7 @@ const pillars = [
 
 <style>
   /* ————— الفاتحة ————— */
+  .fold { display: grid; gap: 0; }
   .hero { display: grid; gap: 12px; padding-block: 22px 6px; max-inline-size: 34rem; }
   .hero h1 { font-size: var(--step-3); line-height: 1.22; }
   .lede { font-size: var(--step-0); color: var(--ink-2); line-height: 1.7; }
@@ -174,7 +188,7 @@ const pillars = [
     border: 1px solid color-mix(in srgb, var(--jade) 24%, transparent);
   }
   .fx b { color: var(--ink); white-space: nowrap; }
-  .fx a { color: var(--jade); font-weight: 700; margin-inline-start: auto; white-space: nowrap; }
+  .fx a { color: var(--jade); font-weight: var(--w-strong); margin-inline-start: auto; white-space: nowrap; }
   .fx .dot {
     inline-size: 7px; block-size: 7px; border-radius: 50%; flex: none;
     background: var(--jade); box-shadow: 0 0 0 3px color-mix(in srgb, var(--jade) 22%, transparent);
@@ -205,10 +219,10 @@ const pillars = [
     background: var(--surface); border: 1px solid var(--line);
   }
   .brand-tile .lat {
-    font-family: var(--font-mono); font-size: 0.62rem; font-weight: 800;
+    font-family: var(--font-mono); font-size: 0.62rem; font-weight: var(--w-strong);
     letter-spacing: 0.08em; text-transform: uppercase; color: var(--brass);
   }
-  .brand-tile .ar { font-size: var(--step--2); color: var(--ink-2); font-weight: 700; }
+  .brand-tile .ar { font-size: var(--step--2); color: var(--ink-2); font-weight: var(--w-strong); }
 
   /* ————— لافتة المساعدة ————— */
   .ask {
@@ -227,5 +241,28 @@ const pillars = [
     .pillars { grid-template-columns: repeat(3, 1fr); }
     .pillars li { border-block-end: 0; border-inline-end: 1px solid var(--line-2); flex-direction: column; }
     .pillars li:last-child { border-inline-end: 0; }
+  }
+
+  /* الطيّة عمودان من 900px: النصّ يمينُ القراءة، وأعمدةُ الثقة تملأ
+     النصف الذي كان فارغاً. ودونها يبقى الترتيب رأسياً كما هو. */
+  @media (min-width: 900px) {
+    .fold {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: var(--space-7);
+      align-items: center;
+      padding-block: 8px 26px;
+    }
+    .hero { padding-block: 0; max-inline-size: none; }
+    .pillars {
+      margin-block-start: 0;
+      grid-template-columns: 1fr;
+    }
+    .pillars li {
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--line-2);
+      flex-direction: row;
+      padding: 15px 16px;
+    }
+    .pillars li:last-child { border-block-end: 0; }
   }
 </style>
