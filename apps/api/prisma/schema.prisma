@@ -16,7 +16,9 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  // رابطٌ صوري: العميل يُولَّد منه ولا يتصل به أبداً — الاتصال الحقيقي
+  // عبر ربط D1 في `wrangler.jsonc` وحده.
+  url      = "file:./unused.db"
 }
 
 // ——————————————————— الأنواع ———————————————————

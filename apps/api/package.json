@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "generate": "prisma generate",
-    "migration:new": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > migrations/_next.sql && node prisma/apply-constraints.mjs migrations/_next.sql"
+    "migration:new": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > migrations/_next.sql && node prisma/apply-constraints.mjs migrations/_next.sql",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-d1": "6.19.3",
