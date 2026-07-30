@@ -12,8 +12,8 @@
 # والصواب أن يمرّ هذا بمفتاح Cloudflare: من يملكه يملك القاعدة أصلاً،
 # فهو الحدّ الصحيح للثقة — لا حقلٌ فارغ في صفّ.
 #
-#   bash scripts/set-admin-password.sh +963900000001
-#   bash scripts/set-admin-password.sh +963900000001 --local
+#   bash scripts/set-admin-password.sh +963958436703
+#   bash scripts/set-admin-password.sh +963958436703 --local
 #
 # كلمة السرّ تُقرأ من الطرفية ولا تُمرَّر في سطر الأوامر: ما يُكتب في
 # السطر يبقى في تاريخ الصدفة وفي قائمة العمليات.

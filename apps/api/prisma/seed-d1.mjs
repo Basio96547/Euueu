@@ -186,7 +186,9 @@ for (const [key, value] of settings) {
 
 /* ——— حساب إداري أوّلي ———
    بدونه لا يستطيع أحد دخول لوحة التحكم: رمز الدخول يُنشئ زبوناً فقط. */
-const adminPhone = process.env.ADMIN_PHONE ?? '+963900000001';
+/* رقم صاحب المتجر. كان رقماً وهمياً (‎+963900000001‎) — أي أن أحداً لا
+   يستطيع الدخول إلى اللوحة إلا بتغييره أولاً، وهو أوّل ما يُنسى. */
+const adminPhone = process.env.ADMIN_PHONE ?? '+963958436703';
 if (/^\+9639[0-9]{8}$/.test(adminPhone)) {
   ins('users', {
     id: idOf('user', adminPhone), public_id: pid(), phone_e164: adminPhone,

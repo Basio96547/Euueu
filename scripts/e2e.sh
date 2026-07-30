@@ -33,7 +33,9 @@ tok(){ local r c
   c=$(echo "$r"|grep -o '"devCode":"[0-9]*"'|cut -d'"' -f4)
   curl -s -X POST $API/auth/otp/verify -H 'content-type: application/json' -d "{\"phone\":\"$1\",\"code\":\"$c\"}"|grep -o '"accessToken":"[^"]*"'|cut -d'"' -f4; }
 
-AT=$(tok "+963900000001"); AH="authorization: Bearer $AT"
+# رقم الإدارة من البيئة لا مكتوباً: تغييرُه في البذرة كان يُسقط الفحص كلّه
+ADMIN_PHONE="${ADMIN_PHONE:-+963958436703}"
+AT=$(tok "$ADMIN_PHONE"); AH="authorization: Bearer $AT"
 
 # دور المندوب يُمنح من اللوحة لا من سطر الأوامر: الفحص كان يفترض أن
 # أحداً منحه سابقاً، فيمرّ عند من فعل ويفشل على قاعدة نظيفة.
