@@ -1,8 +1,10 @@
 name: deploy
 
+# لا فرع اسمه main في هذا المستودع، والنشر كان معلَّقاً عليه فلم يعمل قط.
+# فصار على الفرع الذي يُدفع إليه فعلاً، ويدوياً من تبويب Actions.
 on:
   push:
-    branches: [main]
+    branches: [claude/website-remaining-plans-cjlncb]
   workflow_dispatch: {}
 
 concurrency:

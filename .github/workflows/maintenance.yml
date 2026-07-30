@@ -16,24 +16,17 @@ permissions:
   issues: write
 
 jobs:
-  فحص:
+  # المعرّف لاتيني لأن GitHub يرفض غيره — والاسم المعروض عربي
+  check:
+    name: فحص
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: ci_only
-          POSTGRES_DB: talisham
-        options: >-
-          --health-cmd pg_isready --health-interval 10s
-          --health-timeout 5s --health-retries 5
-        ports: ['5432:5432']
-
+    # لا خدمات مساعدة: القاعدة D1، وwrangler ينشئ نسخةً محلية منها
     env:
-      DATABASE_URL: postgresql://postgres:ci_only@localhost:5432/talisham?schema=public
       JWT_SECRET: ci_only_secret
+      NODE_ENV: development
+      RATE_LIMIT_FACTOR: '100'
 
     steps:
       - uses: actions/checkout@v4
@@ -49,22 +42,35 @@ jobs:
       - name: اختبارات الوحدة
         run: pnpm turbo run test
 
-      - name: الهجرات تعمل من الصفر
-        run: pnpm --filter @talisham/api exec prisma migrate deploy
+      - name: البناء الكامل
+        run: pnpm run build:worker
+        env:
+          PUBLIC_SITE_URL: https://talisham.com
 
-      - name: البذر والقيود
-        run: pnpm --filter @talisham/api run seed
+      - name: الترحيل من الصفر والبذر
+        run: |
+          pnpm run db:migrate:local
+          pnpm run db:seed
 
-      - name: البناء
-        run: pnpm turbo run build
+      # الفحص على Worker حقيقي وقاعدة D1 حقيقية: البناء وحده لا يكشف
+      # عطلاً في المخزون ولا في التسوية، والدورة الكاملة تكشفه.
+      - name: الفحص من طرف إلى طرف
+        run: |
+          npx wrangler dev --port 8787 --local &
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8787/api/v1/health > /dev/null && break
+            sleep 3
+          done
+          API_BASE=http://127.0.0.1:8787/api/v1 bash scripts/e2e.sh | tee /tmp/e2e.log
+          grep -q '✗' /tmp/e2e.log && { echo 'فشل فحصٌ من طرف إلى طرف'; exit 1; } || true
 
       - name: ميزانية الحزمة
         run: |
-          JS=$(find apps/site/dist -name '*.js' -exec cat {} + 2>/dev/null | gzip -c | wc -c || echo 0)
+          JS=$(find dist-worker -maxdepth 2 -name '*.js' -not -path 'dist-worker/app/*' -not -path 'dist-worker/admin/*' -exec cat {} + 2>/dev/null | gzip -c | wc -c || echo 0)
           echo "JavaScript المضغوط في الموقع: ${JS} بايت"
           [ "$JS" -le 61440 ] || { echo "تجاوز ميزانية 60 كيلوبايت"; exit 1; }
           for app in app admin; do
-            SZ=$(cat apps/$app/dist/assets/*.js | gzip -c | wc -c)
+            SZ=$(cat dist-worker/$app/assets/*.js | gzip -c | wc -c)
             echo "$app: ${SZ} بايت"
             [ "$SZ" -le 174080 ] || { echo "$app تجاوز 170 كيلوبايت"; exit 1; }
           done
