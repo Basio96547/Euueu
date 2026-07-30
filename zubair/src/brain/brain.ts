@@ -35,6 +35,7 @@ import { VisualCortex, type VisualPercept } from './lobes/visualCortex.js';
 import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js';
 import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
 import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
+import { Syntax } from './lobes/syntax.js';
 import {
   transduceAudio, transduceBody, transduceVision,
   type RawAudio, type RawBody, type RawFrame, type RawTouch,
@@ -117,6 +118,7 @@ export class Zubair {
   private readonly auditoryCortex = new AuditoryCortex();
   private readonly somatosensory = new Somatosensory();
   private readonly inferotemporal = new Inferotemporal();
+  private readonly syntax = new Syntax();
 
   /* آخر ما وصل من الحواسّ، ولحظة وصوله.
    *
@@ -138,6 +140,8 @@ export class Zubair {
   /** نسخة الميراث الذي وُرِثه، وصفرٌ لمن لم يورَّث شيئاً */
   private heritageVersion = 0;
   private askedWords: string[] = [];
+  /** المواضيع التي جرى الكلام عليها قريباً بجنسها — عليها تعود الضمائر */
+  private recentTopics: Array<{ stem: string; gender: string }> = [];
   private pending: PendingJudgement | null = null;
 
   private constructor(opts: Required<Pick<CreateOptions, 'name'>> & CreateOptions) {
@@ -335,6 +339,7 @@ export class Zubair {
       this.parietal, this.amygdala, this.hypothalamus, this.insula, this.cingulate,
       this.basalGanglia, this.prefrontal, this.cerebellum, this.broca,
       this.visualCortex, this.auditoryCortex, this.somatosensory, this.inferotemporal,
+      this.syntax,
     ];
     return all.map((lobe) => ({ name: lobe.name, ar: lobe.ar, role: lobe.role }));
   }
@@ -436,26 +441,74 @@ export class Zubair {
       where: this.accel.unit, ms: round2(now() - recallStarted),
     });
 
+    /* ٧٫٥ النحو: تركيب الجملة قبل الربط.
+     * يُستدعى قبل الجُداري لأن الجُداري يبني على ما يُخرجه: نوع العلاقة (جنسٌ
+     * أم صفة أم فعل)، والنفي، وما يطلبه السؤال. */
+    const parse = timed(this.syntax, 'فكّ تركيب جملتك', 'cpu', () => this.syntax.parse(percept));
+    trace.push({
+      lobe: this.syntax.name, ar: this.syntax.ar,
+      note: parse.asks !== null
+        ? `${parse.kind}: ${this.syntax.describeAsk(parse.asks)}`
+        : `${parse.kind}${parse.negated ? ' منفيّة' : ''}${parse.relation ? ` · علاقة ${parse.relation}` : ''}`,
+      where: 'cpu', ms: 0,
+    });
+
     /* ٨. الفص الجُداري: الربط والحقائق والتعميم */
     const bound = timed(this.parietal, 'ربط طرفي الجملة', 'cpu',
       () => this.parietal.bind(percept, understanding.intent));
 
+    /* النفي معرفةٌ لا تصحيح، وهذا إصلاح عطل حقيقي: «القطة ليست نبات» كانت
+     * تُقرأ «أخطأتَ» لأن «ليس» في كلمات التصحيح الفطرية، فكان الأب عاجزاً عن أن
+     * يُعلّم ابنه أن شيئاً **ليس** كذا. والفرق بيّن في النحو: تصحيحُ الأب نفيٌ
+     * بلا طرفين («لا، خطأ»)، وتعليمُ النفي نفيٌ بطرفين («القطة ليست نبات»). */
+    /* مرجع الضمير يُحسب هنا لأن التعليم يبني عليه: «هي صغيرة» بعد «القطة حيوان»
+     * تعليمٌ عن القطة لا عن ضمير. والبحث بالجنس في آخر ما تحدّثنا عنه. */
+    let resolvedSubject: string | null = null;
+    if (parse.pronoun) {
+      for (let i = this.recentTopics.length - 1; i >= 0; i--) {
+        const seen = this.recentTopics[i]!;
+        if (parse.pronoun.gender === 'مجهول' || seen.gender === parse.pronoun.gender) {
+          resolvedSubject = seen.stem;
+          break;
+        }
+      }
+    }
+
+    const teachesNegation = parse.negated && parse.topic !== null && parse.comment !== null
+      && understanding.intent !== 'PRAISE';
+
     const teaching = understanding.intent === 'TEACH_FACT'
       || understanding.intent === 'TEACH_WORD'
-      || understanding.intent === 'TEACH_NAME';
+      || understanding.intent === 'TEACH_NAME'
+      || teachesNegation;
 
-    if (teaching && bound.subject && bound.object) {
-      this.parietal.learnFact(bound.subject, bound.object, this.ticks, 'أبوه');
+    if (teachesNegation && parse.topic && parse.comment) {
+      /* النفي يُهدم به المحمول المنفيّ ولا يُبنى محمولٌ جديد: «القطة ليست نبات»
+       * تُخبرنا ما ليست، لا ما هي. */
+      this.parietal.contradict(parse.topic, parse.comment);
+      this.lessons++;
+      this.lessonsSinceSleep++;
+      trace.push({
+        lobe: this.parietal.name, ar: this.parietal.ar,
+        note: `نفى أن ${parse.topic} ${parse.comment}`, where: 'cpu', ms: 0,
+      });
+    } else if (teaching && (bound.subject ?? resolvedSubject) && (bound.object ?? parse.comment)) {
+      /* الضمير يحلّ محلّه مرجعه قبل الحفظ: «هي صغيرة» تُحفَظ «قطة ← صغيرة».
+       * وبلا هذا الإبدال يعود الضمير ثم لا يُنتفَع به، فيبقى الكلام معلّقاً. */
+      const subject = bound.subject ?? resolvedSubject!;
+      const object = bound.object ?? parse.comment!;
+      this.parietal.learnFact(subject, object, this.ticks, 'أبوه', parse.relation ?? 'جنس');
       this.lessons++;
       this.lessonsSinceSleep++;
       // ترابط هيبي: طرفا الحقيقة يتقاربان في تمثيله، فيصير «قطة» و«حيوان»
       // متجاورين في ذهنه لا رمزين منفصلين — وهذا أصل التعميم لاحقاً
-      const a = this.lexicon.idOf(bound.subject);
-      const b = this.lexicon.idOf(bound.object);
+      const a = this.lexicon.idOf(subject);
+      const b = this.lexicon.idOf(object);
       if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b);
       trace.push({
         lobe: this.parietal.name, ar: this.parietal.ar,
-        note: `حفظ: ${bound.subject} ← ${bound.object}`, where: 'cpu', ms: 0,
+        note: `حفظ: ${subject} ← ${object}${parse.relation && parse.relation !== 'جنس' ? ` (${parse.relation})` : ''}`,
+        where: 'cpu', ms: 0,
       });
     }
 
@@ -480,7 +533,16 @@ export class Zubair {
     }
 
     /* موضوع السؤال: عمّا يسألني أبي؟ أعلى كلمة انتباهاً ليست أداة استفهام. */
-    const topic = bound.subject ?? this.salientTopic(percept, gated.weights);
+    /* الضمير يعود على آخر موضوع جرى الكلام عليه — إرجاعٌ بالجنس والعدد.
+     * بلا هذا ينكسر التعليم على أكثر من دور: «القطة حيوان» ثم «هي صغيرة». */
+    if (parse.pronoun && resolvedSubject) {
+      trace.push({
+        lobe: this.syntax.name, ar: this.syntax.ar,
+        note: `«${parse.pronoun.word}» تعود على «${resolvedSubject}»`, where: 'cpu', ms: 0,
+      });
+    }
+
+    const topic = bound.subject ?? resolvedSubject ?? this.salientTopic(percept, gated.weights);
     const knownFact = topic ? this.parietal.lookup(topic) : null;
 
     /* سؤالٌ عن المشار إليه («شو هذا؟») وهو يرى شيئاً يعرفه: الجواب مما يراه لا
@@ -499,7 +561,24 @@ export class Zubair {
       }
       : null;
 
-    const fact = seenFact ?? knownFact;
+    /* مطابقة الجواب للسؤال — وهذا ما طلبه الأب صراحةً.
+     *
+     * «وين دمشق؟» يطلب مكاناً، وجوابه «مدينة» جوابُ سؤالٍ آخر. ولو أجاب به لبدا
+     * كأنه لم يسمع السؤال. فيُسأل النحوُ: أيصلح هذا الجواب لهذا السؤال؟ ويُعطى
+     * جنسُ الجواب نفسه من الجُداري («مدينة» جنسها «مكان») كي يُقاس عليه. */
+    const candidate = seenFact ?? knownFact;
+    let fact = candidate;
+    if (candidate && parse.asks !== null) {
+      const answerCategory = this.parietal.lookup(candidate.object)?.object ?? null;
+      if (!this.syntax.answerFits(parse.asks, candidate.object, answerCategory)) {
+        trace.push({
+          lobe: this.syntax.name, ar: this.syntax.ar,
+          note: `«${candidate.object}» لا يصلح جواباً لسؤال عن ${parse.asks} — فيُقرّ بجهله`,
+          where: 'cpu', ms: 0,
+        });
+        fact = null;
+      }
+    }
     const generalized = !fact && topic ? this.parietal.generalize(topic, this.lexicon) : null;
 
     /* ٩. اللوزة: هل هذا المعنى مقترن بمدح أم بخطأ في تجربتي؟ */
@@ -573,6 +652,14 @@ export class Zubair {
       intent: understanding.intent, subject: bound.subject, object: bound.object,
       replied: refined, reward: 0, tick: this.ticks,
     });
+
+    // ما تحدّثنا عنه يبقى حاضراً للضمير التالي
+    const rememberedTopic = bound.subject ?? resolvedSubject ?? parse.topic;
+    if (rememberedTopic) {
+      const form = this.syntax.classify(rememberedTopic);
+      this.recentTopics.push({ stem: rememberedTopic, gender: form.gender });
+      if (this.recentTopics.length > 6) this.recentTopics = this.recentTopics.slice(-6);
+    }
 
     this.prefrontal.push({ said: percept.raw, replied: refined, meaning: understanding.meaning, tick: this.ticks, strategy: decision.strategy });
     this.broca.learnStyle(percept.raw);
@@ -801,6 +888,7 @@ export class Zubair {
         basalGanglia: this.basalGanglia.save(),
         prefrontal: this.prefrontal.save(),
         cerebellum: this.cerebellum.save(),
+        syntax: this.syntax.save(),
         broca: this.broca.save(),
         visualCortex: this.visualCortex.save(),
         auditoryCortex: this.auditoryCortex.save(),
@@ -845,6 +933,7 @@ export class Zubair {
     this.basalGanglia.load(lobes['basalGanglia'] as never);
     this.prefrontal.load(lobes['prefrontal'] as never);
     this.cerebellum.load(lobes['cerebellum'] as never);
+    this.syntax.load(lobes['syntax'] as never);
     this.broca.load(lobes['broca'] as never);
     this.visualCortex.load(lobes['visualCortex'] as never);
     this.auditoryCortex.load(lobes['auditoryCortex'] as never);

@@ -120,6 +120,8 @@ interface FactRecord {
   main: Fact;
   /** المحمول الثاني الذي علّمه الأب مخالفاً. لا يُمحى الأول لأجله بل يتنازعان. */
   alt: Fact | null;
+  /** نوع العلاقة — جزءٌ من هوية السجل لا وصفٌ له */
+  relation: RelationKind;
 }
 
 /** ما يُكتب على جهاز الأب. أرقام ونصوص فقط: لا Float32Array ولا Map. */
@@ -131,7 +133,14 @@ export interface StoredFact {
   lastSeenTick: number;
   altObject: string | null;
   altConfidence: number;
+  /** نوع العلاقة — يُهمَل في الأدمغة المحفوظة قبل هذه الإضافة فتُقرأ «جنساً» */
+  relation?: RelationKind;
 }
+
+/** نوع العلاقة بين الطرفين. الفصل بينها هو ما يجعل معرفته تتراكم لا تتقاتل. */
+export type RelationKind = 'جنس' | 'صفة' | 'فعل' | 'ملك';
+
+export const RELATION_KINDS: readonly RelationKind[] = ['جنس', 'صفة', 'فعل', 'ملك'];
 
 export interface ParietalState {
   facts: StoredFact[];
@@ -156,6 +165,16 @@ function stripArticle(word: string): string {
  * و«قطه» مفتاحاً واحداً. لو اختلف طريق المفتاح عن طريق التعليم صارت حقيقة
  * علّمها الأب لا يجدها ابنه.
  */
+/**
+ * مفتاح السجل: الموضوع ونوع العلاقة معاً.
+ *
+ * ضمُّ العلاقة إلى المفتاح هو ما يجعل «القطة حيوان» و«القطة صغيرة» تتعايشان
+ * بدل أن تتقاتلا على موضع واحد. والفاصل محرفٌ لا يظهر في كلمة عربية فلا يلتبس.
+ */
+function recordKey(subject: string, relation: RelationKind): string {
+  return `${subject}\u0000${relation}`;
+}
+
 function factKey(word: string): string {
   if (typeof word !== 'string') return '';
   return stripArticle(tokenize(word)[0] ?? '');
@@ -284,7 +303,15 @@ export class Parietal implements Lobe<ParietalState> {
    * فنُعيد وصفاً عابراً بثقة صفر ولا نُخزّنه: الرمي هنا يعني إسقاط النبضة كلها،
    * وتخزينه يعني حقيقة بمفتاح فارغ تظهر في عدّاد ما يعرفه الأب زوراً.
    */
-  learnFact(subject: string, object: string, tick: number, taughtBy: string): Fact {
+  /**
+   * حفظ علاقة بين طرفين.
+   *
+   * ونوع العلاقة جزءٌ من المفتاح لا وصفٌ زائد، وهذا إصلاح عطل حقيقي: كانت
+   * «القطة حيوان» و«القطة صغيرة» تتنازعان موضعاً واحداً فتهدم الثانية الأولى،
+   * فيخسر زبير معرفةً كلما زاده أبوه معرفة. وهما جوابان لسؤالين مختلفين
+   * («ما القطة؟» و«كيف القطة؟») فحقّهما موضعان.
+   */
+  learnFact(subject: string, object: string, tick: number, taughtBy: string, relation: RelationKind = 'جنس'): Fact {
     const s = factKey(subject);
     const o = factKey(object);
     const at = Number.isFinite(tick) ? tick : 0;
@@ -294,10 +321,11 @@ export class Parietal implements Lobe<ParietalState> {
       return { subject: s, object: o, confidence: 0, taughtBy: by, lastSeenTick: at };
     }
 
-    const record = this.records.get(s);
+    const key = recordKey(s, relation);
+    const record = this.records.get(key);
     if (!record) {
       const main: Fact = { subject: s, object: o, confidence: INITIAL_CONFIDENCE, taughtBy: by, lastSeenTick: at };
-      this.records.set(s, { main, alt: null });
+      this.records.set(key, { main, alt: null, relation });
       this.view = null;
       return main;
     }
@@ -325,9 +353,20 @@ export class Parietal implements Lobe<ParietalState> {
 
   /** ما يعرفه عن هذا الموضوع الآن، أو `null`. المفتاح يُطبَّع كما يُطبَّع في
    *  التعليم، فيجد «القطه» ما تعلّمه من «القطة». */
-  lookup(subject: string): Fact | null {
-    const record = this.records.get(factKey(subject));
+  lookup(subject: string, relation: RelationKind = 'جنس'): Fact | null {
+    const record = this.records.get(recordKey(factKey(subject), relation));
     return record ? record.main : null;
+  }
+
+  /** كل ما يعرفه عن موضوع واحد بأنواع علاقاته — «القطة حيوان وصغيرة وتأكل». */
+  lookupAll(subject: string): Array<{ relation: RelationKind; fact: Fact }> {
+    const s = factKey(subject);
+    const out: Array<{ relation: RelationKind; fact: Fact }> = [];
+    for (const relation of RELATION_KINDS) {
+      const record = this.records.get(recordKey(s, relation));
+      if (record) out.push({ relation, fact: record.main });
+    }
+    return out;
   }
 
   /**
@@ -337,18 +376,24 @@ export class Parietal implements Lobe<ParietalState> {
    * كلها. وإن كان تحت المكذَّب بديلٌ أقوى منه بعد الهدم انتقلت الغلبة إليه —
    * وهذا تحديداً كيف يُصحّح الطفل معرفته: لا بكلمة واحدة، ولا بلا نهاية.
    */
-  contradict(subject: string, wrongObject: string): void {
+  contradict(subject: string, wrongObject: string, relation?: RelationKind): void {
     const s = factKey(subject);
     const o = factKey(wrongObject);
     if (s.length === 0 || o.length === 0) return;
-    const record = this.records.get(s);
+    // بلا علاقة محدّدة: يُكذَّب المحمول أينما وُجد — الأب ينفي معنىً لا موضعاً
+    if (!relation) {
+      for (const kind of RELATION_KINDS) this.contradict(subject, wrongObject, kind);
+      return;
+    }
+    const record = this.records.get(recordKey(s, relation));
     if (!record) return;
 
     if (record.main.object === o) record.main.confidence *= CONTRADICT_FACTOR;
     else if (record.alt && record.alt.object === o) record.alt.confidence *= CONTRADICT_FACTOR;
     else return; // تكذيب محمول لم يقله زبير لا يهدم ما قاله
 
-    this.settle(s, record);
+    // المفتاح الكامل لا الموضوع وحده: بغيره تهوي الثقة ولا تُحذف الحقيقة أبداً
+    this.settle(recordKey(s, relation), record);
   }
 
   /** الحقائق الغالبة. الكائنات حيّة لا نسخاً — كما `Lexicon.words()` — فلا
@@ -371,13 +416,16 @@ export class Parietal implements Lobe<ParietalState> {
     const s = factKey(subject);
     if (s.length === 0 || this.records.size === 0) return null;
     // ما يعرفه لا يُخمَّن: الحقيقة الصريحة أصدق من أقرب شبيه بها
-    if (this.records.has(s)) return null;
+    if (this.records.has(recordKey(s, 'جنس'))) return null;
 
     const query = this.wordVector(s, lexicon, this.queryVec);
     let best: Fact | null = null;
     let bestSimilarity = -Infinity;
     let runnerUp = -Infinity;
     for (const record of this.records.values()) {
+      // التعميم على الجنس وحده: الصفة لا تُنقَل بالشبه («قطة صغيرة» لا تعني
+      // أن كل ما يشبه القطة صغير)، والفعل كذلك
+      if ((record.relation ?? 'جنس') !== 'جنس') continue;
       const candidate = this.wordVector(record.main.subject, lexicon, this.candidateVec);
       const similarity = cosine(query, candidate);
       if (!Number.isFinite(similarity)) continue;
@@ -471,6 +519,7 @@ export class Parietal implements Lobe<ParietalState> {
         lastSeenTick: record.main.lastSeenTick,
         altObject: record.alt ? record.alt.object : null,
         altConfidence: record.alt ? record.alt.confidence : 0,
+        relation: record.relation,
       });
     }
     return { facts };
@@ -506,7 +555,12 @@ export class Parietal implements Lobe<ParietalState> {
           // عطب، ونأخذ الأدنى منهما احتراساً بدل أن نقلب معرفته باستعادة
           ? { subject: s, object: altObject, confidence: Math.min(altConfidence, confidence), taughtBy: main.taughtBy, lastSeenTick: main.lastSeenTick }
           : null;
-        restored.set(s, { main, alt });
+        /* نوع العلاقة اختياري في الملف: دماغ حُفظ قبل هذه الإضافة تُقرأ
+         * حقائقه كلها «جنساً»، وهو ما كانت عليه فعلاً حين حُفظت. */
+        const relation: RelationKind = RELATION_KINDS.includes(raw.relation as RelationKind)
+          ? (raw.relation as RelationKind)
+          : 'جنس';
+        restored.set(recordKey(s, relation), { main, alt, relation });
       }
       this.records = restored;
       this.view = null;
