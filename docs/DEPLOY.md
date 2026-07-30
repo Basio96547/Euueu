@@ -30,7 +30,7 @@ npx wrangler deploy       # أو ادفع إلى main فيتولّى deploy.yml 
 ```jsonc
 "d1_databases": [
   { "binding": "DB", "database_name": "talisham",
-    "database_id": "…", "migrations_dir": "apps/api/prisma/migrations" }
+    "database_id": "…", "migrations_dir": "apps/api/migrations" }
 ]
 ```
 
@@ -55,7 +55,8 @@ pnpm run db:seed:remote        # مرة واحدة عند الإطلاق
 # 1) عدّل prisma/schema.prisma
 # 2) ولّد الترحيل واحقن فيه القيود والمحفِّزات
 cd apps/api && pnpm run migration:new
-# 3) سمِّ ملف الترحيل بتاريخه وضعه في مجلده تحت prisma/migrations/
+# 3) سمِّ الناتج برقمه التالي: migrations/0002_<وصف>.sql
+#    (wrangler يقرأ ملفات مسطّحة مرقّمة، لا مجلدات Prisma)
 ```
 
 الحقن خطوة صريحة لأن SQLite لا يقبل إضافة `CHECK` إلى جدول قائم: القيد

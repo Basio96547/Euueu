@@ -19,7 +19,7 @@
       "binding": "DB",
       "database_name": "talisham",
       "database_id": "d46eb676-f8fd-4f1e-9bca-894d500d4c93",
-      "migrations_dir": "apps/api/prisma/migrations"
+      "migrations_dir": "apps/api/migrations"
     }
   ],
 

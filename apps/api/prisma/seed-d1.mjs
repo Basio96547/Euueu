@@ -45,7 +45,7 @@ const out = [];
 const now = new Date().toISOString();
 /* أعمدة كل جدول تُقرأ من الترحيل نفسه: عمودٌ يختفي من المخطَّط يجب أن
    يُوقف البذر بخطأ صريح لا أن يمرّ صامتاً ثم يفشل في القاعدة. */
-const migration = readFileSync(new URL('./migrations/20260730000000_d1_init/migration.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../migrations/0001_d1_init.sql', import.meta.url), 'utf8');
 const TABLE_COLS = new Map();
 for (const m of migration.matchAll(/CREATE TABLE "(\w+)" \(([\s\S]*?)\n\);/g)) {
   TABLE_COLS.set(m[1], new Set([...m[2].matchAll(/^\s+"(\w+)"/gm)].map((x) => x[1])));
