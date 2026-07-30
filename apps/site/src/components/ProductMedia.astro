@@ -7,6 +7,7 @@
  * بنسبة 4:5 — فلا يقفز التخطيط يوم تصل الصور.
  */
 import { artKind, brandHue, bodyColor, isLight, shape, nextArtId } from '../lib/artwork';
+import BrandMark from './BrandMark.astro';
 
 interface Props {
   brand: string;
@@ -68,7 +69,11 @@ const id = nextArtId(kind);
     </svg>
   )}
 
-  {brandName && <span class="pm__brand">{brandName}</span>}
+  {brandName && (
+    <span class="pm__brand">
+      <BrandMark slug={brand} name={brandName} size="sm" />
+    </span>
+  )}
   <slot />
 </div>
 
@@ -106,11 +111,14 @@ const id = nextArtId(kind);
   }
 
   /* اسم العلامة لاتينيّ عمداً: هكذا تُطبع على الأجهزة نفسها */
+  /* كان النصّ عند 2.06:1 من التباين — دون نصف الحدّ الأدنى، وهو معلومةُ
+     شراءٍ لا زخرفة. الآن يجلس على لوحٍ صغير من سطح الرفّ فيُقرأ. */
   .pm__brand {
-    position: absolute; inset-block-end: 7px; inset-inline-start: 9px;
-    font-size: 0.6rem; font-weight: var(--w-strong); letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--ink-2); opacity: 0.5;
-    font-family: var(--font-mono);
+    position: absolute; inset-block-end: 6px; inset-inline-start: 7px;
+    display: inline-flex; align-items: center;
+    padding: 3px 7px; border-radius: var(--r-xs);
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    border: 1px solid color-mix(in srgb, var(--lip) 30%, transparent);
   }
 
   /* البطاقة تكبّر الجهاز قليلاً عند اللمس — إشارةٌ بأن الصورة قابلة للفتح */

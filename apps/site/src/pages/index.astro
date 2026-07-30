@@ -13,6 +13,7 @@
 import Base from '../layouts/Base.astro';
 import Header from '../components/Header.astro';
 import ProductCard from '../components/ProductCard.astro';
+import BrandMark from '../components/BrandMark.astro';
 import { products, productsInCategory, brandList, currentFx } from '../lib/catalog';
 
 const newest = products.filter((p) => p.category !== 'power' && p.category !== 'power-banks').slice(0, 4);
@@ -149,7 +150,7 @@ const pillars = [
       <div class="brands">
         {brandList.map((b) => (
           <a class="brand-tile" href={`/b/${b.slug}/`}>
-            <span class="lat">{b.name.en ?? b.name.ar}</span>
+            <BrandMark slug={b.slug} name={b.name.en ?? b.name.ar} size="md" />
             <span class="ar">{b.name.ar}</span>
           </a>
         ))}
@@ -213,15 +214,18 @@ const pillars = [
 
   /* ————— العلامات ————— */
   .brands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  /* بلاطةُ العلامة نيّةٌ في الرفّ: الشعار يقف فيها، والاسم العربي تحته.
+     والارتفاع محجوزٌ للشعار حتى لا تقفز الشبكة يوم تصل الملفات الرسمية. */
   .brand-tile {
-    display: grid; gap: 1px; place-items: center; text-align: center;
-    padding: 12px 4px; border-radius: var(--r-m);
-    background: var(--surface); border: 1px solid var(--line);
+    display: grid; gap: 7px; place-items: center; text-align: center;
+    grid-template-rows: 22px auto;
+    padding: 13px 6px; border-radius: var(--r-m);
+    background: var(--shelf);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lip) 34%, transparent);
+    transition: transform var(--dur-tap) var(--ease-state);
   }
-  .brand-tile .lat {
-    font-family: var(--font-mono); font-size: 0.62rem; font-weight: var(--w-strong);
-    letter-spacing: 0.08em; text-transform: uppercase; color: var(--brass);
-  }
+  .brand-tile:active { transform: scale(0.97); }
+  .brand-tile :global(.bm) { align-self: center; }
   .brand-tile .ar { font-size: var(--step--2); color: var(--ink-2); font-weight: var(--w-strong); }
 
   /* ————— لافتة المساعدة ————— */

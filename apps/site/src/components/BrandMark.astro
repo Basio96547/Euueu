@@ -1,0 +1,84 @@
+---
+/**
+ * علامة الشركة المصنِّعة.
+ *
+ * الشعار الرسميّ ملفٌّ يملكه صاحبه، ويُؤخذ من حزمة الصحافة الخاصة بكل
+ * علامة. ولن أرسمه من الذاكرة: شعارٌ تقريبيّ مشوَّهُ النسب يُسيء إلى
+ * العلامة وإلى المتجر معاً، ويقول للزبون إن هذا المحلّ لا يدقّق.
+ *
+ * فالمكوّن يلتقط الملفّ الرسميّ فور وضعه في `public/brands/<slug>.svg`،
+ * وحتى ذلك يعرض اسم العلامة مضبوطاً حرفياً — وهو ما تفعله أغلب هذه
+ * العلامات أصلاً: سامسونغ ونوكيا وريلمي وإنفينيكس وتكنو شعاراتُها
+ * كلماتٌ لا رسوم.
+ *
+ * والكشف وقت البناء لا وقت الطلب: الصفحة ساكنة، وسؤالُ القرص مرّةً عند
+ * البناء أرخص من محاولةِ تحميلٍ تفشل في متصفّح كل زائر.
+ */
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+interface Props {
+  /** رمز العلامة كما في الكتالوج: apple · samsung … */
+  slug: string;
+  /** الاسم اللاتينيّ كما يُطبع على الجهاز */
+  name: string;
+  /** حجم العلامة: في البطاقة صغيرة، وفي صفحة العلامة كبيرة */
+  size?: 'sm' | 'md' | 'lg';
+  class?: string;
+}
+
+const { slug, name, size = 'sm', class: cls = '' } = Astro.props;
+
+const rel = `brands/${slug}.svg`;
+const onDisk = fileURLToPath(new URL(`../../public/${rel}`, import.meta.url));
+const official = existsSync(onDisk);
+---
+
+{official ? (
+  <img
+    class={`bm bm--${size} bm--file ${cls}`}
+    src={`/${rel}`}
+    alt={name}
+    loading="lazy"
+    decoding="async"
+    width="120"
+    height="32"
+  />
+) : (
+  /* لاتينيّ عمداً: هكذا تُطبَع العلامة على ظهر الجهاز نفسه، فيتعرّف
+     عليها الزبون بالشكل الذي يعرفه لا بترجمةٍ لا يراها في يده. */
+  <span class={`bm bm--${size} bm--word ${cls}`} dir="ltr">{name}</span>
+)}
+
+<style>
+  .bm { display: inline-block; max-inline-size: 100%; }
+
+  .bm--word {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    font-weight: var(--w-strong);
+    color: var(--ink-2);
+    /* تباعدٌ موجب هنا مسموح: النصّ لاتينيّ محض لا يُوصَل بين حروفه */
+    letter-spacing: 0.13em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .bm--file {
+    inline-size: auto;
+    object-fit: contain;
+    object-position: right center;
+    /* الشعارات تصل بألوانها، وبعضها أبيضُ لا يُرى على ورقٍ فاتح.
+       فتُعرض كما هي نهاراً، وتُقلب ليلاً إن كانت داكنة صرفاً. */
+  }
+
+  .bm--sm { block-size: 13px; font-size: 0.66rem; }
+  .bm--md { block-size: 20px; font-size: 0.86rem; }
+  .bm--lg { block-size: 30px; font-size: 1.2rem; }
+
+  /* الشعار الملفّ يُخفَّف قليلاً حتى لا ينافس البضاعة نفسها */
+  .bm--file { opacity: 0.86; }
+  @media (prefers-color-scheme: dark) {
+    .bm--file { opacity: 0.92; }
+  }
+</style>
