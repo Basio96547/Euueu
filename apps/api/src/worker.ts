@@ -89,14 +89,23 @@ async function spa(env: Env, request: Request, base: '/app' | '/admin'): Promise
  * واحدة كانت تكفي لقراءتها كلها. و`frame-ancestors` تمنع أن تُوضع صفحة
  * الدفع داخل إطارٍ في موقعٍ آخر فيُنقر نيابةً عن الزبون.
  *
- * السياسة تسمح بالمضمَّن (`unsafe-inline`) لأن الموقع مبنيّ عليه: بلا
- * ذلك تتعطّل الأسعار وتبديل العملة والبحث. وهي أضعف مما نريد، وتُشدَّد
- * يوم تُنقل تلك النصوص إلى ملفات ببصمات.
+ * وكانت تسمح بالمضمَّن (`script-src 'unsafe-inline'`) لأن الموقع مبنيّ
+ * عليه. وذلك يُبطل الحماية من الحقن أصلاً: ثغرتان وُجدتا في هذا المستودع
+ * — انفلاتٌ من وسم البيانات المنظَّمة، وآخرُ من `define:vars` في المقارنة
+ * — كانت السياسة ستمنع استغلالهما معاً لولا هذا الاستثناء. فسُدّتا
+ * واحدةً واحدة، وبقي البابُ الذي جعلهما قابلتَين للاستغلال مفتوحاً.
+ *
+ * فصار لكل ردٍّ رقمٌ عشوائي يُوسَم به كل نصٍّ مضمَّن وقت الخروج، وتُذكر
+ * السياسةُ إياه. والنصّ الذي يحقنه مهاجم لا رقم له فلا يعمل — ولا يستطيع
+ * تخمينه لأنه يتبدّل مع كل طلب.
+ *
+ * ويبقى `style-src 'unsafe-inline'`: الأنماط المضمَّنة لا تُنفِّذ شيفرة،
+ * وAstro يُخرجها في سمات `style` التي لا تقبل رقماً.
  */
 const SEC_HEADERS: Record<string, string> = {
   'content-security-policy': [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'nonce-{NONCE}'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
@@ -114,10 +123,29 @@ const SEC_HEADERS: Record<string, string> = {
   'cross-origin-opener-policy': 'same-origin',
 };
 
-function harden(res: Response): Response {
+function harden(res: Response, nonce: string): Response {
   const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(SEC_HEADERS)) out.headers.set(k, v);
+  for (const [k, v] of Object.entries(SEC_HEADERS)) {
+    out.headers.set(k, v.replace('{NONCE}', nonce));
+  }
   return out;
+}
+
+/**
+ * وسمُ كل نصٍّ مضمَّن برقم هذا الردّ.
+ *
+ * يُطبَّق على كل HTML بلا استثناء: صفحةٌ واحدة تفلت منه تخرج بسياسةٍ تذكر
+ * رقماً ولا تحمله، فتتعطّل نصوصُها كلها. ولذلك يمرّ من هنا مُنتِجا HTML
+ * كلاهما — الموقع الساكن وصفحتا التطبيقَين.
+ *
+ * والوسم على `<script>` دون تمييز: ذو المصدر يمرّ بـ`'self'` أصلاً، وزيادة
+ * الرقم عليه لا تضرّ. أمّا `application/ld+json` فليس نصّاً يُنفَّذ، ووسمُه
+ * لا يعني شيئاً — ولا يضرّ كذلك.
+ */
+function withNonce(res: Response, nonce: string): Response {
+  return new HTMLRewriter()
+    .on('script', { element(el) { el.setAttribute('nonce', nonce); } })
+    .transform(res);
 }
 
 interface Fx { rate: number; validUntil: string; safetyMarginBp: number }
@@ -239,7 +267,7 @@ async function ensureSecret(env: Env): Promise<boolean> {
 }
 
 /** التوجيه — يُلفّ بالرؤوس الأمنية قبل أن يخرج */
-async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function route(request: Request, env: Env, ctx: ExecutionContext, nonce: string): Promise<Response> {
     const path = new URL(request.url).pathname;
 
     if (path.startsWith('/api/v1')) {
@@ -306,8 +334,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       });
     }
 
-    if (path === '/app' || path.startsWith('/app/')) return spa(env, request, '/app');
-    if (path === '/admin' || path.startsWith('/admin/')) return spa(env, request, '/admin');
+    if (path === '/app' || path.startsWith('/app/')) {
+      return withNonce(await spa(env, request, '/app'), nonce);
+    }
+    if (path === '/admin' || path.startsWith('/admin/')) {
+      return withNonce(await spa(env, request, '/admin'), nonce);
+    }
 
     const res = await env.ASSETS.fetch(request);
     /* الحقن على صفحات HTML وحدها: ملفّ CSS أو صورة لا وسمَ فيه، وتمريرها
@@ -317,9 +349,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
        يتحقّق أبداً — وهو عطلٌ صامت لا يظهر إلا بقياس ما يخرج فعلاً. */
     const leaf = path.split('/').pop() ?? '';
     const isHtml = leaf === '' || leaf.endsWith('.html') || !leaf.includes('.');
-    if (env.DB && res.ok && isHtml) {
-      const fx = await liveFx(env);
-      if (fx) return injectFx(res, fx);
+    if (isHtml && res.ok) {
+      const fx = env.DB ? await liveFx(env) : null;
+      /* الوسم يقع حتى حين يتعذّر السعر: السياسة تذكر رقماً في كل ردّ،
+         فصفحةٌ تخرج بلا وسمٍ تتعطّل نصوصُها كلها. */
+      return withNonce(fx ? injectFx(res, fx) : res, nonce);
     }
     return res;
 }
@@ -328,7 +362,10 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     /* الرؤوس على كل خارج بلا استثناء: استثناءٌ واحد يعني مساراً بلا
        حماية، وهو المسار الذي سيُجرَّب. */
-    return harden(await route(request, env, ctx));
+    /* رقمٌ لكل ردّ: ثابتُه يُخمَّن مرةً فيُفتح الباب دائماً. و`randomUUID`
+       مولَّدٌ آمنٌ تشفيرياً في workerd — لا `Math.random`. */
+    const nonce = crypto.randomUUID().replace(/-/g, '');
+    return harden(await route(request, env, ctx, nonce), nonce);
   },
 
   /**
