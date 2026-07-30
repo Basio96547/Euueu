@@ -67,6 +67,57 @@ async function spa(env: Env, request: Request, base: '/app' | '/admin'): Promise
   });
 }
 
+
+/**
+ * حقن سعر الصرف الساري في الصفحة الساكنة.
+ *
+ * الصفحات تُبنى مرةً وتُخدَم آلاف المرات، وسعر الصرف يتحرّك يومياً. وبلا
+ * هذا الحقن يعني تغييرُ السعر من اللوحة إعادةَ بناءِ ونشرِ الموقع كلّه —
+ * فيؤجَّل، فتُعرض أسعارٌ بسعرِ أمس، ويصل الزبون إلى الباب برقمٍ غير الذي
+ * رآه. وهذا ما لا يُغتفر في متجرٍ يُدفَع فيه نقداً عند التسليم.
+ *
+ * القراءة من KV بمهلة دقيقة: صفحةٌ واحدة لا تستحقّ استعلامَ قاعدةٍ لكل
+ * زائر، ودقيقةُ تأخيرٍ في سعرٍ يتغيّر مرةً أو مرتين في اليوم لا تُرى.
+ * وفشلُ القراءة لا يُسقط الصفحة: يبقى سعر وقت البناء كما هو.
+ */
+interface Fx { rate: number; validUntil: string; safetyMarginBp: number }
+
+async function liveFx(env: Env): Promise<Fx | null> {
+  try {
+    const cached = await env.KV?.get('fx:edge');
+    if (cached) return JSON.parse(cached) as Fx;
+
+    const row: any = await (env.DB as any)
+      ?.prepare('SELECT rate, valid_until, safety_margin_bp FROM fx_rates ORDER BY effective_from DESC LIMIT 1')
+      .first();
+    if (!row) return null;
+
+    const fx: Fx = {
+      rate: Number(row.rate),
+      validUntil: String(row.valid_until),
+      safetyMarginBp: Number(row.safety_margin_bp ?? 300),
+    };
+    await env.KV?.put('fx:edge', JSON.stringify(fx), { expirationTtl: 60 });
+    return fx;
+  } catch (e) {
+    /* الصمت هنا مقصود في الإنتاج — الصفحة تُخدَم بسعر البناء ولا تسقط —
+       لكن السبب يُسجَّل، وإلا صار العطل غيرَ قابلٍ للتشخيص أصلاً. */
+    console.error('[fx-edge]', e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+/** يستبدل محتوى وسم fx-boot وحده — لا يمسّ بقية الصفحة */
+function injectFx(res: Response, fx: Fx): Response {
+  return new HTMLRewriter()
+    .on('script#fx-boot', {
+      element(el) {
+        el.setInnerContent(`window.__FX__=${JSON.stringify(fx)};`, { html: true });
+      },
+    })
+    .transform(res);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
@@ -135,7 +186,19 @@ export default {
     if (path === '/app' || path.startsWith('/app/')) return spa(env, request, '/app');
     if (path === '/admin' || path.startsWith('/admin/')) return spa(env, request, '/admin');
 
-    return env.ASSETS.fetch(request);
+    const res = await env.ASSETS.fetch(request);
+    /* الحقن على صفحات HTML وحدها: ملفّ CSS أو صورة لا وسمَ فيه، وتمريرها
+       عبر المحوّل كلفةٌ بلا أثر.
+       والفصل بالمسار لا بترويسة النوع: خدمة الأصول تضع `content-type`
+       بعد أن يعود الـWorker، فالترويسة فارغةٌ هنا وشرطٌ يعتمد عليها لا
+       يتحقّق أبداً — وهو عطلٌ صامت لا يظهر إلا بقياس ما يخرج فعلاً. */
+    const leaf = path.split('/').pop() ?? '';
+    const isHtml = leaf === '' || leaf.endsWith('.html') || !leaf.includes('.');
+    if (env.DB && res.ok && isHtml) {
+      const fx = await liveFx(env);
+      if (fx) return injectFx(res, fx);
+    }
+    return res;
   },
 
   /**

@@ -75,8 +75,12 @@ const ld = graph(base, [organizationLd(base), websiteLd(base), ...schema]);
       سعر الصرف يُحقن هنا وقت الطلب من الحافة (الفصل 7 §7.11).
       الصفحة الساكنة تحمل الدولار، والليرة تُحسب في العميل —
       فلا يُعاد بناء آلاف الصفحات لتغيّر رقم واحد.
+
+      وما هنا قيمةُ وقت البناء: احتياطٌ يعمل إن قُرئ الملف مباشرة أو
+      عُطّل الحقن. والـWorker يستبدل محتوى هذا الوسم بالسعر الساري —
+      ولذلك له مُعرِّف: بلا مِعلَمٍ يُميّزه لا سبيل إلى إيجاده في HTML.
     -->
-    <script is:inline set:html={`window.__FX__=${JSON.stringify(fx)};`} />
+    <script id="fx-boot" is:inline set:html={`window.__FX__=${JSON.stringify(fx)};`} />
   </head>
 
   <body>
