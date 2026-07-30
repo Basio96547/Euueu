@@ -29,10 +29,14 @@
     { "binding": "KV", "id": "d1f087f3301147dd89763f412b01b30b" }
   ],
 
-  // صور المنتجات — تُخدَم من /media/* على الأصل نفسه
-  "r2_buckets": [
-    { "binding": "MEDIA", "bucket_name": "talisham-media" }
-  ],
+  // صور المنتجات — تُخدَم من /media/* على الأصل نفسه.
+  // الحاوية `talisham-media` مُنشأة وجاهزة، والربط معطَّل حتى ينال مفتاح
+  // النشر صلاحية R2: wrangler يتحقّق من كل ربط عند النشر، فربطٌ بلا
+  // صلاحية يُسقط النشرة كاملةً. والشيفرة تحتمل غيابه وتقول سببه:
+  // رفع صورة بلا ربط يردّ MEDIA_BUCKET_MISSING لا خطأً غامضاً.
+  // "r2_buckets": [
+  //   { "binding": "MEDIA", "bucket_name": "talisham-media" }
+  // ],
 
   "assets": {
     "directory": "./dist-worker",
