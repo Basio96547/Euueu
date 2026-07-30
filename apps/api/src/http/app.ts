@@ -114,9 +114,27 @@ export function buildDeps(db: D1Binding, media?: R2Binding): Deps {
 export function createApp(deps: Deps, env: Record<string, unknown> = {}) {
   const app = new Hono<Ctx>();
 
+  /*
+    كان يعكس أيَّ أصلٍ طالب مع `credentials: true` — أي أن أيّ موقعٍ يزوره
+    الزبون يستطيع مناداة كل مسارات المتجر برمزه. وهي صيغةٌ يرفضها
+    المتصفح نفسه لو كانت `*`، فالانعكاس التفافٌ عليها لا حلٌّ لها.
+
+    والحقيقة أن الموقع والتطبيقين والواجهة على أصلٍ واحد منذ توحيد
+    الـWorker، فالـCORS غير محتاجٍ إليه أصلاً. يبقى لأدوات التطوير
+    المحلية ولنطاق الموقع المعلن وحدهما.
+  */
+  const siteOrigin = typeof env.PUBLIC_SITE_URL === 'string'
+    ? env.PUBLIC_SITE_URL.replace(/\/$/, '') : 'https://talisham.com';
+  const allowed = new Set([
+    siteOrigin,
+    siteOrigin.replace('https://', 'https://www.'),
+    'http://localhost:4321', 'http://127.0.0.1:4321',
+    'http://localhost:8787', 'http://127.0.0.1:8787',
+  ]);
+
   app.use('*', cors({
-    origin: (o) => o ?? '*',
-    credentials: true,
+    origin: (o) => (o && allowed.has(o) ? o : siteOrigin),
+    credentials: false,
     allowHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     exposeHeaders: ['RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset', 'Retry-After'],

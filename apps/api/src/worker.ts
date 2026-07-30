@@ -3,6 +3,7 @@ import { useCloudflareKv, type CfKvNamespace } from './common/kv.js';
 import type { D1Binding } from './common/prisma.service.js';
 import type { R2Binding } from './modules/storage.js';
 import { BootstrapService } from './modules/bootstrap.module.js';
+import { secretIsDefault } from './common/jwt.js';
 
 /**
  * تالي شام — Worker واحد يخدم كل شيء.
@@ -80,6 +81,46 @@ async function spa(env: Env, request: Request, base: '/app' | '/admin'): Promise
  * زائر، ودقيقةُ تأخيرٍ في سعرٍ يتغيّر مرةً أو مرتين في اليوم لا تُرى.
  * وفشلُ القراءة لا يُسقط الصفحة: يبقى سعر وقت البناء كما هو.
  */
+
+/**
+ * رؤوس الأمان.
+ *
+ * لم يكن على الموقع رأسٌ واحد منها. والموقع يحقن سعر الصرف بنصٍّ مضمَّن
+ * ويحمل نصوصاً مضمَّنة أخرى، ورموز الدخول في تخزين المتصفح — فثغرةُ حقن
+ * واحدة كانت تكفي لقراءتها كلها. و`frame-ancestors` تمنع أن تُوضع صفحة
+ * الدفع داخل إطارٍ في موقعٍ آخر فيُنقر نيابةً عن الزبون.
+ *
+ * السياسة تسمح بالمضمَّن (`unsafe-inline`) لأن الموقع مبنيّ عليه: بلا
+ * ذلك تتعطّل الأسعار وتبديل العملة والبحث. وهي أضعف مما نريد، وتُشدَّد
+ * يوم تُنقل تلك النصوص إلى ملفات ببصمات.
+ */
+const SEC_HEADERS: Record<string, string> = {
+  'content-security-policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    'upgrade-insecure-requests',
+  ].join('; '),
+  'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), interest-cohort=()',
+  'cross-origin-opener-policy': 'same-origin',
+};
+
+function harden(res: Response): Response {
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(SEC_HEADERS)) out.headers.set(k, v);
+  return out;
+}
+
 interface Fx { rate: number; validUntil: string; safetyMarginBp: number }
 
 async function liveFx(env: Env): Promise<Fx | null> {
@@ -118,11 +159,30 @@ function injectFx(res: Response, fx: Fx): Response {
     .transform(res);
 }
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+/** التوجيه — يُلفّ بالرؤوس الأمنية قبل أن يخرج */
+async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
 
     if (path.startsWith('/api/v1')) {
+      /*
+        بلا سرّ توقيع في الإنتاج تُوقَّع الرموز بمفتاحٍ مكتوب في مستودعٍ
+        عام — أي أن من يقرؤه يصنع لنفسه رمز مدير. والوقوف هنا أهون من
+        متجرٍ يعمل وهو مفتوح: العطل الظاهر يُصلَح، والمفتوح لا يُكتشف
+        إلا يوم يُستغلّ. والرسالة تقول الأمر الذي يُغلقه بالضبط.
+      */
+      if (secretIsDefault && env.NODE_ENV === 'production') {
+        return Response.json({
+          error: {
+            code: 'JWT_SECRET_MISSING',
+            message: {
+              ar: 'سرّ توقيع الجلسات غير مضبوط على هذا الـWorker. '
+                + 'اضبطه ثم أعد المحاولة: npx wrangler secret put JWT_SECRET',
+              en: 'JWT_SECRET is not configured on this Worker',
+            },
+          },
+        }, { status: 503 });
+      }
+
       if (!env.DB) {
         /* الصمت هنا خطر: بلا قاعدة تعمل الواجهة كأنها موجودة وتفشل
            فشلاً غامضاً في كل شاشة. الرسالة تقول ما ينقص بالضبط. */
@@ -199,6 +259,13 @@ export default {
       if (fx) return injectFx(res, fx);
     }
     return res;
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    /* الرؤوس على كل خارج بلا استثناء: استثناءٌ واحد يعني مساراً بلا
+       حماية، وهو المسار الذي سيُجرَّب. */
+    return harden(await route(request, env, ctx));
   },
 
   /**

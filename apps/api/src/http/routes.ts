@@ -111,7 +111,14 @@ export function registerRoutes(app: Hono<Ctx>, d: Deps, env: Record<string, unkn
     ));
   });
   app.get(`${P}/orders/mine`, any(), async (c) => ok(c, await d.orders.mine(sub(c)!)));
-  app.get(`${P}/orders/:orderNo`, async (c) => ok(c, await d.orders.byNo(c.req.param('orderNo'))));
+  /*
+    كان مفتوحاً بلا مصادقة ويُعيد اسم المستلم وهاتفه وحيّه ومعلمه، ورقم
+    الطلب متسلسل يُخمَّن. الآن يلزم إثباتُ صلة: صاحبُ الحساب يُعرَف برمزه،
+    والضيف بآخر أربعة أرقام من هاتفه — وهو الإثبات نفسه الذي يستعمله
+    مسار التتبّع أصلاً.
+  */
+  app.get(`${P}/orders/:orderNo`, guest(), async (c) =>
+    ok(c, await d.orders.byNo(c.req.param('orderNo'), sub(c), c.req.query('tail'))));
   app.get(`${P}/orders/:orderNo/track/:tail`, async (c) =>
     ok(c, await d.orders.track(c.req.param('orderNo'), c.req.param('tail'))));
 
@@ -148,12 +155,18 @@ export function registerRoutes(app: Hono<Ctx>, d: Deps, env: Record<string, unkn
   app.get(`${P}/warranties/verify`, async (c) => ok(c, await d.warranty.verify(c.req.query('imei') ?? '')));
   app.post(`${P}/warranties/activate/:orderNo`, staff(), async (c) =>
     ok(c, await d.warranty.activateForOrder(c.req.param('orderNo'))));
-  app.post(`${P}/me/warranty-claims`, async (c) => {
+  /*
+    الهوية من الرمز لا من معامل استعلام.
+    كان `GET /me/warranty-claims?phone=` يقرأ الرقم مما يكتبه الطالب،
+    فيُعيد وصف عطل كل زبون واسم جهازه لمن خمّن رقمه — وأرقام سوريا مدى
+    محدود يُعدّ عدّاً. و`me` تعني «أنا»، وأنا يعرفها الرمز وحده.
+  */
+  app.post(`${P}/me/warranty-claims`, any(), async (c) => {
     const b = await body(c);
-    return ok(c, await d.warranty.openClaim(b.imei, b.description, b.phone));
+    return ok(c, await d.warranty.openClaimFor(sub(c)!, b.imei, b.description));
   });
-  app.get(`${P}/me/warranty-claims`, async (c) =>
-    ok(c, await d.warranty.myClaims(c.req.query('phone') ?? '')));
+  app.get(`${P}/me/warranty-claims`, any(), async (c) =>
+    ok(c, await d.warranty.myClaimsFor(sub(c)!)));
 
   /* ————————————————— المرتجعات ————————————————— */
 

@@ -184,6 +184,25 @@ export class WarrantyService {
     }));
   }
 
+  /** رقم صاحب الحساب — المصدر الوحيد للهوية في مسارات `me` */
+  private async phoneOf(publicId: string): Promise<string> {
+    const u = await this.prisma.user.findUnique({
+      where: { publicId }, select: { phoneE164: true },
+    });
+    if (!u) throw Errors.notFound('الحساب');
+    return u.phoneE164;
+  }
+
+  /** مطالباتي — الرقم من الرمز لا من الطلب */
+  async myClaimsFor(publicId: string) {
+    return this.myClaims(await this.phoneOf(publicId));
+  }
+
+  /** فتح مطالبة باسم صاحب الحساب نفسه */
+  async openClaimFor(publicId: string, imei: string, description: string) {
+    return this.openClaim(imei, description, await this.phoneOf(publicId));
+  }
+
   /** مطالباتي — بالرقم الذي فُتحت به */
   async myClaims(phone: string) {
     const rows = await this.prisma.warrantyClaim.findMany({

@@ -1,6 +1,27 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 
-const SECRET = process.env.JWT_SECRET ?? 'dev_only_change_me';
+/*
+  مفتاح توقيع الجلسات.
+
+  كانت له قيمة افتراضية تسقط إليها الشيفرة صامتةً. وهي مكتوبة في مستودعٍ
+  يقرؤه من شاء: من يعرفها يوقّع لنفسه رمز مدير. والسكوت هو العطب — نشرةٌ
+  بلا سرّ تبدو ناجحة تماماً وتعمل تماماً، ولا يظهر الخلل إلا يوم يُستغلّ.
+
+  فالافتراضي يبقى للتطوير المحلي وحده، ويُرفض التوقيع به في الإنتاج.
+*/
+const DEV_SECRET = 'dev_only_change_me';
+const SECRET = process.env.JWT_SECRET ?? DEV_SECRET;
+
+export const secretIsDefault = SECRET === DEV_SECRET;
+
+function assertSecret() {
+  if (secretIsDefault && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'JWT_SECRET غير مضبوط في الإنتاج — الرموز كانت ستُوقَّع بمفتاح منشور. '
+      + 'اضبطه: npx wrangler secret put JWT_SECRET',
+    );
+  }
+}
 const b64u = (b: Buffer | string) =>
   Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = (s: string) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
@@ -17,6 +38,7 @@ export interface Claims {
 }
 
 function sign(payload: Claims) {
+  assertSecret();
   const head = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = b64u(JSON.stringify(payload));
   const mac = b64u(createHmac('sha256', SECRET).update(`${head}.${body}`).digest());
@@ -33,6 +55,7 @@ export function issue(sub: string, role: string, tv: number, sid?: string) {
 }
 
 export function verify(token: string): Claims | null {
+  assertSecret();
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [head, body, mac] = parts as [string, string, string];

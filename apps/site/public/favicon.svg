@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- الختم الثمانيّ نفسه الذي في الترويسة: مربّعان متقاطعان، هندسةٌ لا خطّ -->
+  <rect width="24" height="24" rx="5" fill="#0f1a1c"/>
+  <g fill="none" stroke="#dcaa33" stroke-width="1.7" stroke-linejoin="round">
+    <path d="M5.5 5.5h13v13h-13z"/>
+    <path d="M12 3.2 20.8 12 12 20.8 3.2 12z"/>
+  </g>
+</svg>

@@ -31,7 +31,7 @@ export class OrdersService {
   async create(cartToken: string, address: any, idempotencyKey?: string, buyerPublicId?: string) {
     if (idempotencyKey) {
       const prior = await kv().get<string>(this.idemKey(idempotencyKey));
-      if (prior) return this.byNo(prior);
+      if (prior) return this.view(prior);
     }
 
     /* الإعدادات تُفرض هنا لا في الواجهة: زرٌّ مخفيّ في المتصفح ليس
@@ -266,10 +266,43 @@ export class OrdersService {
       body: `${order.orderNo} — المستحق نقداً ${totals.cashSyp.toLocaleString('en-US')} ل.س. أكّد الطلب بالضغط على «أؤكد».`,
     });
 
-    return this.byNo(order.orderNo);
+    return this.view(order.orderNo);
   }
 
-  async byNo(no: string) {
+  /**
+   * الطلب برقمه.
+   *
+   * `viewerPublicId` صاحبُ الحساب إن كان داخلاً، و`tail` آخرُ أربعة أرقام
+   * من هاتف الطلب للضيف. وأحدهما لازم: بدونهما كان الرقم المتسلسل وحده
+   * يكفي لقراءة اسم أي زبون وعنوانه وهاتفه.
+   *
+   * والرفض 404 لا 403: «ممنوع» تُخبر المخمِّن أن الرقم صحيح، فتحوّل
+   * التخمين إلى مسحٍ منظَّم.
+   */
+  async byNo(no: string, viewerPublicId?: string, tail?: string) {
+    const o = await this.prisma.order.findUnique({
+      where: { orderNo: no },
+      include: { shippingAddress: { select: { phone: true } }, user: { select: { publicId: true } } },
+    });
+    if (!o) throw Errors.notFound('الطلب');
+
+    const isOwner = !!viewerPublicId && o.user?.publicId === viewerPublicId;
+    const digits = (o.shippingAddress.phone ?? '').replace(/\D/g, '');
+    const tailOk = !!tail && tail.length === 4 && digits.endsWith(tail);
+    if (!isOwner && !tailOk) throw Errors.notFound('الطلب');
+
+    return this.view(no);
+  }
+
+  /**
+   * بناء العرض بلا تحقّق — للاستعمال الداخلي وحده.
+   *
+   * الفصل مقصود: من ينشئ الطلب يملكه بداهةً، والإنشاء ينادي هذه لا تلك.
+   * وحين وُضع التحقّق في `byNo` وحدها كسر الإنشاء نفسه — الخادم منع
+   * صاحب الطلب من رؤية طلبه لحظة إنشائه. القاعدة أن الحارس يقف على
+   * الباب لا داخل الغرفة.
+   */
+  private async view(no: string) {
     const o = await this.prisma.order.findUnique({
       where: { orderNo: no },
       include: { items: true, shippingAddress: true, history: { orderBy: { createdAt: 'asc' } } },

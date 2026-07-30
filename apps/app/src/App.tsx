@@ -261,6 +261,9 @@ function CheckoutPage({ nav }: { nav: (to: string) => void }) {
               { cartToken: token, address: { ...form, altPhone: form.altPhone || undefined } },
               { 'idempotency-key': idemKey() },
             );
+            /* إثبات صلة الضيف بطلبه: آخر أربعة أرقام من هاتفه. يبقى في
+               تخزين الجلسة وحدها — يزول بإغلاق التبويب ولا يُشارَك برابط. */
+            rememberTail(order.orderNo, form.phone);
             nav(`/app/orders/${order.orderNo}`);
           } catch (e) {
             setErr(e instanceof ApiError ? e.messageAr : 'تعذّر إنشاء الطلب');
@@ -271,14 +274,36 @@ function CheckoutPage({ nav }: { nav: (to: string) => void }) {
   );
 }
 
+/*
+  الطلب صار يلزمه إثبات صلة: صاحب الحساب يُعرَف برمزه، والضيف بآخر أربعة
+  أرقام من هاتفه. وبدون ذلك كان الرقم المتسلسل وحده يكفي لقراءة اسم أي
+  زبون وعنوانه.
+*/
+const tailKey = (no: string) => `order_tail_${no}`;
+
+function rememberTail(orderNo: string, phone: string) {
+  const d = (phone || '').replace(/\D/g, '');
+  if (d.length < 4) return;
+  try { sessionStorage.setItem(tailKey(orderNo), d.slice(-4)); } catch { /* تخزين مغلق */ }
+}
+
+function recallTail(orderNo: string): string | null {
+  try { return sessionStorage.getItem(tailKey(orderNo)); } catch { return null; }
+}
+
 /* ————— تتبّع الطلب ————— */
 function OrderPage({ orderNo }: { orderNo: string }) {
   const [o, setO] = useState<OrderView | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<OrderView>(`/orders/${orderNo}`).then(setO)
-      .catch((e) => setErr(e instanceof ApiError ? e.messageAr : 'تعذّر جلب الطلب'));
+    const tail = recallTail(orderNo);
+    api.get<OrderView>(`/orders/${orderNo}${tail ? `?tail=${tail}` : ''}`).then(setO)
+      .catch((e) => setErr(e instanceof ApiError
+        ? (e.code === 'NOT_FOUND'
+            ? 'تعذّر عرض هذا الطلب. إن كنت طلبته كضيف فتابعه من «تتبّع بلا حساب» برقم الطلب وهاتفك.'
+            : e.messageAr)
+        : 'تعذّر جلب الطلب'));
   }, [orderNo]);
 
   if (err) return <div className="page"><div className="err">{err}</div></div>;
