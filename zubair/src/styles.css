@@ -21,6 +21,8 @@
   color-scheme: dark;
 }
 
+/* الوضع النهاري: تفضيل النظام أولاً، ثم يعلوه اختيار العارض الصريح أدناه.
+ * الفصل بينهما لازم: صفحةٌ تقرأ التفضيل وحده لا تستجيب لمن يبدّل السمة بيده. */
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f4f7f7;
@@ -34,6 +36,34 @@
     --danger: #b8422a;
     color-scheme: light;
   }
+}
+
+/* اختيار العارض الصريح يعلو تفضيل نظامه في الاتجاهين: الألوان كلها متغيّرات،
+ * فتُعاد هنا مرة واحدة ولا تُلمس أي قاعدة مكوّن. */
+:root[data-theme='light'] {
+  --bg: #f4f7f7;
+  --panel: #ffffff;
+  --panel-2: #eaf1f1;
+  --line: #cfdcdc;
+  --text: #10201f;
+  --muted: #566a6b;
+  --seed: #b8860b;
+  --leaf: #1f8a5a;
+  --danger: #b8422a;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0d1b1e;
+  --panel: #132428;
+  --panel-2: #182e33;
+  --line: #24454b;
+  --text: #e8f1f2;
+  --muted: #93a9ad;
+  --seed: #f2c14e;
+  --leaf: #4ec98a;
+  --danger: #e8795a;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +86,10 @@ html, body {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* 100dvh لا 100% : الوحدة الديناميكية تحسب شريط المتصفّح المتحرّك على الجوال،
+   * و100% تعتمد على ارتفاع body وقد لا نملكه حين تُلفّ الصفحة في غلاف غيرنا. */
+  height: 100dvh;
+  max-height: 100%;
   max-width: 720px;
   margin: 0 auto;
   /* الحافّات الآمنة: جوالات فيها نتوء، والحقل السفلي لا يجوز أن يختفي تحته */
