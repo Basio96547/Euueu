@@ -124,7 +124,7 @@ export class Zubair {
     this.temporal = new TemporalLobe(rng);
     this.amygdala = new Amygdala(rng);
     this.basalGanglia = new BasalGanglia(rng);
-    this.broca = new Broca(rng);
+    this.broca = new Broca();
   }
 
   static async create(opts: CreateOptions = {}): Promise<Zubair> {
@@ -275,6 +275,7 @@ export class Zubair {
     const goal = timed(this.prefrontal, 'حدّد هدفه', 'cpu', () => this.prefrontal.goal(intero, understanding));
     const allowed = timed(this.prefrontal, 'كبح ما لا يصلح الآن', 'cpu', () => this.prefrontal.inhibit(STRATEGIES, {
       stage,
+      intent: understanding.intent,
       askedRecently: this.askedWords.slice(-8),
       lastStrategies: this.prefrontal.recentStrategies,
       hasFact: fact !== null,
@@ -286,7 +287,15 @@ export class Zubair {
     /* ١٢. العُقد القاعدية: أي استجابة أختار؟
      * الحرارة ليست ثابتة: الملل والفضول يدفعانه للتجريب، واليقين يدفعه للالتزام
      * بما يعرف. هذا هو التوازن بين الاستكشاف والاستغلال، وبه يخرج من العادة. */
-    const temperature = clamp(0.5 + 0.7 * intero.boredom + 0.5 * intero.curiosity - 0.4 * (1 - conflict.level), 0.2, 2.2);
+    /* التعارض هو محرّك الاستكشاف الأول: من لا يدري يجرّب، ومن يدري يلتزم بما
+     * يعرف. الملل والفضول يزيدان التجريب، وثقته تنقصه. القيست: بحرارة لا تهبط
+     * مع المعرفة ظلّ يُقرّ بجهله في أربعين بالمئة من أسئلة يعرف جوابها، لأن
+     * الاختيار كان شبه موحَّد بين المسموحات. */
+    const temperature = clamp(
+      0.22 + 0.9 * conflict.level + 0.35 * intero.boredom + 0.25 * intero.curiosity - 0.5 * intero.confidence,
+      0.12,
+      1.8,
+    );
     const state = this.basalGanglia.encodeState({
       understanding, recallScore: recall.bestScore, hasFact: fact !== null,
       hasGeneralization: generalized !== null, valence, conflict: conflict.level,
@@ -308,7 +317,7 @@ export class Zubair {
     }));
 
     /* ١٥. ما بعد الكلام: تخزين، وتعلّم أسلوب أبيه، وتعلّم من غريزته */
-    const episode = this.hippocampus.store({
+    this.hippocampus.store({
       said: percept.raw, tokens: percept.tokens, meaning: Array.from(understanding.meaning),
       intent: understanding.intent, subject: bound.subject, object: bound.object,
       replied: refined, reward: 0, tick: this.ticks,
@@ -456,7 +465,6 @@ export class Zubair {
       for (const episode of batch) {
         replayed++;
         const percept = this.lexicon.perceive(episode.said, false);
-        const reflex = this.brainstem.reflexIntent(percept);
         const gate = this.thalamus.gate(percept, this.hypothalamus.state, this.compute_);
 
         // تثبيت القصد: نفس الدرس يُعاد على القشرة فتنتقل معرفته من الحُصين إليها

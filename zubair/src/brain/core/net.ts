@@ -152,6 +152,26 @@ export class Dense {
     }
   }
 
+  /**
+   * خطوة انحدار بسيطة: التغيير يتناسب مع حجم الخطأ فيهدأ عند الاقتراب.
+   *
+   * لماذا لا Adam هنا: Adam يُعاير خطوته بعزومه فتصير ثابتة الحجم تقريباً مهما
+   * صغر الخطأ — وهذا مطلوب في التعلّم المُوجَّه (لالتقاط الإشارة من أمثلة
+   * قليلة)، وكارثة في التعلّم المعزَّز: القيمة المتوقَّعة تعبر هدفها ثم تعبره
+   * راجعةً فلا تستقرّ أبداً، فيصير «الدوبامين» ضجيجاً لا مفاجأة. قِسته: بخطوة
+   * Adam تجاوزت القيمة ٢٫٤ لمكافأة أقصاها ١.
+   */
+  stepPlain(lr = 0.03): void {
+    for (let i = 0; i < this.w.length; i++) {
+      this.w[i]! -= lr * this.gW[i]!;
+      this.gW[i] = 0;
+    }
+    for (let j = 0; j < this.b.length; j++) {
+      this.b[j]! -= lr * this.gB[j]!;
+      this.gB[j] = 0;
+    }
+  }
+
   save(): DenseState {
     return {
       inDim: this.inDim,
@@ -211,6 +231,11 @@ export class Mlp {
 
   step(lr = 0.02, weightDecay = 0): void {
     for (const layer of this.layers) layer.step(lr, weightDecay);
+  }
+
+  /** انحدار بسيط عبر كل الطبقات — للتعلّم المعزَّز. انظر Dense.stepPlain. */
+  stepPlain(lr = 0.03): void {
+    for (const layer of this.layers) layer.stepPlain(lr);
   }
 
   save(): MlpState {

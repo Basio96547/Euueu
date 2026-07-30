@@ -67,6 +67,11 @@ const CHITCHAT_STRENGTH = 0.2;
 /** جملة كل كلماتها مجهولة: جهل صريح أقوى من كلام عادي — منه يسأل. */
 const UNKNOWN_STRENGTH = 0.35;
 
+/** قوّة الجملة الاسمية العارية: «القطة حيوان» بلا رابط ولا استفهام.
+ *  أدنى من الرابط الصريح (٠٫٦٥) لأنها قد تكون كلاماً عادياً، وأعلى من الجهل
+ *  (٠٫٣٥) لأن بنيتها بنية تعليم. */
+const NOMINAL_STRENGTH = 0.55;
+
 /**
  * الترتيب جزء من المعنى لا تفصيل تنفيذي، وهذه أمثلته التي تُوجب هذا الترتيب:
  *
@@ -282,6 +287,15 @@ export class Brainstem implements Lobe<BrainstemState> {
 
     // لا نمط. والفرق بين «كلام لم أفهم منه شيئاً» و«كلام عادي» هو أن الأول كله
     // كلمات لم يسمعها قط: ذاك جهل يُسأل عنه، وهذا حديث يُجاب عنه
+    /* الجملة الاسمية العارية تُفحَص قبل الحكم بالجهل، وهذا موضع دقيق:
+     * أول درس يعطيه أب لابنه («القطة حيوان») كلتا كلمتيه مجهولتان بالضرورة —
+     * لم يسمعهما قط. فلو حُكم عليها بالجهل لأنها مجهولة لاستحال أن يتعلّم من
+     * الدرس الأول أبداً، ولبقي ينتظر درساً يعرف كلماته مسبقاً. والطفل يتعلّم
+     * الكلمتين والعلاقة بينهما في اللحظة نفسها: البنية تُعرَف ولو جُهل المعنى. */
+    if (tokens.length === 2 && percept.isQuestion !== true) {
+      return { intent: 'TEACH_FACT', strength: NOMINAL_STRENGTH };
+    }
+
     const unknown = Array.isArray(percept.unknown) ? percept.unknown.length : tokens.length;
     if (unknown >= tokens.length) return { intent: 'UNKNOWN', strength: UNKNOWN_STRENGTH };
     return { intent: 'CHITCHAT', strength: CHITCHAT_STRENGTH };

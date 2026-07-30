@@ -109,16 +109,38 @@ test('حكم الأب يُغيّر دماغه: الدوبامين خطأ تنب�
   assert.ok(Number.isFinite(first.dopamine), 'الدوبامين رقم صحيح');
   assert.ok(first.learned.length > 0, 'يخبر أباه بما تعلّمه');
 
-  // المدح المتوقَّع لا يُعلّم: الدوبامين يتضاءل بتكرار نفس الحكم
-  let last = Math.abs(first.dopamine);
-  for (let i = 0; i < 6; i++) {
-    await zubair.hear('القطة حيوان');
+  /* المدح المتوقَّع لا يُعلّم: المفاجأة تتضاءل بالتكرار. تُقاس على استراتيجية
+   * واحدة تكرّرت لا على آخر حكم مطلقاً — لأن أول مدح على استراتيجية لم تُجرَّب
+   * قط مفاجأةٌ كاملة بحقّ، ولو قِسنا آخر حكم مهما كانت استراتيجيته لقِسنا
+   * ضجيج الاستكشاف لا تعلّم القيمة. */
+  const perStrategy = new Map<string, number[]>();
+  perStrategy.set(String(await currentStrategy(zubair)), [Math.abs(first.dopamine)]);
+  for (let i = 0; i < 14; i++) {
+    const out = await zubair.hear('القطة حيوان');
     const judged = await zubair.judge({ verdict: 'praise' });
-    last = Math.abs(judged.dopamine);
+    const list = perStrategy.get(out.strategy) ?? [];
+    list.push(Math.abs(judged.dopamine));
+    perStrategy.set(out.strategy, list);
   }
-  assert.ok(last <= Math.abs(first.dopamine) + 1e-6,
-    `المفاجأة تتضاءل بالتوقّع (${Math.abs(first.dopamine).toFixed(3)} ← ${last.toFixed(3)})`);
+
+  let tested = 0;
+  for (const [strategy, values] of perStrategy) {
+    if (values.length < 3) continue;
+    tested++;
+    const head = values[0]!;
+    const tail = values[values.length - 1]!;
+    assert.ok(tail <= head + 1e-6,
+      `المفاجأة تتضاءل في «${strategy}»: ${head.toFixed(3)} ← ${tail.toFixed(3)}`);
+  }
+  assert.ok(tested > 0, 'تكرّرت استراتيجية واحدة على الأقل ليُقاس تضاؤل مفاجأتها');
 });
+
+/** آخر استراتيجية اختارها — للاختبار وحده. */
+async function currentStrategy(zubair: Zubair): Promise<string> {
+  const out = await zubair.hear('القطة حيوان');
+  await zubair.judge({ verdict: 'praise' });
+  return out.strategy;
+}
 
 test('التصحيح درس كامل: يهدم الخطأ ويبني الصواب', async () => {
   const zubair = await newborn();
