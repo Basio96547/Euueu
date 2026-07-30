@@ -78,7 +78,10 @@ function fromApi(rows: any[]): Product[] {
     isDemo: p.isDemo,
     variants: p.variants.map((v: any): Variant => ({
       sku: v.sku, storageGb: v.storageGb, ramGb: v.ramGb,
-      colorCode: null, colorName: v.colorName,
+      /* كان `null` مكتوباً هنا، فيُصيَّر كلُّ جهازٍ في الإنتاج رماديّاً
+         واحداً — واللون أحدُ ركائز الرسم الثلاث (الشكل، اللون، العلامة).
+         والبناء من البذرة كان يُخفيه، لأن البذرة تحمل الحقل. */
+      colorCode: v.colorCode ?? null, colorName: v.colorName,
       networkGen: v.networkGen, dualSim: v.dualSim, esimOnly: v.esimOnly,
       partCode: v.partCode, condition: v.condition,
       batteryHealthPct: v.batteryHealthPct, deviceOrigin: v.deviceOrigin,

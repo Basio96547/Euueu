@@ -93,7 +93,9 @@ const shape = (p: any) => ({
   publicId: p.publicId, slug: p.slug, name: p.name, shortDesc: p.shortDesc,
   brand: { slug: p.brand.slug, name: p.brand.name }, spec: p.spec, isDemo: p.isDemo,
   variants: p.variants.map((v: any) => ({
-    publicId: v.publicId, sku: v.sku, colorName: v.colorName,
+    /* `colorCode` يخرج مع الاسم: الموقع يرسم به جسمَ الجهاز بلونه
+       الحقيقي، وبلاه يُصيَّر كلُّ جهازٍ في المتجر رماديّاً واحداً. */
+    publicId: v.publicId, sku: v.sku, colorName: v.colorName, colorCode: v.colorCode,
     storageGb: v.storageGb, ramGb: v.ramGb, networkGen: v.networkGen,
     dualSim: v.dualSim, esimOnly: v.esimOnly, partCode: v.partCode,
     condition: v.condition, batteryHealthPct: v.batteryHealthPct,

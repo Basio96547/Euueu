@@ -6,7 +6,7 @@
  * ولونه وعلامته (انظر `lib/artwork.ts`). الإطار واحدٌ في الحالتين
  * بنسبة 4:5 — فلا يقفز التخطيط يوم تصل الصور.
  */
-import { artKind, brandHue, bodyColor, isLight, shape } from '../lib/artwork';
+import { artKind, brandHue, bodyColor, isLight, shape, nextArtId } from '../lib/artwork';
 
 interface Props {
   brand: string;
@@ -33,21 +33,21 @@ const fill = bodyColor(colorCode);
 const light = isLight(fill);
 /* الخطوط فوق جسمٍ فاتح تكون داكنة والعكس — وإلا اختفت التفاصيل */
 const stroke = light ? 'rgba(16,27,28,.34)' : 'rgba(255,255,255,.42)';
-const id = `${brand}-${kind}-${Math.abs(hashOf(name)) % 9973}`;
+const id = nextArtId(kind);
 
-function hashOf(t: string) {
-  let h = 0;
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
-  return h;
-}
+/* الرسم يُخفى عن قارئ الشاشة عمداً: البطاقة رابطٌ نصُّه اسمُ المنتج نفسه،
+   فوصفُ الرسم يكرّره — «رابط، آيفون ١١، آيفون ١١» في كل بطاقة، واثنتان
+   وعشرون بطاقةً تعني أربعة وأربعين نطقاً نصفُها زائد. والأهمّ أنه ليس
+   صورةَ الجهاز بل رسمٌ توضيحيّ، فتقديمُه على أنه صورته يقول لمن لا يرى
+   ما ليس صحيحاً. أمّا الصورة الحقيقية فتبقى بنصٍّ بديل. */
 ---
 
 <div class={`pm ${cls}`} style={`--pm-ratio:${ratio}; --pm-h1:${hue}; --pm-h2:${hue + 26}`}>
   {src ? (
     <img src={src} alt={alt || name} loading="lazy" decoding="async" width="600" height="750" />
   ) : (
-    <svg viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice"
-      role="img" aria-label={alt || name} class="pm__art">
+        <svg viewBox="0 0 120 120" preserveAspectRatio="xMidYMid slice"
+      role="presentation" aria-hidden="true" focusable="false" class="pm__art">
       <defs>
         <linearGradient id={`b${id}`} x1="0.15" y1="0" x2="0.85" y2="1">
           <stop offset="0" stop-color={fill} stop-opacity="1" />
