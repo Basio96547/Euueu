@@ -159,6 +159,11 @@ export class Zubair {
     return { unit: this.accel.unit, describeAr: this.accel.describeAr, details: this.accel.details };
   }
 
+  /** لهجته كما تعلّمها منك: شامية أم فصحى. تُعرض في سجل نموّه. */
+  get dialectAr(): string {
+    return this.broca.dialectAr;
+  }
+
   /** خريطة الدماغ كما تُعرض للأب: كل فص ووظيفته. */
   get lobes(): Array<{ name: string; ar: string; role: string }> {
     const all = [

@@ -111,6 +111,19 @@ export function tokenize(text: string): string[] {
   return normalized.match(WORD_RUN) ?? [];
 }
 
+/**
+ * الكلمات كما كتبها الأب بلا تطبيع.
+ *
+ * التطبيع ضرورة للمقارنة («القطة» و«القطه» كلمة واحدة عنده)، لكنه ليس صورة
+ * الكلمة الصحيحة: لو تكلّم زبير بالمطبَّع لقال «فاكهه» و«مدينه»، فيبدو ابناً
+ * لا يعرف الإملاء وأبوه هو من كتبها صحيحة. فنحفظ الصورتين: المطبَّعة للفهم،
+ * والأصلية للكلام.
+ */
+export function tokenizeSurface(text: string): string[] {
+  if (typeof text !== 'string' || text.length === 0) return [];
+  return text.match(WORD_RUN) ?? [];
+}
+
 /* ————— ملامح الحروف ————— */
 
 const FNV_OFFSET = 0x811c9dc5;
@@ -231,6 +244,9 @@ export interface LexiconState {
   words: string[];
   counts: number[];
   embedding: EmbeddingState;
+  /** صور الكلمات كما كتبها الأب: [المطبَّع، [[الصورة، العدد]]].
+   *  اختياري كي تبقى الأدمغة المحفوظة قبل هذه الإضافة صالحة للاستعادة. */
+  surfaces?: Array<[string, Array<[string, number]>]>;
 }
 
 /* أدوات لا تكون إلا استفهاماً، فحضورها في أي موضع من الجملة سؤال. */
@@ -294,6 +310,9 @@ export class Lexicon implements Lobe<LexiconState> {
 
   readonly embedding: Embedding;
 
+  /** لكل كلمة مطبَّعة: صورها الأصلية كما كتبها الأب وعدد مرات كلٍّ منها */
+  private surfaces = new Map<string, Map<string, number>>();
+
   private index = new Map<string, number>();
   private wordList: string[] = [];
   private counts: number[] = [];
@@ -355,6 +374,61 @@ export class Lexicon implements Lobe<LexiconState> {
     return this.wordList;
   }
 
+  /**
+   * صورة الكلمة كما يكتبها الأب — بها يتكلّم زبير فلا يبدو جاهلاً بالإملاء.
+   *
+   * تُجرَّب ثلاث محاولات بالترتيب: الكلمة نفسها، ثم معرَّفةً بـ«ال» (لأن الفص
+   * الجُداري يُسقط التعريف من مفاتيح الحقائق فيصير المفتاح «قطه» والأب كتب
+   * «القطة»)، ثم الكلمة كما هي إن لم يُسمع لها صورة قط.
+   */
+  pretty(word: string): string {
+    if (typeof word !== 'string' || word.length === 0) return '';
+    const direct = this.bestSurface(word);
+    if (direct) return direct;
+    const definite = this.bestSurface(`ال${word}`);
+    // نُسقط «ال» من الصورة المسموعة كي يبقى ما يعيده الجُداري مطابقاً لما طلبه
+    if (definite && definite.length > 2) return definite.replace(/^(ال|أل|ٱل)/, '');
+    return word;
+  }
+
+  private bestSurface(normalized: string): string | null {
+    const seen = this.surfaces.get(normalized);
+    if (!seen || seen.size === 0) return null;
+    let best: string | null = null;
+    let most = 0;
+    for (const [surface, count] of seen) {
+      if (count > most) {
+        most = count;
+        best = surface;
+      }
+    }
+    return best;
+  }
+
+  /** يقرن كل رمز مطبَّع بصورته الأصلية. لا يُقرن إلا إن تطابق العددان: تفاوتهما
+   *  يعني أن التطبيع دمج رمزين أو فصلهما، والقرن حينها يُنسب صورة لكلمة أخرى. */
+  private rememberSurfaces(raw: string, tokens: readonly string[]): void {
+    const surfaceTokens = tokenizeSurface(raw);
+    if (surfaceTokens.length !== tokens.length) return;
+    for (let i = 0; i < tokens.length; i++) {
+      const key = tokens[i]!;
+      const surface = surfaceTokens[i]!;
+      if (surface === key) continue; // لا شيء يُحفظ: الصورة هي المطبَّع نفسه
+      let seen = this.surfaces.get(key);
+      if (!seen) {
+        seen = new Map<string, number>();
+        this.surfaces.set(key, seen);
+      }
+      seen.set(surface, (seen.get(surface) ?? 0) + 1);
+      // صورتان أو ثلاث تكفيان: الأب لا يكتب الكلمة بعشر صور، والحدّ يمنع نمو
+      // ملف الدماغ بأخطاء مطبعية عابرة
+      if (seen.size > 4) {
+        const kept = [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+        this.surfaces.set(key, new Map(kept));
+      }
+    }
+  }
+
   countOf(word: string): number {
     const id = this.idOf(word);
     if (id < 0) return 0;
@@ -390,6 +464,7 @@ export class Lexicon implements Lobe<LexiconState> {
   perceive(text: string, learnNew: boolean): Percept {
     const raw = typeof text === 'string' ? text : '';
     const tokens = tokenize(raw);
+    if (learnNew) this.rememberSurfaces(raw, tokens);
     const ids: number[] = [];
     const unknown: string[] = [];
     const tokenVecs: Vec[] = [];
@@ -435,6 +510,7 @@ export class Lexicon implements Lobe<LexiconState> {
       words: this.wordList.slice(),
       counts: this.counts.slice(),
       embedding: this.embedding.save(),
+      surfaces: [...this.surfaces.entries()].map(([key, seen]) => [key, [...seen.entries()]]),
     };
   }
 
@@ -488,6 +564,22 @@ export class Lexicon implements Lobe<LexiconState> {
       for (let id = 0; id < this.wordList.length; id++) {
         const word = this.wordList[id]!;
         if (word.length > 0) this.index.set(word, id);
+      }
+
+      // الصور اختيارية: دماغ محفوظ قبل هذه الإضافة يبقى صالحاً، وأسوأ ما يحدث
+      // أن يتكلّم بالصورة المطبَّعة حتى يسمع الكلمة من أبيه مرة أخرى
+      this.surfaces = new Map<string, Map<string, number>>();
+      if (Array.isArray(state.surfaces)) {
+        for (const entry of state.surfaces) {
+          if (!Array.isArray(entry) || typeof entry[0] !== 'string' || !Array.isArray(entry[1])) continue;
+          const seen = new Map<string, number>();
+          for (const pair of entry[1]) {
+            if (!Array.isArray(pair) || typeof pair[0] !== 'string') continue;
+            const count = typeof pair[1] === 'number' && Number.isFinite(pair[1]) ? Math.max(1, Math.floor(pair[1])) : 1;
+            seen.set(pair[0], count);
+          }
+          if (seen.size > 0) this.surfaces.set(entry[0], seen);
+        }
       }
     } catch {
       // حارس أخير: المدخل ملفٌّ على جهاز الأب وقد يكون أي شيء. فقدان درس

@@ -199,8 +199,10 @@ export class Broca implements Lobe<BrocaState> {
 
   /* ————— الجواب من ذاكرة صريحة ————— */
   private answerFromMemory(req: SpeechRequest): Speech {
-    const fact = req.fact;
-    if (!fact) return this.admit(req);
+    const raw = req.fact;
+    if (!raw) return this.admit(req);
+    // يتكلّم بصورة أبيه لا بالصورة المطبَّعة: «فاكهة» لا «فاكهه»
+    const fact = { ...raw, subject: req.lexicon.pretty(raw.subject), object: req.lexicon.pretty(raw.object) };
 
     // لا لفظ تحفّظ هنا: علّمه أبوه هذا بنفسه، فالتحفّظ في موضع اليقين كذب معكوس
     const options = req.stage.id <= 1
@@ -218,7 +220,11 @@ export class Broca implements Lobe<BrocaState> {
   private answerByGeneralizing(req: SpeechRequest): Speech {
     const guess = req.generalized;
     if (!guess) return this.admit(req);
-    const { fact, similarity } = guess;
+    const { similarity } = guess;
+    const fact = {
+      subject: req.lexicon.pretty(guess.fact.subject),
+      object: req.lexicon.pretty(guess.fact.object),
+    };
 
     const options = this.isShami
       ? [
@@ -249,8 +255,10 @@ export class Broca implements Lobe<BrocaState> {
   private acknowledge(req: SpeechRequest): Speech {
     const fact = req.fact;
     if (fact && req.rng.next() < 0.5 && req.stage.id >= 1) {
+      const subject = req.lexicon.pretty(fact.subject);
+      const object = req.lexicon.pretty(fact.object);
       return {
-        text: this.isShami ? `${fact.subject} ${fact.object}، صح؟` : `${fact.subject} ${fact.object}، صحيح؟`,
+        text: this.isShami ? `${subject} ${object}، صح؟` : `${subject} ${object}، صحيح؟`,
         kind: 'acknowledge',
         about: fact.subject,
       };
@@ -334,9 +342,20 @@ export class Broca implements Lobe<BrocaState> {
 function limitWords(text: string, max: number): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length <= max) return words.join(' ');
-  const cut = words.slice(0, max).join(' ');
+  /* القصّ يقطع الجملة في وسطها فتبقى فاصلة أو واو معلّقة («ما بعرف،» و«علّمني،
+   * بدي»)، وهي أظهر ما يجعل كلامه يبدو معطوباً لا طفولياً. فتُحذف علامات الوصل
+   * من آخر المقصوص، وتُحذف كلمة الوصل الأخيرة إن كانت حرفاً معلّقاً. */
+  let kept = words.slice(0, max);
+  const dangling = new Set(['و', 'ثم', 'بدي', 'اريد', 'أريد', 'أن', 'ان', 'مثل', 'في', 'من', 'على']);
+  while (kept.length > 1 && dangling.has(stripEdgePunctuation(kept[kept.length - 1]!))) kept = kept.slice(0, -1);
+  let cut = kept.join(' ').replace(/[،؛:,\-–—]+$/u, '').trim();
+  if (cut.length === 0) cut = words.slice(0, max).join(' ');
   // لو كانت جملة استفهام فالعلامة تُنقل: سؤال بلا علامة يصير خبراً
-  return text.trim().endsWith('؟') ? `${cut}؟` : cut;
+  return text.trim().endsWith('؟') && !cut.endsWith('؟') ? `${cut}؟` : cut;
+}
+
+function stripEdgePunctuation(word: string): string {
+  return word.replace(/^[،؛:,\-–—]+|[،؛:,\-–—]+$/gu, '');
 }
 
 function intOr(value: unknown, fallback: number): number {

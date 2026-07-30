@@ -17,13 +17,16 @@
     "react-dom": "^19.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "1.49.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
