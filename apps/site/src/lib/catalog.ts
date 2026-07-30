@@ -89,15 +89,41 @@ function fromApi(rows: any[]): Product[] {
   }));
 }
 
-/** جلب وقت البناء: نجاحه يعني كتالوجاً حياً، وفشله يعني بذرة — لا انهيار */
+/**
+ * جلب وقت البناء: نجاحه يعني كتالوجاً حياً، وفشله يعني بذرة — لا انهيار.
+ *
+ * والقراءة بصفحات لا بطلبٍ واحد: الواجهة تُعيد مئة صفٍّ كحدٍّ أقصى مهما
+ * طُلب، وكان الموقع يطلب مئتين فيأخذ مئة ويبني نفسه عليها. فكل منتجٍ بعد
+ * المئة بلا صفحة ولا سطرٍ في خريطة الموقع ولا نتيجةِ بحث — بلا خطأ في أي
+ * سجلّ. عطلٌ يظهر يوم يتجاوز المتجر مئة صنف، ولا شيء يربطه بسببه.
+ *
+ * والسقف هنا حارسٌ لا سياسة: بلوغه يعني خللاً في المؤشّر لا كتالوجاً
+ * كبيراً، ويُطبع صراحةً — لأن اقتطاعاً صامتاً هو ما نُصلحه أصلاً.
+ */
+const PAGE = 100;
+const MAX_PAGES = 60;
+
 async function load(): Promise<{ items: Product[]; source: 'api' | 'seed' }> {
   if (!API) return { items: fromSeed(), source: 'seed' };
   try {
-    const r = await fetch(`${API}/catalog/products?limit=200`, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const body = (await r.json()) as { data: any[] };
-    if (!body.data?.length) throw new Error('كتالوج فارغ');
-    return { items: fromApi(body.data), source: 'api' };
+    const all: any[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const url: string = `${API}/catalog/products?limit=${PAGE}`
+        + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+      const r: Response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const body = (await r.json()) as { data: any[]; meta?: { nextCursor?: string | null } };
+      all.push(...(body.data ?? []));
+      cursor = body.meta?.nextCursor ?? null;
+      if (!cursor) break;
+      if (page === MAX_PAGES - 1) {
+        console.warn(`[catalog] بلغتُ حدّ ${MAX_PAGES} صفحة والمؤشّر ما زال قائماً — تُراجع الترقيم.`);
+      }
+    }
+    if (!all.length) throw new Error('كتالوج فارغ');
+    console.log(`[catalog] ${all.length} منتجاً من الواجهة البرمجية.`);
+    return { items: fromApi(all), source: 'api' };
   } catch (e) {
     console.warn(`[catalog] تعذّر جلب الكتالوج من الـAPI (${String(e)}) — البناء من البذرة.`);
     return { items: fromSeed(), source: 'seed' };

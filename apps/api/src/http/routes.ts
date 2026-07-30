@@ -60,8 +60,13 @@ export function registerRoutes(app: Hono<Ctx>, d: Deps, env: Record<string, unkn
 
   /* ————————————————— الكتالوج والبحث وسعر الصرف ————————————————— */
 
-  app.get(`${P}/catalog/products`, async (c) =>
-    ok(c, await d.catalog.list(c.req.query('category'), Number(c.req.query('limit') ?? 24))));
+  /* `data` كما كانت، و`meta.nextCursor` يقول إن ثمّة بقيّة — فلا يظنّ
+     قارئٌ أن ما وصله هو كل الكتالوج. */
+  app.get(`${P}/catalog/products`, async (c) => {
+    const r = await d.catalog.list(
+      c.req.query('category'), Number(c.req.query('limit') ?? 24), c.req.query('cursor'));
+    return send(c, { data: r.rows, meta: { nextCursor: r.nextCursor } });
+  });
   app.get(`${P}/catalog/products/:slug`, async (c) => ok(c, await d.catalog.bySlug(c.req.param('slug'))));
 
   app.get(`${P}/search`, async (c) => {

@@ -37,7 +37,19 @@ export class CatalogService {
     };
   }
 
-  async list(categorySlug?: string, limit = 24) {
+  /**
+   * قائمة المنتجات، بصفحاتٍ لا بسقفٍ صامت.
+   *
+   * كان السقف `min(limit, 100)` بلا مؤشّرٍ للصفحة التالية وبلا إشارةٍ إلى
+   * أن ثمّة بقيّة. والموقع يطلب 200 فيأخذ 100 ويبني نفسه عليها: كل منتجٍ
+   * بعد المئة بلا صفحة ولا سطرٍ في خريطة الموقع ولا نتيجةِ بحث. ولا خطأ
+   * في أي سجل — العطل يظهر يوم يتجاوز المتجر مئة صنف، ولا شيء يربطه
+   * بسببه.
+   *
+   * `cursor` معرّف آخر صفٍّ في الصفحة السابقة، و`nextCursor` في الردّ
+   * يقول «ثمّة بقيّة» — وغيابه يقول «انتهت». فمن يقرأ لا يخمّن.
+   */
+  async list(categorySlug?: string, limit = 24, cursor?: string) {
     let categoryIds: string[] | undefined;
     if (categorySlug) {
       const cat = await this.prisma.category.findUnique({ where: { slug: categorySlug } });
@@ -48,14 +60,20 @@ export class CatalogService {
       });
       categoryIds = subtree.map((c) => c.id);
     }
-    return this.prisma.product.findMany({
+    const take = Math.min(Math.max(1, limit), 100);
+    /* يُطلب صفٌّ زائد لا عدٌّ كامل: وجودُه وحده يقول إن ثمّة بقيّة */
+    const rows = await this.prisma.product.findMany({
       where: { ...(await this.where()), ...(categoryIds ? { categoryId: { in: categoryIds } } : {}) },
-      take: Math.min(limit, 100),
+      orderBy: { id: 'asc' },
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       include: {
         brand: true,
         variants: { where: { deletedAt: null }, include: { levels: true }, orderBy: { isDefault: 'desc' } },
       },
     });
+    const page = rows.slice(0, take);
+    return { rows: page, nextCursor: rows.length > take ? page[page.length - 1]!.id : null };
   }
 
   async bySlug(slug: string) {
