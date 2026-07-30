@@ -4,7 +4,7 @@
  * إلى شيء يستطيع باقي الدماغ التفكير به: رموز مطبّعة، ورقم لكل كلمة يعرفها،
  * ومتجه ملامح لكل كلمة لم يسمعها في حياته.
  *
- * القرار المركزي هنا أن الكلمة المجهولة لا تُرمى ولا تُعامل رمزاً واحداً
+ * القرار المركزي هنا أن الكلمة المجهولة لا تُرمى ولا تُعامَل رمزاً واحداً
  * («UNK» كما تفعل الشبكات الجاهزة)، بل تُمثَّل بشكل حروفها. لأن الطفل الذي
  * يسمع «يكتب» أول مرة وقد سمع «كاتب» قبلها لا يبدأ من الصفر: شكل الكلمة
  * نفسه دليل على معناها في لغة اشتقاقية كالعربية. هذا هو الفرق بين دماغ
@@ -18,28 +18,32 @@ import { DIMS, type Lobe } from './types.js';
 /* ————— التطبيع ————— */
 
 /* محارف اتجاه وصفر-عرض تلتصق بالنصّ المنسوخ من تطبيقات المحادثة. لا تُرى
- * بالعين لكنها تجعل «قطة» و«قطة» كلمتين مختلفتين في الخريطة. */
+ * بالعين لكنها تجعل كلمتين متطابقتين ظاهرياً كلمتين مختلفتين في الخريطة. */
 const INVISIBLE = /[​-‏؜﻿]/g;
 
-/* التشكيل والمدّ القرآني: صوت لا معنى. «قِطَّة» و«قطة» كلمة واحدة عند زبير،
- * ولو لم نحذفها لصار لكل حركة معجم منفصل. المدى مأخوذ بالحرف من عقد التوصيل:
- * ً-ْ الحركات والسكون والشدّة، ٰ الألف الخنجرية، ۖ-ۭ
- * علامات الوقف والتجويد. تُكتب بالترميز لا بالحرف لأنها كلها غير مرئية. */
+/* التشكيل والمدّ القرآني: صوت لا معنى، فلو لم نحذفه صار لكل حركة معجم منفصل.
+ * تُكتب المدَيات بالترميز لا بالحرف لأن هذه المحارف غير مرئية في المحرِّر:
+ * 064B-0652 الحركات والسكون والشدّة، و0670 الألف الخنجرية، و06D6-06ED
+ * علامات الوقف والتجويد. المدَيات مأخوذة بالحرف من عقد التوصيل. */
 const DIACRITICS = /[ً-ْٰۖ-ۭ]/g;
 
 /* التطويل («ســلام») زخرفة خطّية لا حرف. */
 const TATWEEL = /ـ/g;
 
 /* الألفات: آ أ إ ٱ ← ا. الأب يكتب على جوال بلا همزات نصف الوقت، ولو فرّقنا
- * بينها لصار «أسد» و«اسد» شيئين لا يجمعهما شيء. */
+ * بينها لصار «أسد» و«اسد» شيئين لا يجمعهما شيء. الهمزة المستقلّة (ء) والهمزة
+ * على واو أو ياء تبقى: حذفها يغيّر المعنى لا الإملاء. */
 const ALEFS = /[آأإٱ]/g;
+/* الياء المقصورة: «علي» و«على» صورتان لحرف واحد في كتابة الجوال. */
 const YA_MAQSURA = /ى/g;
+/* التاء المربوطة ← هاء، للمقارنة وحدها. النصّ المعروض يبقى في Percept.raw. */
 const TA_MARBUTA = /ة/g;
 
+/* الأرقام العربية-الهندية (٠-٩) والفارسية (۰-۹). */
 const ARABIC_INDIC_DIGITS = /[٠-٩۰-۹]/g;
 const WHITESPACE = /\s+/g;
 
-/** يوحّد الأرقام العربية-الهندية (٠-٩) والفارسية (۰-۹) إلى 0-9 كي يكون «٣» و«3» عدداً واحداً. */
+/** يوحّد كل صور الأرقام إلى 0-9 كي يكون «٣» و«3» عدداً واحداً في المعجم. */
 function foldDigits(text: string): string {
   return text.replace(ARABIC_INDIC_DIGITS, (digit) => {
     const code = digit.codePointAt(0) ?? 0x0660;
@@ -82,6 +86,7 @@ export function normalizeArabic(text: string): string {
   let out = text.replace(INVISIBLE, '').replace(DIACRITICS, '').replace(TATWEEL, '');
   out = out.replace(ALEFS, 'ا').replace(YA_MAQSURA, 'ي').replace(TA_MARBUTA, 'ه');
   out = foldDigits(out);
+  // بعد حذف التشكيل لا قبله: «سلاـاام» بحركات متناثرة يجب أن يُقلَّص كأنه متّصل
   out = collapseRepeats(out);
   // العربية بلا حالة أحرف، والتصغير يخصّ ما يدخل من إنجليزية: «Zubair» و«zubair» اسم واحد
   return out.toLowerCase().replace(WHITESPACE, ' ').trim();
@@ -91,12 +96,12 @@ export function normalizeArabic(text: string): string {
 
 /* كل ما ليس حرفاً ولا رقماً فاصلٌ. عقد التوصيل يسمّي الفواصل عدّاً (، ؛ ؟ ! . :
  * « » " ' ( ) - —) وكلها داخلة في هذا التعريف، ويكسب معها ما لم يُعدّ: الرموز
- * التعبيرية وعلامات الترقيم الغريبة. الأصل قائمة بيضاء لا سوداء، لأن ما نجهله
- * من الرموز أكثر ممّا نعرفه. */
+ * التعبيرية وعلامات الترقيم الغريبة. القائمة البيضاء أسلم من السوداء هنا لأن
+ * ما نجهله من رموز لوحة المفاتيح أكثر ممّا نعرفه. */
 const WORD_RUN = /[\p{L}\p{N}]+/gu;
 
 /**
- * يفكّ الجملة إلى كلمات مطبّعة. لا يُحذف شيء لأنه «كلمة وظيفية»: أدوات
+ * يفكّ الجملة إلى كلمات مطبّعة. لا يُحذف رمز لأنه «كلمة وظيفية»: أدوات
  * الاستفهام وحروف الجرّ هي حاملة القصد عند زبير، وحذفها — كما تفعل قوائم
  * الكلمات الموقوفة في معالجة النصوص — يمحو السؤال نفسه فيصير كلاماً عادياً.
  */
@@ -116,7 +121,7 @@ const FNV_PRIME = 0x01000193;
  *
  * الخلط ضروري: البتات الدنيا في FNV الخام مرتبطة بآخر محرف ارتباطاً قوياً،
  * ونحن نأخذ رقم البُعد من البتات الدنيا (`h % out.length`) والإشارة من البتّ
- * الأعلى. بلا خلط تصير الثلاثيات المنتهية بالحرف نفسه في بُعد واحد دائماً.
+ * الأعلى. بلا خلط تجتمع كل الثلاثيات المنتهية بالحرف نفسه في بُعد واحد.
  */
 function fnv1a(text: string, salt: number): number {
   let h = (FNV_OFFSET ^ salt) >>> 0;
@@ -130,38 +135,48 @@ function fnv1a(text: string, salt: number): number {
   return h >>> 0;
 }
 
-/* حروف العلّة والمدّ التي تحشرها الصرف العربي بين حروف الجذر. حذفها يُخرج
+/* حروف العلّة والمدّ التي يحشرها الصرف العربي بين حروف الجذر. حذفها يُخرج
  * «هيكل» الكلمة: «كاتب» ← «كتب» و«يكتب» ← «كتب». هذه القناة الثانية هي ما
- * يجعل صورتي الجذر الواحد متقاربتين قبل أن يتعلّمهما. */
+ * يجعل صورتي الجذر الواحد متقاربتين قبل أن يتعلّم زبير أيّاً منهما. */
 const WEAK_LETTERS = /[اوي]/g;
 
-/* وزن قناة الهيكل أقلّ من قناة الحروف الكاملة: الهيكل تخمين صرفي قد يخطئ
- * («يمين» ليست من جذر «من»)، فلا يجوز أن يطغى على الشكل الفعلي للكلمة. */
+/* وزن قناة الهيكل أقلّ من قناة الحروف الكاملة: الهيكل تخمين صرفي قد يخطئ،
+ * فـ«يمين» هيكلها «من» وهي ليست من جذرها. رفع الوزن إلى ‎0.9‎ يزيد شبه الجذر
+ * الواحد قليلاً لكنه يرفع شبه «من»/«يمين» من صفر إلى ‎0.13‎ في القياس — والثمن
+ * أغلى من الربح: تعميم على شبه زائف يصير تخريفاً حين يجيب زبير منه. */
 const SKELETON_WEIGHT = 0.6;
 
 /* مِلح مختلف لكل قناة: القناتان فضاءان منفصلان في الجدول نفسه، وإلا زاحمت
  * ثلاثيات الهيكل ثلاثيات الحروف في البُعد ذاته بالمصادفة. */
-const SALT_FULL = 0x00;
+const SALT_FULL = 0x0000;
 const SALT_SKELETON = 0x9e37;
 
-/* كل ثلاثية توزّع على بُعدين بهاشين مستقلّين بوزن ‎1/√2‎ لكل منهما. السبب
- * إحصائي: الاصطدام في جدول من ٤٨ بُعداً يُدخل ضجيجاً على التشابه، وتوزيع
- * الملمح على بُعدين يقسم تباين هذا الضجيج تقريباً بالنصف بلا زيادة الأبعاد. */
-const PROBES = 2;
-const PROBE_SCALE = 1 / Math.SQRT2;
+/* كل ثلاثية توزَّع على أربعة أبعاد بأربعة هاشات مستقلّة، ووزن كل بصمة ‎1/√4‎
+ * كي يبقى طول المتجه كما هو.
+ *
+ * العدد مقيس لا مُختار: على خمسين كلمة عربية (منها خمسة عشر زوجاً من جذر
+ * واحد) في ٤٨ بُعداً، بقي ضجيج الاصطدام كما هو تقريباً (rms ≈ ‎0.15‎) لكن أضعف
+ * زوج صرفي ارتفع من ‎-0.24‎ ببصمة واحدة إلى ‎-0.08‎ بأربع. السبب أن البصمة
+ * الواحدة تجعل اصطداماً واحداً كافياً لمحو ثلاثية مشتركة كاملة، وأربع بصمات
+ * توزّع الخطر فلا يُفقد الشبه بمصادفة واحدة. */
+const PROBES = 4;
+const PROBE_SCALE = 1 / Math.sqrt(PROBES);
+/* فرق المِلح بين بصمة وأخرى: عدد أوّليّ كبير كي لا تتقارب حالات البدء فتتشابه
+ * البصمات الأربع على السلاسل القصيرة. */
+const PROBE_SALT_STEP = 0x1000193;
 
 function scatter(out: Vec, gram: string, weight: number, salt: number): void {
   for (let p = 0; p < PROBES; p++) {
-    const h = fnv1a(gram, salt + p * 0x1000193);
+    const h = fnv1a(gram, salt + p * PROBE_SALT_STEP);
     const index = h % out.length;
-    // الإشارة من البتّ الأعلى: نصف الملامح سالب فتُلغي الاصطدامات بعضها في
-    // المتوسط بدل أن تتراكم زيفاً — هذه فائدة «الإشارة الموزّعة»
+    // الإشارة من البتّ الأعلى: نصف الملامح سالب، فتُلغي الاصطدامات بعضها في
+    // المتوسط بدل أن تتراكم شبهاً زائفاً — هذه فائدة «الإشارة الموزّعة»
     const sign = (h >>> 31) & 1 ? -1 : 1;
     out[index]! += sign * weight * PROBE_SCALE;
   }
 }
 
-/** يوزّع ثلاثيات «^كلمة$» على أبعاد المتجه. الحدّان يميّزان البادئة واللاحقة عن الوسط. */
+/** يوزّع ثلاثيات «^كلمة$» على الأبعاد. الحدّان يميّزان البادئة واللاحقة عن الوسط. */
 function scatterTrigrams(out: Vec, word: string, weight: number, salt: number): void {
   const chars = Array.from(`^${word}$`);
   for (let i = 0; i + 3 <= chars.length; i++) {
@@ -218,16 +233,20 @@ export interface LexiconState {
   embedding: EmbeddingState;
 }
 
-/* أدوات لا تكون إلا استفهاماً، فحضورها في أي موضع سؤال. */
+/* أدوات لا تكون إلا استفهاماً، فحضورها في أي موضع من الجملة سؤال. */
 const QUESTION_TOOLS_STRONG: readonly string[] = [
   'ماذا', 'شو', 'مين', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متي',
 ];
 
-/* أدوات مشتركة: «من» جرٌّ أيضاً («من البيت»)، و«ما» نفيٌ في الشامية («ما بعرف»)،
- * و«كم» خبريّة. الاستفهام في العربية يتصدّر الجملة، فنقبلها في أول رمزين فقط.
- * بلا هذا القيد يصير كل كلام الأب سؤالاً، فيجيب زبير حيث كان يجب أن يتعلّم. */
+/* أدوات مشتركة: «من» جرٌّ أيضاً («خرجت من البيت»)، و«ما» نفيٌ في الشامية
+ * («ما بعرف»)، و«كم» خبريّة («أعطيتك كم قلم»). الاستفهام بها يتصدّر الجملة في
+ * العربية، فلا تُقبل إلا رمزاً أوّل. جرّبنا رمزين فصار «خرجت من البيت» سؤالاً،
+ * وهذا أسوأ خطأ ممكن هنا: يجيب زبير حيث كان يجب أن يتعلّم.
+ *
+ * ملاحظة: «أين» و«متى» مكتوبتان بعد التطبيع («اين» و«متي») لأن المقارنة تجري
+ * على الرموز المطبّعة لا على ما كتبه الأب. */
 const QUESTION_TOOLS_AMBIGUOUS: readonly string[] = ['ما', 'من', 'كم'];
-const AMBIGUOUS_WINDOW = 2;
+const AMBIGUOUS_WINDOW = 1;
 
 /** الأدوات كلها — يفيد منها جذع الدماغ وبروكا فلا تُكتب القائمة مرّتين. */
 export const QUESTION_WORDS: readonly string[] = [
@@ -236,9 +255,31 @@ export const QUESTION_WORDS: readonly string[] = [
 ];
 
 /* وزن ملامح الحروف في التمثيل الابتدائي لكلمة جديدة. الباقي من التهيئة
- * العشوائية: صفر عشوائية يعني أن كلمتين تصطدم ملامحهما تصيران كلمة واحدة
- * لا يفرّقهما الدماغ أبداً، وكل العشوائية تعني بداية بلا أي تخمين صرفي. */
+ * العشوائية: صفر عشوائية يعني أن كلمتين اصطدمت ملامحهما تصيران كلمة واحدة
+ * لا يفرّقها الدماغ أبداً، وكلّ عشوائية يعني بداية بلا أي تخمين صرفي. */
 const MORPHOLOGY_PRIOR = 0.8;
+
+/**
+ * مفتاح الكلمة في خريطة المعجم: أوّل رمز يُخرجه المجزِّئ.
+ *
+ * ليس التطبيع وحده: الفصوص الأخرى تنادي المعجم بكلمة قد تكون ملتصقة بترقيم
+ * («قطة!») أو محفوفة بمسافة، ومفاتيح الخريطة تأتي كلها من `tokenize`. لو
+ * اختلف طريق المفتاح عن طريق التخزين صارت كلمة يعرفها زبير لا يجدها.
+ */
+function wordKey(word: string): string {
+  return tokenize(word)[0] ?? '';
+}
+
+/** علامة الاستفهام أوّلاً، ثم الأدوات: العلامة قاطعة والأدوات مرجّحة. */
+function detectQuestion(normalized: string, tokens: readonly string[]): boolean {
+  if (normalized.includes('؟') || normalized.includes('?')) return true;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (QUESTION_TOOLS_STRONG.includes(token)) return true;
+    if (i < AMBIGUOUS_WINDOW && QUESTION_TOOLS_AMBIGUOUS.includes(token)) return true;
+  }
+  return false;
+}
 
 /**
  * المعجم: ما يعرفه زبير من كلمات، وتمثيل كل كلمة، وكم مرّة سمعها منك.
@@ -267,7 +308,7 @@ export class Lexicon implements Lobe<LexiconState> {
   }
 
   idOf(word: string): number {
-    const key = normalizeArabic(word);
+    const key = wordKey(word);
     if (key.length === 0) return -1;
     return this.index.get(key) ?? -1;
   }
@@ -280,14 +321,15 @@ export class Lexicon implements Lobe<LexiconState> {
    * اللحظة الأولى بدل أن ينتظر دروساً تُقرّبها.
    */
   learn(word: string): number {
-    const key = normalizeArabic(word);
+    const key = wordKey(word);
+    // مدخل بلا حرف ولا رقم («؟» أو مسافة) ليس كلمة، ولا يجوز أن يشغل صفّاً
     if (key.length === 0) return -1;
     const known = this.index.get(key);
     if (known !== undefined) return known;
 
     const id = this.embedding.grow();
     // احتراس من حالة محفوظة عطبة تركت الجدولين غير متساويين: نردم الفرق بلا
-    // استثناء، فرمي الاستثناء هنا يعني فقدان الدماغ كله
+    // استثناء، فرمي استثناء هنا يعني فقدان الدماغ كله
     while (this.wordList.length < id) {
       this.wordList.push('');
       this.counts.push(0);
@@ -307,6 +349,8 @@ export class Lexicon implements Lobe<LexiconState> {
     return this.wordList[id] ?? null;
   }
 
+  /* بلا نسخة: الجُداري يمرّ على كل الكلمات في كل تعميم، ونسخ مئات الكلمات في
+   * كل نبضة كلفة بلا مقابل. النوع `readonly` هو العقد الذي يحمي القائمة. */
   words(): readonly string[] {
     return this.wordList;
   }
@@ -320,7 +364,7 @@ export class Lexicon implements Lobe<LexiconState> {
   /**
    * أكثر ما يقوله الأب. منه تتعلّم بروكا أسلوبه لاحقاً: بادئاته المتكرّرة
    * وكلماته المحبوبة. الكلمات التي لم تُسمع في جملة (عدّادها صفر) تُستثنى
-   * لأنها ليست من كلامه بل من تعليم مباشر.
+   * لأنها ليست من كلامه بل من تعليم مباشر أو من استعادة معجم.
    */
   topWords(n: number): Array<{ word: string; count: number }> {
     const limit = Math.max(0, Math.floor(n));
@@ -330,7 +374,7 @@ export class Lexicon implements Lobe<LexiconState> {
       const count = this.counts[id] ?? 0;
       if (count > 0) heard.push({ word: this.wordList[id]!, count });
     }
-    // ترتيب Array.sort مستقرّ في المواصفة، فالتساوي في العدّاد يُفكّ بالأقدم
+    // ترتيب Array.sort مستقرّ في المواصفة، فتساوي العدّادين يُفكّ بالأقدم
     // تعلّماً — ترتيب ثابت بلا عشوائية كي يكون الخرج قابلاً للاختبار
     heard.sort((a, b) => b.count - a.count);
     return heard.slice(0, limit);
@@ -370,10 +414,10 @@ export class Lexicon implements Lobe<LexiconState> {
       tokenVecs.push(id >= 0 ? this.embedding.get(id).slice() : features.slice());
     }
 
+    // متوسط لا مجموع: مقدار الحصيلة يجب ألّا يكبر بعدد المجهولات، فالعدد نفسه
+    // يسافر مستقلاً إلى الوطاء (unknownCount). القسمة على واحد لا تفعل شيئاً.
     if (unknown.length > 1) scaleInto(charBag, 1 / unknown.length);
 
-    ids.length === tokens.length;
-    const normalized = normalizeArabic(raw);
     return {
       raw,
       tokens,
@@ -381,7 +425,7 @@ export class Lexicon implements Lobe<LexiconState> {
       unknown,
       tokenVecs,
       charBag,
-      isQuestion: detectQuestion(normalized, tokens),
+      isQuestion: detectQuestion(normalizeArabic(raw), tokens),
     };
   }
 
@@ -408,9 +452,9 @@ export class Lexicon implements Lobe<LexiconState> {
 
       const words = raw.words;
       const counts = raw.counts;
-      const embedding = raw.embedding as Partial<EmbeddingState> | undefined | null;
+      const embedding: Partial<EmbeddingState> | null | undefined = raw.embedding;
       if (!Array.isArray(words) || !Array.isArray(counts)) return;
-      if (!embedding || typeof embedding !== 'object') return;
+      if (embedding === null || embedding === undefined || typeof embedding !== 'object') return;
       if (embedding.dim !== DIMS.word || !Array.isArray(embedding.rows)) return;
       // مفردات وتمثيلات غير متساوية: لا نعرف أي كلمة لأي صفّ، فالتجاهل أسلم
       if (embedding.rows.length !== words.length) return;
@@ -446,19 +490,8 @@ export class Lexicon implements Lobe<LexiconState> {
         if (word.length > 0) this.index.set(word, id);
       }
     } catch {
-      // حارس أخير: المدخل من ملف على جهاز الأب وقد يكون أي شيء. فقدان درس
+      // حارس أخير: المدخل ملفٌّ على جهاز الأب وقد يكون أي شيء. فقدان درس
       // أهون من فقدان دماغ.
     }
   }
-}
-
-/** علامة الاستفهام أوّلاً، ثم الأدوات: العلامة قاطعة والأدوات مرجّحة. */
-function detectQuestion(normalized: string, tokens: readonly string[]): boolean {
-  if (normalized.includes('؟') || normalized.includes('?')) return true;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    if (QUESTION_TOOLS_STRONG.includes(token)) return true;
-    if (i < AMBIGUOUS_WINDOW && QUESTION_TOOLS_AMBIGUOUS.includes(token)) return true;
-  }
-  return false;
 }
