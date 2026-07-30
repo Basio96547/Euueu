@@ -1,6 +1,7 @@
 import { PrismaService } from '../common/prisma.service.js';
 import { FxService } from './fx.module.js';
 import { CouponsService } from './coupons.module.js';
+import { DeliveryService } from './delivery.module.js';
 import { Errors } from '../common/errors.js';
 import { runBatch } from '../common/batch.js';
 import { cashDue } from '../common/money.js';
@@ -13,6 +14,7 @@ export class CartService {
     private prisma: PrismaService,
     private fx: FxService,
     private coupons: CouponsService,
+    private delivery: DeliveryService,
   ) {}
 
   async create() {
@@ -214,7 +216,14 @@ export class CartService {
     }
   }
 
-  async summary(token: string, phone?: string) {
+  /**
+   * `where` هو العنوان الذي بلغه الزبون في نموذج التسليم، إن بلغه.
+   * فأجر التوصيل يتغيّر بالمنطقة، وعرضُه ثابتاً حتى شاشة التأكيد يعني
+   * أن يقرأ رقماً ويدفع غيره. وما دام العنوان ناقصاً يُعلَّم `estimated`
+   * فيراه تقديراً لا وعداً.
+   */
+  async summary(token: string, phone?: string,
+                where?: { governorate?: string | null; neighborhood?: string | null }) {
     const cart = await this.get(token);
     const fx = await this.fx.current();
     /* عرض الكمية يُطبَّق على السطر قبل أي شيء آخر: هو أول سلّم الأولوية
@@ -246,7 +255,8 @@ export class CartService {
 
     const grossSubtotal = lines.reduce((a, l) => a + l.lineTotalUsdCents, 0);
     const subtotal = Math.max(0, grossSubtotal - bundleOff);
-    let shipping = lines.length ? 200 : 0; // تعريفة دمشق الافتراضية
+    const quote = await this.delivery.shippingQuote(where?.governorate, where?.neighborhood);
+    let shipping = lines.length ? quote.totalUsdCents : 0;
 
     const coupon = await this.couponFor(cart, subtotal, shipping, phone);
     const discount = coupon?.discountUsdCents ?? 0;
@@ -258,6 +268,15 @@ export class CartService {
     return {
       cartToken: cart.token, lines,
       shippingUsdCents: shipping,
+      shipping: {
+        baseUsdCents: quote.baseUsdCents,
+        surchargeUsdCents: quote.surchargeUsdCents,
+        zoneCode: quote.zoneCode,
+        zoneName: quote.zoneName,
+        slaHours: quote.slaHours,
+        // شحنٌ مجاني بكوبون ليس تقديراً — الرقم صفرٌ محسوم
+        estimated: quote.estimated && shipping > 0,
+      },
       subtotalUsdCents: grossSubtotal,
       bundleDiscountUsdCents: bundleOff,
       bundles: bundles.map((b) => ({

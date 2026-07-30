@@ -88,7 +88,11 @@ export function registerRoutes(app: Hono<Ctx>, d: Deps, env: Record<string, unkn
   /* ————————————————— السلة ————————————————— */
 
   app.post(`${P}/carts`, async (c) => ok(c, { cartToken: (await d.cart.create()).token }));
-  app.get(`${P}/carts/:token`, async (c) => ok(c, await d.cart.summary(c.req.param('token'))));
+  // المحافظة والحيّ اختياريان: بهما يُسعَّر التوصيل بمنطقته، وبدونهما تقديراً
+  app.get(`${P}/carts/:token`, async (c) => ok(c, await d.cart.summary(
+    c.req.param('token'), undefined,
+    { governorate: c.req.query('governorate'), neighborhood: c.req.query('neighborhood') },
+  )));
   app.post(`${P}/carts/:token/items`, async (c) => {
     const b = await body(c);
     return ok(c, await d.cart.addItem(c.req.param('token'), b.sku, b.qty ?? 1));

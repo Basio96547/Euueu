@@ -60,6 +60,13 @@ curl -s -X POST "$API/admin/delivery/couriers" -H "$AH" -H 'content-type: applic
   -d '{"code":"DMS-99","fullName":"مندوب الفحص","phone":"+963955555555","homeGovernorate":"DAMASCUS"}' >/dev/null
 CT=$(tok "+963955555555"); CH="authorization: Bearer $CT"
 
+# منطقةٌ بفارق سعر: أجر التوصيل كان مئتَي سنت لكل عنوان في سوريا،
+# وفارقُ المنطقة مضبوطٌ في القاعدة ولا يمسّ ما يدفعه الزبون. والفحص
+# يثبت أنه يصل إلى السلة والطلب معاً — لا إلى أحدهما فيفترقا.
+curl -s -X POST "$API/admin/delivery/zones" -H "$AH" -H 'content-type: application/json' \
+  -d '{"code":"DMS-MEZZEH","name":{"ar":"المزة"},"governorate":"DAMASCUS","city":"دمشق",
+       "neighborhoods":["المزة"],"zoneType":"URBAN_OUTER","surchargeUsdCents":50}' >/dev/null
+
 # زبونٌ جديد لكل تشغيل: سقف الطلبات المفتوحة قاعدةٌ حقيقية لا عائق
 # فحص، وإعادة استعمال رقمٍ واحد تجعل التشغيل الثالث يفشل بحقّ.
 CUST="+96394$(printf '%07d' $((RANDOM * RANDOM % 10000000)))"
@@ -136,6 +143,18 @@ chk "تقييم الخدمة" "$(curl -s -X POST "$API/support/tickets/$TN/csat"
 chk "المؤشرات" "$(curl -s "$API/admin/tickets/metrics" -H "$AH")" 'frtMedianMinutes'
 chk "تقييم خارج المدى مرفوض" "$(curl -s -X POST "$API/support/tickets/$TN/csat" -H 'content-type: application/json' -d '{"score":9}')" 'SCORE_INVALID'
 
+echo "══ أجر التوصيل بمناطقه ══"
+CZ=$(curl -s -X POST $API/carts|grep -o '"cartToken":"[^"]*"'|cut -d'"' -f4)
+curl -s -X POST $API/carts/$CZ/items -H 'content-type: application/json' -d "{\"sku\":\"$SKU\",\"qty\":1}" >/dev/null
+# بلا عنوان: الأساس وحده، ومعلَّمٌ تقديراً
+chk "بلا عنوان: تقديرٌ بالأساس" "$(curl -s "$API/carts/$CZ")" '"shippingUsdCents":200'
+# بحيٍّ مسجَّل: الأساس + فارق المنطقة، ولا تقدير
+ZQ=$(curl -s "$API/carts/$CZ?governorate=DAMASCUS&neighborhood=%D8%A7%D9%84%D9%85%D8%B2%D8%A9")
+chk "حيٌّ مسجَّل: الأساس + الفارق" "$ZQ" '"shippingUsdCents":250'
+chk "المنطقة تُسمّى ولا تُقدَّر" "$ZQ" '"estimated":false'
+# حيٌّ مجهول في المحافظة: أعلى تقديرٍ فيها لا صفر — التقدير الناقص وعدٌ لا يُوفى
+chk "حيٌّ مجهول: أعلى تقدير للمحافظة" "$(curl -s "$API/carts/$CZ?governorate=DAMASCUS&neighborhood=zzz")" '"shippingUsdCents":250'
+
 echo "══ الدورة الكاملة: طلب ← تسليم ← تسوية ← إرجاع ══"
 C=$(curl -s -X POST $API/carts|grep -o '"cartToken":"[^"]*"'|cut -d'"' -f4)
 curl -s -X POST $API/carts/$C/items -H 'content-type: application/json' -d "{\"sku\":\"$SKU\",\"qty\":1}" >/dev/null
@@ -143,6 +162,9 @@ O=$(curl -s -X POST $API/orders -H "$UH" -H 'content-type: application/json' -H 
  -d "{\"cartToken\":\"$C\",\"address\":{\"recipientName\":\"سامر\",\"governorate\":\"DAMASCUS\",\"city\":\"دمشق\",\"neighborhood\":\"المزة\",\"landmark\":\"مقابل الصيدلية\",\"phone\":\"$CUST\"}}")
 NO=$(echo "$O"|grep -o '"orderNo":"[^"]*"'|cut -d'"' -f4); DUE=$(echo "$O"|grep -o '"cashDueSyp":[0-9]*'|cut -d: -f2)
 chk "إنشاء الطلب" "$O" 'TS-'
+# والطلب يُسعَّر بما رأته السلة: الرقمان من دالة واحدة، فلا يفترقان
+chk "الطلب يحمل فارق المنطقة نفسه" \
+  "$(dbq "SELECT shipping_total_usd_cents FROM orders WHERE order_no='$NO'")" '^250$'
 curl -s -X POST "$API/admin/orders/$NO/confirm" -H "$AH" -H 'content-type: application/json' -d '{"outcome":"CONFIRMED"}' >/dev/null
 chk "التصرّف بطلبٍ غير مُسنَد مرفوض" "$(curl -s -X POST "$API/courier/orders/$NO/status" -H "$CH" -H 'content-type: application/json' -d '{"to":"SHIPPED"}')" 'NOT_YOUR_ORDER'
 chk "المطالبة بطلبٍ في منطقته" "$(curl -s -X POST "$API/courier/orders/$NO/claim" -H "$CH")" '"assigned":true'

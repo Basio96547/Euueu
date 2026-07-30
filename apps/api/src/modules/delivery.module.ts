@@ -298,6 +298,52 @@ export class DeliveryService {
   }
 
   /**
+   * تسعيرة التوصيل لعنوان.
+   *
+   * كان الأجر مئتَي سنت لكل طلبٍ مهما كان العنوان — تعريفةُ دمشق تُطبَّق
+   * على دير الزور. وفي القاعدة `surcharge_usd_cents` لكل منطقة، مضبوطاً
+   * من اللوحة ومستعمَلاً في اقتراح المندوب، ولم يكن يمسّ ما يدفعه الزبون:
+   * المتجر يخسر على البعيد ويُغالي على القريب، والرقمان في القاعدة.
+   *
+   * والمنطقة تُطابَق بالحيّ لا بالمحافظة وحدها، فإن لم يُعرف الحيّ رجعنا
+   * إلى الأساس: عنوانٌ غامض يُسعَّر بالأدنى ثم يُصحَّح عند التأكيد، ولا
+   * يُفاجأ الزبون برقمٍ أكبر.
+   */
+  async shippingQuote(governorate?: string | null, neighborhood?: string | null) {
+    const base = await this.setting('shipping_base_usd_cents', 200);
+    const zone = governorate
+      ? await this.zoneForAddress(governorate, neighborhood ?? '')
+      : null;
+
+    // لا منطقة مطابقة لكن المحافظة معروفة: يُؤخذ أعلى سعرٍ فيها بدل صفر.
+    // فالتقدير الناقص وعدٌ لا يُوفى، والزائد يُردّ عند التأكيد.
+    let surcharge = zone?.surchargeUsdCents ?? 0;
+    if (!zone && governorate) {
+      const inGov = await this.prisma.deliveryZone.findMany({
+        where: { governorate: governorate as any, active: true },
+        select: { surchargeUsdCents: true },
+      });
+      surcharge = inGov.reduce((a, z) => Math.max(a, z.surchargeUsdCents), 0);
+    }
+
+    return {
+      baseUsdCents: base,
+      surchargeUsdCents: surcharge,
+      totalUsdCents: base + surcharge,
+      zoneCode: zone?.code ?? null,
+      zoneName: zone ? (zone.name as any)?.ar ?? zone.code : null,
+      slaHours: zone?.slaHours ?? ZONE_DEFAULTS.URBAN_CORE?.sla ?? 24,
+      // العنوان غير محسوم: الرقم تقديرٌ يُعاد حسابه عند التأكيد
+      estimated: !zone,
+    };
+  }
+
+  private async setting<T>(key: string, fallback: T): Promise<T> {
+    const s = await this.prisma.storeSetting.findUnique({ where: { key } });
+    return (s?.value as T) ?? fallback;
+  }
+
+  /**
    * اقتراح مندوب لطلب.
    * الترتيب: مندوبو المنطقة بأولويتهم، ثم من لم يبلغ سعته، ثم الأقل حِملاً.
    * لا يُقترح موقوف ولا خارج وردية — واقتراحُ من لا يعمل يضيّع وقت المرسِل.

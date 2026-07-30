@@ -4,6 +4,7 @@ import { FxService } from './fx.module.js';
 import { CartService } from './cart.module.js';
 import { CouponsService } from './coupons.module.js';
 import { NotificationsService } from './notifications.service.js';
+import { DeliveryService } from './delivery.module.js';
 import { Errors } from '../common/errors.js';
 import { runBatch } from '../common/batch.js';
 import { cashDue, orderNo, publicId } from '../common/money.js';
@@ -26,6 +27,7 @@ export class OrdersService {
     private cart: CartService,
     private coupons: CouponsService,
     private notify: NotificationsService,
+    private delivery: DeliveryService,
   ) {}
 
   async create(cartToken: string, address: any, idempotencyKey?: string, buyerPublicId?: string) {
@@ -98,7 +100,10 @@ export class OrdersService {
       };
     }));
 
-    let shipping = 200;
+    /* أجر التوصيل من منطقة العنوان لا رقماً ثابتاً: هنا العنوان محسوم
+       فالتسعيرة نهائية، وما رآه الزبون في السلة كان تقديراً على أساسها. */
+    const quote = await this.delivery.shippingQuote(address.governorate, address.neighborhood);
+    let shipping = quote.totalUsdCents;
     const grossSubtotal = lines.reduce((a, l) => a + l.total, 0);
 
     /* الحزم تُعاد من الخدمة نفسها التي تحسبها في السلة: حسابان

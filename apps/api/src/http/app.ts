@@ -77,8 +77,10 @@ export function buildDeps(db: D1Binding, media?: R2Binding): Deps {
   const fx = new FxService(prisma);
   const catalog = new CatalogService(prisma);
   const coupons = new CouponsService(prisma);
-  const cart = new CartService(prisma, fx, coupons);
-  const orders = new OrdersService(prisma, fx, cart, coupons, notify);
+  // التوصيل قبل السلة والطلبات: كلتاهما تسعّر الشحن بمناطقه
+  const delivery = new DeliveryService(prisma, notify);
+  const cart = new CartService(prisma, fx, coupons, delivery);
+  const orders = new OrdersService(prisma, fx, cart, coupons, notify, delivery);
   const auth = new AuthService(prisma, notify);
   const search = new SearchService(prisma);
   const warranty = new WarrantyService(prisma, notify);
@@ -90,7 +92,6 @@ export function buildDeps(db: D1Binding, media?: R2Binding): Deps {
   const push = new PushService(prisma);
   const alerts = new AlertsService(prisma, notify, fx);
   const products = new ProductsAdminService(prisma, media);
-  const delivery = new DeliveryService(prisma, notify);
   const sweeper = new ReservationSweeper(prisma);
   const admin = new AdminService(prisma, orders, notify, sweeper);
   const courier = new CourierService(prisma, notify, settlements);

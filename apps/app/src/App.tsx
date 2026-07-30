@@ -6,6 +6,11 @@ import { useRoute, match } from './lib/router.js';
 interface CartLine { sku: string; name: string; qty: number; unitPriceUsdCents: number; lineTotalUsdCents: number }
 interface CartSummary {
   cartToken: string; lines: CartLine[]; shippingUsdCents: number;
+  shipping?: {
+    baseUsdCents: number; surchargeUsdCents: number;
+    zoneCode: string | null; zoneName: string | null;
+    slaHours: number; estimated: boolean;
+  };
   subtotalUsdCents: number; discountUsdCents: number;
   coupon: { code: string; discountUsdCents: number; freeShipping: boolean; invalidReason: string | null } | null;
   fx: { rate: number; health: string; validUntil: string };
@@ -143,7 +148,16 @@ function CartPage({ nav }: { nav: (to: string) => void }) {
             <span className="tnum" style={{ color: 'var(--jade)' }}>− {fmtUsd(cart.discountUsdCents)}</span>
           </div>
         )}
-        <div className="row"><span className="muted">التوصيل</span><span className="tnum">{fmtUsd(cart.shippingUsdCents)}</span></div>
+        {/* المنطقة تُذكر حين تُعرف، و«تقديري» حين لا تُعرف: الرقم يتغيّر
+            بالعنوان، وعرضُه صامتاً يجعل الزبون يقرأ رقماً ويدفع غيره. */}
+        <div className="row">
+          <span className="muted">
+            التوصيل
+            {cart.shipping?.zoneName && <> · {cart.shipping.zoneName}</>}
+            {cart.shipping?.estimated && <> · تقديري</>}
+          </span>
+          <span className="tnum">{fmtUsd(cart.shippingUsdCents)}</span>
+        </div>
         <div className="tot"><span>المستحق نقداً</span><span className="tnum">{fmtSyp(cart.totals.cashSyp)}</span></div>
       </div>
 
@@ -179,6 +193,25 @@ function CheckoutPage({ nav }: { nav: (to: string) => void }) {
       recipientName: f.recipientName || u.fullName || '',
     }))).catch(() => {});
   }, []);
+
+  /* أجر التوصيل يتغيّر بالمنطقة، فيُسأل عنه والعنوان يُكتب لا بعد التأكيد.
+     ولولا ذلك لرأى الزبون تعريفة دمشق في السلة ثم دفع أجر دير الزور — وهو
+     الفرق الذي يُلغى عنده الطلب عند الباب. والسؤال مؤجَّل نصف ثانية: كل
+     حرفٍ في «الحي» طلبٌ لولا التأجيل. */
+  const [quote, setQuote] = useState<CartSummary['shipping'] | null>(null);
+  useEffect(() => {
+    const token = localStorage.getItem('cart_token');
+    if (!token || form.neighborhood.length < 2) { setQuote(null); return; }
+    const t = setTimeout(() => {
+      const q = new URLSearchParams({
+        governorate: form.governorate, neighborhood: form.neighborhood,
+      });
+      api.get<CartSummary>(`/carts/${token}?${q}`)
+        .then((s) => setQuote(s.shipping ?? null))
+        .catch(() => setQuote(null));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [form.governorate, form.neighborhood]);
 
   const phoneOk = /^\+9639[0-9]{8}$/.test(form.phone);
   const ready = form.recipientName.length >= 3 && form.neighborhood.length >= 2
@@ -243,6 +276,29 @@ function CheckoutPage({ nav }: { nav: (to: string) => void }) {
           <span className="hint">خط النجاة الثاني حين ينقطع التيار عن هاتفك.</span>
         </div>
       </div>
+
+      {quote && (
+        <div className="card glass">
+          <div className="row">
+            <span className="muted">
+              أجر التوصيل
+              {quote.zoneName && <> · {quote.zoneName}</>}
+            </span>
+            <span className="tnum">{fmtUsd(quote.baseUsdCents + quote.surchargeUsdCents)}</span>
+          </div>
+          {quote.surchargeUsdCents > 0 && (
+            <div className="row">
+              <span className="muted">منه فارق المنطقة</span>
+              <span className="tnum">{fmtUsd(quote.surchargeUsdCents)}</span>
+            </div>
+          )}
+          <span className="hint">
+            {quote.estimated
+              ? 'الحيّ غير مسجَّل عندنا بعد، فالرقم أعلى تقدير لمحافظتك — وقد ينقص عند التأكيد.'
+              : `التسليم خلال ${quote.slaHours} ساعة تقريباً.`}
+          </span>
+        </div>
+      )}
 
       <div className="ok">
         الدفع نقداً عند الاستلام — لا يُطلب منك أي دفع الآن، وتفحص الجهاز قبل أن تدفع.
