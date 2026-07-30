@@ -123,6 +123,15 @@ function harden(res: Response): Response {
 
 interface Fx { rate: number; validUntil: string; safetyMarginBp: number }
 
+/** تسلسلٌ لا يُنهي وسم `<script>` — انظر تعليق `fx-boot` أدناه */
+const jsonForScript = (v: unknown) =>
+  JSON.stringify(v)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+
 async function liveFx(env: Env): Promise<Fx | null> {
   try {
     const cached = await env.KV?.get('fx:edge');
@@ -176,7 +185,11 @@ function injectFx(res: Response, fx: Fx): Response {
   return new HTMLRewriter()
     .on('script#fx-boot', {
       element(el) {
-        el.setInnerContent(`window.__FX__=${JSON.stringify(fx)};`, { html: true });
+        // `html: true` يعني أن ما يُكتب يُحلَّل كوسوم. و`JSON.stringify` لا
+        // يهرّب `<`، فقيمةٌ نصّية من القاعدة فيها `</script>` تُنهي الوسم
+        // وتفتح الصفحة للحقن. و`valid_until` نصٌّ يُقرأ من عمودٍ في SQLite
+        // — وSQLite لا يفرض نوعاً، فلا يُتّكل على أنه تاريخ.
+        el.setInnerContent(`window.__FX__=${jsonForScript(fx)};`, { html: true });
       },
     })
     /* `data-alt` هو الوسم الذي يعرض العملة الأخرى — والافتراضي ليرة */
