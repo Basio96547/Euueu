@@ -118,6 +118,8 @@ export class BasalGanglia implements Lobe<BasalGangliaState> {
     temperature: number,
     rng: Rng,
     compute: ComputePort,
+    /** ميلٌ يُضاف إلى قيمة كل استجابة قبل الاختيار — منه يأتي أثر الهدف */
+    bias?: (strategy: Strategy) => number,
   ): Decision {
     const raw = this.net.forward(state, compute);
     const qs = raw.slice();
@@ -130,7 +132,10 @@ export class BasalGanglia implements Lobe<BasalGangliaState> {
     for (let i = 0; i < STRATEGIES.length; i++) {
       const strategy = STRATEGIES[i]!;
       if (allowed.includes(strategy)) {
-        masked[i] = qs[i] ?? 0;
+        /* الميل يُضاف إلى القيمة المتعلَّمة لا يحلّ محلّها: هدفه يُرجّح، وتجربته
+         * مع أبيه تغلب الترجيح إن كذّبته. */
+        const lean = bias ? bias(strategy) : 0;
+        masked[i] = (qs[i] ?? 0) + (Number.isFinite(lean) ? lean : 0);
         anyAllowed = true;
       } else {
         masked[i] = -Infinity;

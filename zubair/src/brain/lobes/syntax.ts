@@ -58,7 +58,7 @@ export type QuestionKind =
 export type SentenceKind = 'اسمية' | 'فعلية' | 'استفهام' | 'نفي' | 'أمر' | 'نداء' | 'مفردة';
 
 /** نوع العلاقة بين طرفي الجملة — يُصدَّر لأن الفص الجُداري يُفهرس به حقائقه. */
-export type RelationKind = 'جنس' | 'صفة' | 'فعل' | 'ملك';
+export type RelationKind = 'جنس' | 'صفة' | 'فعل' | 'ملك' | 'عدد';
 
 export interface Parse {
   words: WordForm[];
@@ -216,7 +216,10 @@ export class Syntax implements Lobe<SyntaxState> {
       const info = DEMONSTRATIVES.get(word)!;
       return { word, pos: 'اسم', gender: info.gender, number: info.number, definite: true, stem: word };
     }
-    if (QUESTION_TOOLS.has(word) || PARTICLES.has(word) || NEGATIONS.has(word)) {
+    /* ألفاظ المِلك حروفُ جرٍّ بضمائر («عندي» = عند + ي)، فهي حروف لا أسماء.
+     * وبلا هذا صارت «عندي» موضوعَ الجملة في «عندي ثلاث قطط» — والمِلك ليس
+     * شيئاً يُملَك. */
+    if (QUESTION_TOOLS.has(word) || PARTICLES.has(word) || NEGATIONS.has(word) || POSSESSION.has(word)) {
       return { word, pos: 'حرف', gender: 'مجهول', number: 'مجهول', definite: false, stem: word };
     }
 
@@ -403,6 +406,32 @@ export class Syntax implements Lobe<SyntaxState> {
   }
 
   /**
+   * أيّ **علاقةٍ** يطلبها هذا السؤال من معرفته.
+   *
+   * وهذا وصلٌ كان مقطوعاً، وهو أخطر ما وُجد في مراجعة الفصوص: صار زبير يحفظ
+   * معرفته مفهرسةً بنوع العلاقة (جنسٌ وصفةٌ وفعل) — ثم كان الجواب يبحث في
+   * «الجنس» **دائماً** مهما كان السؤال. فيُعلّمه أبوه أن القطة صغيرة، ويسأله
+   * «كيف القطة؟»، فلا يجد شيئاً ويُقرّ بجهله — وهو يعرف. حفظٌ لا يُستخرَج ليس
+   * معرفة.
+   *
+   * وما لا علاقة له في دماغه (السبب والاختيار) يعود null فيُقرّ بجهله صادقاً.
+   */
+  relationFor(asks: QuestionKind | null): RelationKind | null {
+    if (asks === null) return 'جنس';
+    switch (asks) {
+      case 'كيفية': return 'صفة';   // «كيف القطة؟» يطلب صفتها
+      case 'جنس':
+      case 'شخص':
+      case 'مكان':
+      case 'زمان':
+      case 'تصديق': return 'جنس';
+      case 'عدد': return 'عدد';
+      case 'سبب':
+      case 'اختيار': return null;   // لا سببية في دماغه بعد، والصدق أن يُقرّ
+    }
+  }
+
+  /**
    * أيصلح هذا الجواب لهذا السؤال؟
    *
    * وهذا هو ما طلبه الأب صراحةً: أن يميّز السؤال من الجواب. سؤال «وين دمشق؟»
@@ -412,9 +441,18 @@ export class Syntax implements Lobe<SyntaxState> {
    * ويُعطى `answerCategory` من الفص الجُداري: جنسُ الجواب نفسه («مدينة» جنسها
    * «مكان»). وإن جُهل الجنس قُبِل الجواب: المنع بلا علم منعٌ ظالم.
    */
-  answerFits(asks: QuestionKind | null, answer: string, answerCategory: string | null): boolean {
+  answerFits(
+    asks: QuestionKind | null,
+    answer: string,
+    answerCategory: string | null,
+    fromRelation: RelationKind | null = null,
+  ): boolean {
     if (asks === null) return true;
     const category = answerCategory;
+
+    /* جوابٌ جاء من العلاقة التي طلبها السؤال يصلح بلا فحصٍ آخر: مَن سُئل «كيف
+     * القطة؟» فأجاب من صفاتها فقد أجاب عمّا سُئل عنه بعينه. */
+    if (fromRelation !== null && fromRelation === this.relationFor(asks)) return true;
 
     switch (asks) {
       case 'جنس':
@@ -429,11 +467,14 @@ export class Syntax implements Lobe<SyntaxState> {
         return NUMBER_WORDS.has(answer) || Number.isFinite(Number(answer));
       case 'تصديق':
         return /^(نعم|ايوا|اي|لا|ما|مو)$/.test(answer);
-      case 'سبب':
       case 'كيفية':
+        /* الكيفية صارت له بنية: صفاتُ الشيء. فإن جاء الجواب من غيرها رُدّ —
+         * «وين دمشق؟» لا يُجاب بجنسها، و«كيف القطة؟» لا يُجاب به كذلك. */
+        return false;
+      case 'سبب':
       case 'اختيار':
-        /* هذه الثلاثة لا يملك زبير لها بنيةً بعد: لا سببية ولا كيفية في دماغه.
-         * فيُردّ الجواب دائماً كي يُقرّ بجهله بدل أن يُجيب بجنسٍ لا صلة له. */
+        /* وهذان لا بنية لهما في دماغه: لا سببية ولا مفاضلة. فيُردّ الجواب
+         * دائماً كي يُقرّ بجهله بدل أن يُجيب بما لا صلة له. */
         return false;
     }
   }

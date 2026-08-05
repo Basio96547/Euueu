@@ -26,6 +26,24 @@ export interface PrefrontalState {
 
 export type Goal = 'LEARN' | 'ANSWER' | 'BOND' | 'REST';
 
+/**
+ * ما يوافق كل هدف من الاستجابات.
+ *
+ * وكان الهدف يُحسَب في كل نبضة ثم **يُعرَض في أثر النبضة ولا يفعل شيئاً**:
+ * فصٌّ يقول «هدفي أن أتعلّم» ثم لا يُغيّر قراره ليس له هدف بل عبارة.
+ *
+ * وهو **ترجيحٌ لا كبح**، ولذلك لا يُطبَّق هنا بل يُسلَّم إلى العُقد القاعدية
+ * ميلاً يُضاف إلى قيمها المتعلَّمة. والفرق جوهري: الكبح يمنع، والميل يُرجّح ثم
+ * تغلبه التجربة إن كذّبته — فلو مُنع الجوابُ على مَن هدفه التعلّم لصار لا يجيب
+ * سؤالاً وهو يعرف.
+ */
+export const GOAL_FITS: Record<Goal, ReadonlySet<Strategy>> = {
+  LEARN: new Set<Strategy>(['ASK_QUESTION', 'ADMIT', 'ACKNOWLEDGE']),
+  ANSWER: new Set<Strategy>(['ANSWER_MEMORY', 'ANSWER_GENERAL', 'ADMIT']),
+  BOND: new Set<Strategy>(['GREET_BACK', 'ACKNOWLEDGE', 'ANSWER_MEMORY']),
+  REST: new Set<Strategy>(['ACKNOWLEDGE', 'GREET_BACK', 'BABBLE']),
+};
+
 export class Prefrontal implements Lobe<PrefrontalState> {
   readonly name = 'prefrontal';
   readonly ar = 'الفص الجبهي';

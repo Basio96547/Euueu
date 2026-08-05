@@ -22,6 +22,7 @@
 import { hashCharFeatures, tokenize, QUESTION_WORDS, type Lexicon, type Percept } from '../core/text.js';
 import { clamp, cosine, vec, type Vec } from '../core/tensor.js';
 import { DIMS, type Fact, type Intent, type Lobe } from '../core/types.js';
+import type { RelationKind } from './syntax.js';
 
 /* ————— الأرقام المعلنة —————
  * كلها هنا في أعلى الملف لا مبثوثة في المنطق: عتبة مخفيّة داخل دالة عتبةٌ لا
@@ -137,10 +138,15 @@ export interface StoredFact {
   relation?: RelationKind;
 }
 
-/** نوع العلاقة بين الطرفين. الفصل بينها هو ما يجعل معرفته تتراكم لا تتقاتل. */
-export type RelationKind = 'جنس' | 'صفة' | 'فعل' | 'ملك';
+/* نوع العلاقة يُستورَد من النحو ولا يُكتب هنا ثانيةً.
+ *
+ * كان مكتوباً في الملفّين معاً، فلمّا زِيدت «عدد» في أحدهما بقي الآخر على
+ * أربعة — والنسختان تفترقان دائماً مع الوقت. وهذه ثالث قائمة تتكرّر في هذا
+ * الدماغ فتفترق (سبقتها الحروف وأدوات الاستفهام)، والقاعدة صارت: ما يعرفه فصٌّ
+ * لا يُعاد كتابته في فصٍّ آخر. */
+export type { RelationKind };
 
-export const RELATION_KINDS: readonly RelationKind[] = ['جنس', 'صفة', 'فعل', 'ملك'];
+export const RELATION_KINDS: readonly RelationKind[] = ['جنس', 'صفة', 'فعل', 'ملك', 'عدد'];
 
 export interface ParietalState {
   facts: StoredFact[];

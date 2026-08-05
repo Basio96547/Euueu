@@ -30,7 +30,7 @@ import { Parietal } from './lobes/parietal.js';
 import { Amygdala, Cingulate, Hypothalamus, Insula } from './lobes/limbic.js';
 import { Emotion, type Feelings } from './lobes/emotion.js';
 import { BasalGanglia } from './lobes/basalGanglia.js';
-import { Cerebellum, Prefrontal } from './lobes/prefrontal.js';
+import { Cerebellum, GOAL_FITS, Prefrontal } from './lobes/prefrontal.js';
 import { Broca } from './lobes/broca.js';
 import { VisualCortex, type VisualPercept } from './lobes/visualCortex.js';
 import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js';
@@ -440,6 +440,34 @@ export class Zubair {
       where: 'none', ms: 0,
     });
 
+    /* ٤٫٥٥ ما يسمعه وما يحسّه: يصلان الحوفي إن مرّا المهاد.
+     *
+     * وكان مجرى السمع ومجرى الجسد يُفرَزان في المهاد ثم **لا يستقبلهما أحد**:
+     * يُحسَب لهما وزنٌ ونبضٌ وقرارُ عبور، ثم يُهمَل الثلاثة. حاسّةٌ تمرّ إلى
+     * قشرةٍ لا تقرؤها ليست حاسّة. */
+    if (hearing && relay.passed.hearing) {
+      const familiarity = this.auditoryCortex.familiarity(hearing.pitchHz);
+      this.emotion.heard({
+        loudness: hearing.loudness,
+        familiarity,
+        // الضجيج والطرق يُفزعان، وصوت الإنسان لا يُفزع بعلوّه وحده
+        harsh: hearing.kind === 'ضجيج' || hearing.kind === 'طرق',
+      });
+      trace.push({
+        lobe: this.auditoryCortex.name, ar: this.auditoryCortex.ar,
+        note: `سمع ${hearing.kind} بعلوّ ${Math.round(hearing.loudness * 100)}٪`
+          + (familiarity > 0.5 ? ' — صوتٌ يعرفه' : ''),
+        where: 'cpu', ms: 0,
+      });
+    }
+    if (somatic && relay.passed.body && Math.abs(somatic.innateValence) > 0.1) {
+      trace.push({
+        lobe: this.somatosensory.name, ar: this.somatosensory.ar,
+        note: `${somatic.kind}${somatic.innateValence > 0 ? ' — أراحه' : ' — أزعجه'}`,
+        where: 'cpu', ms: 0,
+      });
+    }
+
     /* ٤٫٦ ما يراه الآن: تُستدعى القشرة تحت الصدغية إن مرّ مجرى البصر فقط.
      * والشرط ليس تحسيناً للأداء بل معنى: ما لم يمرّ المهاد لم يصل الوعي. */
     let recognized: Recognition | null = null;
@@ -456,6 +484,16 @@ export class Zubair {
     /* ٥. المهاد: أي كلماتك تستحقّ الانتباه */
     const gated = timed(this.thalamus, 'وزّع انتباهه على كلماتك', this.compute_.unit,
       () => this.thalamus.gate(percept, intero, this.compute_));
+
+    /* أعلى ما نظرت إليه كلمةٌ في الجملة: يُعرَض للأب كي يرى الانتباه لا يُوصَف له */
+    const focusPair = strongestLink(this.thalamus.attentionMap, percept.tokens);
+    if (focusPair) {
+      trace.push({
+        lobe: this.thalamus.name, ar: this.thalamus.ar,
+        note: `«${focusPair.from}» نظرت إلى «${focusPair.to}» بوزن ${focusPair.weight.toFixed(2)}`,
+        where: 'cpu', ms: 0,
+      });
+    }
 
     /* ٦. الفص الصدغي: الفهم */
     const understanding = timed(this.temporal, 'فهم المعنى والقصد', this.compute_.unit,
@@ -532,10 +570,22 @@ export class Zubair {
     const teachesNegation = parse.negated && parse.topic !== null && parse.comment !== null
       && understanding.intent !== 'PRAISE';
 
+    /* جملةٌ خبرية تامّة الطرفين بلا نفي: تعليمٌ مهما قال المصنِّف.
+     *
+     * قِيسَ: «القطة صغيرة» صنّفها المصنِّف **تصحيحاً**، والنحو يقول عنها «اسمية
+     * · علاقة صفة» — أي خبرٌ تامّ. فلم يُحفظ شيء. والبنية أوثق من التصنيف
+     * المتعلَّم في هذا الموضع بعينه: التصحيح في العربية لا يخلو من نفيٍ أو لفظ
+     * تخطئة، وكلاهما يراه النحو. أما المدح والتحية فيُستثنيان لأنهما خبرٌ في
+     * الصورة وليسا تعليماً في القصد. */
+    const teachesByStructure = parse.topic !== null && parse.comment !== null
+      && parse.asks === null && !parse.negated
+      && understanding.intent !== 'PRAISE' && understanding.intent !== 'GREET';
+
     const teaching = understanding.intent === 'TEACH_FACT'
       || understanding.intent === 'TEACH_WORD'
       || understanding.intent === 'TEACH_NAME'
       || teachesNegation
+      || teachesByStructure
       /* والحذف تعليمٌ كالتعليم الصريح: «صغيرة» بعد «القطة حيوان» درسٌ عن
        * القطة. ولولا هذا لسمعه زبير كلمةً غريبة يسأل عنها. */
       || (ellipsis !== null && understanding.intent !== 'PRAISE' && understanding.intent !== 'CORRECT');
@@ -550,11 +600,18 @@ export class Zubair {
         lobe: this.parietal.name, ar: this.parietal.ar,
         note: `نفى أن ${parse.topic} ${parse.comment}`, where: 'cpu', ms: 0,
       });
-    } else if (teaching && (bound.subject ?? resolvedSubject) && (bound.object ?? parse.comment ?? ellipsis?.comment)) {
+    /* طرفا الجملة يُؤخذان من النحو حين يعجز الرابط عنهما.
+     *
+     * والرابط في الجُداري يشترط قصداً تعليمياً صريحاً، فإذا أخطأ المصنِّف القصد
+     * عاد بطرفين فارغين — فيسقط الدرس وإن كانت الجملة تامّة البنية. وهذا ما
+     * حدث في «القطة صغيرة»: النحو يعرف طرفيها، والرابط لا يراهما. */
+    } else if (teaching
+      && (bound.subject ?? resolvedSubject ?? parse.topic)
+      && (bound.object ?? parse.comment ?? ellipsis?.comment)) {
       /* الضمير يحلّ محلّه مرجعه قبل الحفظ: «هي صغيرة» تُحفَظ «قطة ← صغيرة».
        * وبلا هذا الإبدال يعود الضمير ثم لا يُنتفَع به، فيبقى الكلام معلّقاً. */
-      const subject = bound.subject ?? resolvedSubject!;
-      const object = bound.object ?? parse.comment ?? ellipsis!.comment;
+      const subject = (bound.subject ?? resolvedSubject ?? parse.topic)!;
+      const object = (bound.object ?? parse.comment ?? ellipsis?.comment)!;
       this.parietal.learnFact(subject, object, this.ticks, 'أبوه',
         parse.relation ?? ellipsis?.relation ?? 'جنس');
       this.lessons++;
@@ -564,6 +621,13 @@ export class Zubair {
       const a = this.lexicon.idOf(subject);
       const b = this.lexicon.idOf(object);
       if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b);
+      /* والعدد يُحفَظ علاقةً كسائرها: «عندي ثلاث قطط» ثم «كم قطة عندي؟».
+       * وكان النحو يقرأ العدد في كل جملة ثم لا يستقبله أحد — فكان «كم» سؤالاً
+       * لا جواب له في دماغه أبداً مهما قال الأب. */
+      if (parse.count !== null) {
+        this.parietal.learnFact(subject, String(parse.count), this.ticks, 'أبوه', 'عدد');
+      }
+
       trace.push({
         lobe: this.parietal.name, ar: this.parietal.ar,
         note: `حفظ: ${subject} ← ${object}${(parse.relation ?? ellipsis?.relation ?? 'جنس') !== 'جنس' ? ` (${parse.relation ?? ellipsis?.relation})` : ''}`,
@@ -605,7 +669,14 @@ export class Zubair {
      * لا من الربط ولا من الانتباه. قِيسَ فخرج «وماذا أيضاً عن هيك؟». */
     const boundTopic = bound.subject ?? resolvedSubject ?? this.salientTopic(percept, gated.weights);
     const topic = boundTopic && this.syntax.classify(boundTopic).pos !== 'حرف' ? boundTopic : null;
-    const knownFact = topic ? this.parietal.lookup(topic) : null;
+    /* البحث في العلاقة التي يطلبها السؤال لا في «الجنس» دائماً.
+     *
+     * وهذا أخطر عطلٍ وُجد في مراجعة الفصوص كلها، لأنه يُبطل ميزةً كاملة بُنيت
+     * قبله: صار زبير يحفظ معرفته مفهرسةً بنوع العلاقة، ثم كان الجواب يبحث في
+     * «الجنس» وحده. فيُعلّمه أبوه أن القطة صغيرة، ويسأله «كيف القطة؟»، فيُقرّ
+     * بجهله — وهو يعرف. حفظٌ لا يُستخرَج ليس معرفة. */
+    const wanted = this.syntax.relationFor(parse.asks);
+    const knownFact = topic && wanted ? this.parietal.lookup(topic, wanted) : null;
 
     /* سؤالٌ عن المشار إليه («شو هذا؟») وهو يرى شيئاً يعرفه: الجواب مما يراه لا
      * مما حُفظ نصّاً. فيُصاغ ما يراه حقيقةً آنيّة تُقدَّم على المحفوظ، لأن السؤال
@@ -632,7 +703,9 @@ export class Zubair {
     let fact = candidate;
     if (candidate && parse.asks !== null) {
       const answerCategory = this.parietal.lookup(candidate.object)?.object ?? null;
-      if (!this.syntax.answerFits(parse.asks, candidate.object, answerCategory)) {
+      // ومن أين جاء الجواب جزءٌ من فحص صلاحيته: جوابٌ من صفاته يصلح لـ«كيف»
+      const from = seenFact ? 'جنس' : wanted;
+      if (!this.syntax.answerFits(parse.asks, candidate.object, answerCategory, from)) {
         trace.push({
           lobe: this.syntax.name, ar: this.syntax.ar,
           note: `«${candidate.object}» لا يصلح جواباً لسؤال عن ${parse.asks} — فيُقرّ بجهله`,
@@ -723,7 +796,9 @@ export class Zubair {
      * إزاحةٍ كهذه تبقى المشاعر عرضاً على الشاشة لا حالةً في الدماغ. */
     const temperature = clamp(
       0.22 + 0.9 * conflict.level + 0.35 * intero.boredom + 0.25 * intero.curiosity
-      - 0.5 * intero.confidence + this.emotion.temperatureShift,
+      - 0.5 * intero.confidence + this.emotion.temperatureShift
+      // والمتعب لا يجرّب: من هدفه أن يستريح يلتزم أقصر ما يعرف
+      + (goal === 'REST' ? -0.25 : 0),
       0.12,
       1.8,
     );
@@ -733,7 +808,9 @@ export class Zubair {
       intero, insula: insulaVec, stage: stage.id, unknownCount: unknownContent.length,
     });
     const decision = timed(this.basalGanglia, `اختار استجابته (حرارة ${temperature.toFixed(2)})`, this.compute_.unit,
-      () => this.basalGanglia.select(state, allowed, temperature, this.rng, this.compute_));
+      () => this.basalGanglia.select(state, allowed, temperature, this.rng, this.compute_,
+        // ميل الهدف: يُرجّح ما يوافقه ولا يمنع ما يخالفه
+        (strategy) => (GOAL_FITS[goal].has(strategy) ? GOAL_LEAN : 0)));
 
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
@@ -1105,6 +1182,10 @@ const QUESTION_WORDS = new Set([
   'امتي', 'كم', 'ايش', 'شنو', 'شلون', 'قديش', 'ليه', 'اي', 'فين',
 ]);
 
+/** مقدار ما يُرجَّح به ما يوافق هدفه. صغيرٌ بقصد: ميلٌ يُزيح ولا يحسم، فتبقى
+ *  تجربتُه مع أبيه هي الحاكمة. */
+const GOAL_LEAN = 0.3;
+
 /** مَن يُغار مما عنده: أبوه وكل ثالث. ولا يغار المرء مما عنده هو. */
 const OTHER_OWNERS = new Set(['الأب', 'غيره']);
 
@@ -1116,6 +1197,24 @@ const DEMONSTRATIVE_KEYS = new Set([
 const STOP_WORDS = new Set([
   'هذا', 'هذه', 'هاد', 'هاي', 'هو', 'هي', 'في', 'من', 'على', 'عن', 'الى', 'ال', 'و', 'يعني', 'انا', 'انت',
 ]);
+
+/** أقوى صلةٍ في خريطة الانتباه: أي كلمةٍ نظرت إلى أيّها. */
+function strongestLink(map: readonly number[][], tokens: readonly string[]):
+  { from: string; to: string; weight: number } | null {
+  let best: { from: string; to: string; weight: number } | null = null;
+  for (let i = 0; i < map.length; i++) {
+    const row = map[i]!;
+    for (let j = 0; j < row.length; j++) {
+      // الكلمة تنظر إلى نفسها دائماً، وذاك ليس صلةً تُعرَض
+      if (i === j) continue;
+      const weight = row[j]!;
+      if (!best || weight > best.weight) {
+        best = { from: tokens[i] ?? '؟', to: tokens[j] ?? '؟', weight };
+      }
+    }
+  }
+  return best && best.weight > 0.35 ? best : null;
+}
 
 function goalAr(goal: 'LEARN' | 'ANSWER' | 'BOND' | 'REST'): string {
   switch (goal) {

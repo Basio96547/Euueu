@@ -88,7 +88,7 @@ test('مَن نزل فيه الدرس لا يقول «علّمني» ولا يُ
     factConfidence: 0.7,
     lessonLanded: true,
     ruleToTest: false,
-  };
+    };
 
   const allowed = prefrontal.inhibit(STRATEGIES, base);
   assert.ok(!allowed.includes('ADMIT'), '«علّمني» ممنوعة على مَن عُلّم الآن');

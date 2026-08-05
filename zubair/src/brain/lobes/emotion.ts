@@ -239,6 +239,37 @@ export class Emotion implements Lobe<EmotionState> {
     return this.snapshot();
   }
 
+  /**
+   * ما سمعته أذنه: الطريق البطيء من القشرة السمعية.
+   *
+   * وكانت أذنه معطّلة عن دماغه تماماً: تسمع فتحسب نوع الصوت وعلوّه وطبقته
+   * وأُلفته، ثم لا يستقبل ذلك فصٌّ واحد. سمعٌ لا يُغيّر شيئاً ليس سمعاً.
+   *
+   * والصوت يفعل عند الطفل ثلاثة: العالي المفاجئ يُفزع، والمألوف يُطمئن (وصوت
+   * الأمّ أول ما يُهدّئ وليداً)، والغريب يُستغرَب.
+   */
+  heard(input: { loudness: number; familiarity: number; harsh: boolean }): Feelings {
+    const loud = clamp(safe(input.loudness, 0), 0, 1);
+    const known = clamp(safe(input.familiarity, 0), 0, 1);
+
+    const rises = calm();
+    if (input.harsh && loud > 0.5) {
+      rises['خوف'] = clamp(0.6 * loud * (1 - known), 0, 1);
+      rises['مفاجأة'] = clamp(0.5 * loud, 0, 1);
+      this.reason = 'صوتٌ عالٍ أفزعه';
+    } else if (known > 0.5) {
+      // المألوف يُطمئن: أول ما يُهدّئ وليداً صوتٌ يعرفه
+      rises['سعادة'] = clamp(0.35 * known, 0, 1);
+      this.reason = 'صوتٌ يعرفه أطمأنّ إليه';
+    } else if (loud > 0.2) {
+      rises['مفاجأة'] = clamp(0.4 * loud * (1 - known), 0, 1);
+      this.reason = 'صوتٌ غريب استغربه';
+    }
+
+    this.step(rises);
+    return this.snapshot();
+  }
+
   /* ————— حكم الأب: أقوى ما يُحرّك مشاعره ————— */
 
   judged(input: Judged): Feelings {
