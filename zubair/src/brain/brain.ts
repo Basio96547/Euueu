@@ -37,7 +37,7 @@ import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js'
 import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
 import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
 import { Syntax, type RelationKind } from './lobes/syntax.js';
-import { ASKS_KNOWLEDGE, instinctMaySpeak, rowOf, typeFits, voidIsFinal } from './core/ownership.js';
+import { ASKS_KNOWLEDGE, instinctMaySpeak, rowOf, typeFits, voidIsFinal, type Request } from './core/ownership.js';
 import { rankOf, review, type Claim, type Verdict } from './core/review.js';
 import { Arbiter } from './lobes/arbiter.js';
 import {
@@ -67,6 +67,12 @@ interface PendingJudgement {
   /** الاسم الذي أعطاه لما رآه، إن سُئل عن منظر */
   namedFromSight: string | null;
   assertedObject: string | null;
+  /** الخزانة التي أُخرج منها الجواب — فيها يقع الهدم ويقع التصحيح، لا في الافتراضية */
+  relation: RelationKind | null;
+  /** ونوعُ الطلب: به يُعرَف أن الفراغ فراغُ خزانةٍ لا وجود لها، لا فراغَ جهل */
+  request: Request;
+  /** أفرضَ قانونٌ هذه الاستراتيجية فرضاً؟ عندها لا تُعاقَب ولا تُكافأ */
+  forced: boolean;
 }
 
 export interface CreateOptions {
@@ -614,6 +620,8 @@ export class Zubair {
      * المتعلَّم في هذا الموضع بعينه: التصحيح في العربية لا يخلو من نفيٍ أو لفظ
      * تخطئة، وكلاهما يراه النحو. أما المدح والتحية فيُستثنيان لأنهما خبرٌ في
      * الصورة وليسا تعليماً في القصد. */
+    /** العلاقة التي حُفظ بها درسُ هذه النبضة — تُرافق الذكرى، وnull لغير الدرس */
+    let learnedRelation: RelationKind | null = null;
     const teachesByStructure = parse.topic !== null && parse.comment !== null
       && parse.asks === null && !parse.negated
       /* والمدحُ يُستثنى بلفظه لا بتصنيفه: «البحر أزرق» خبرٌ صنّفه المصنِّف مدحاً
@@ -686,6 +694,7 @@ export class Zubair {
         });
       }
       this.parietal.learnFact(subject, object, this.ticks, 'أبوه', target);
+      learnedRelation = target;
       this.lessons++;
       this.lessonsSinceSleep++;
       // ترابط هيبي: طرفا الحقيقة يتقاربان في تمثيله، فيصير «قطة» و«حيوان»
@@ -822,18 +831,13 @@ export class Zubair {
       where: 'none', ms: 0,
     });
 
-    /* أرضية الجزم: حقيقةٌ ثقتُه فيها دون هذا الحدّ لا يُجيب بها جزماً.
+    /* وكانت هنا «أرضية الجزم» — عتبةٌ ثالثة على الكمّية نفسها: ٠٫٣٥ هنا،
+     * و٠٫٥ في المراجعة (`FRAIL`)، و٠٫٢ في الجُداري (`DOUBT_FLOOR`). والوسطى
+     * أشدّ، فكانت هذه **ميتة**: ما يمرّ منها تُسقطه المراجعة بعدها بأسطر.
      *
-     * وهذا ثاني منبعَي الهلوسة: حقيقةٌ هُدمت بتصحيح الأب فبقيت بثقةٍ ضئيلة، ثم
-     * يُجاب بها كأنها يقين. والصدق أن يُقرّ بجهله حتى يُعاد تعليمه. */
-    if (fact && fact.confidence < ASSERT_FLOOR) {
-      trace.push({
-        lobe: this.parietal.name, ar: this.parietal.ar,
-        note: `يعرف «${fact.object}» بثقة ${Math.round(fact.confidence * 100)}٪ — دون حدّ الجزم فلا يجزم`,
-        where: 'none', ms: 0,
-      });
-      fact = null;
-    }
+     * وسلطتان على سؤالٍ واحد هما العلّة التي فُكّت مرّتين في هذا الدماغ، فلا
+     * تُترك ثالثةً لأنها لا تضرّ اليوم: عتبةٌ ميتة تُنسى ثم يُعدَّل جارُها
+     * فتستيقظ بحكمٍ لا أحدَ يذكر لماذا كُتب. */
 
     /* ————— القانون الأول: الفراغ —————
      *
@@ -885,6 +889,8 @@ export class Zubair {
       wordGenders.set(form.word, form.gender);
     }
 
+    /* والعلاقةُ التي حُفظ بها الدرس تُرافق الذكرى إلى آخر المسار: النومُ
+     * يقرؤها فلا يُعيد التعلّم على الجنس، والأثرُ يعرضها للأب. */
     /* ٩. اللوزة: هل هذا المعنى مقترن بمدح أم بخطأ في تجربتي؟ */
     const valence = timed(this.amygdala, 'وسم عاطفي للمعنى', this.compute_.unit,
       () => this.amygdala.valence(understanding.meaning, this.compute_));
@@ -918,6 +924,16 @@ export class Zubair {
       });
     }
 
+    /** أسُئل سؤالاً يطلب معرفة؟ من النحو لا من المصنِّف — بنيةٌ لا احتمال. */
+    const asksKnowledge = parse.asks !== null && ASKS_KNOWLEDGE.has(request);
+
+    /**
+     * أالجوابُ محسومٌ بنيوياً؟ أي: سُئل عن معرفةٍ، ومالكُها ليس فارغاً، ونوعُ
+     * ما عنده يطابق نوعَ الطلب. فلا مجالَ لقرعةٍ ولا لسؤالٍ يردّ السؤال.
+     */
+    const settled = asksKnowledge && kindFits
+      && (fact !== null || generalized !== null) && !ownerVoid;
+
     /* ١١. الفص الجبهي: الهدف والكبح */
     const goal = timed(this.prefrontal, 'حدّد هدفه', 'cpu', () => this.prefrontal.goal(intero, understanding));
     const allowed = timed(this.prefrontal, 'كبح ما لا يصلح الآن', 'cpu', () => this.prefrontal.inhibit(STRATEGIES, {
@@ -935,7 +951,8 @@ export class Zubair {
       /* ولا يمتحن قاعدةً في وجه سؤال: مَن سُئل يُجيب. الامتحان يأتي بعد الدرس
        * أو في الكلام العادي، وهو موضعه عند الطفل أيضاً. */
       ruleToTest: akin !== null && understanding.intent !== 'ASK',
-      asksKnowledge: parse.asks !== null && ASKS_KNOWLEDGE.has(request),
+      asksKnowledge,
+      answerReady: settled,
     }));
 
     /* ————— قانونا الفراغ والغريزة على المسموحات —————
@@ -973,7 +990,20 @@ export class Zubair {
     /* والمشاعر تُزيح الحرارة أو تخفضها: الغاضب يعاند فيجرّب، والخائف يتجمّد على
      * المأمون، والفرِح يلتزم ما أرضى أباه. هذا هو أثر الشعور في الفعل — وبلا
      * إزاحةٍ كهذه تبقى المشاعر عرضاً على الشاشة لا حالةً في الدماغ. */
-    const temperature = clamp(
+    /* ————— ولا استكشافَ فوق قرارٍ حتميّ —————
+     *
+     * الحرارة تُجرّب بين المسموحات ليتعلّم أيّها يُرضي أباه، وكان لها معنى يوم
+     * كان الاختيار مفتوحاً. أما بعد جدول الملكية فالجوابُ **محدَّدٌ بنيوياً**:
+     * سُئل عن فعلٍ يعرفه، فالمالك واحد وخزانته ليست فارغة ونوعُ الجواب مطابق.
+     * والعشوائية فوق ذلك ليست استكشافاً بل ضجيج — وقد قِيست:
+     *
+     *   «شو تعمل الدرقاوة؟» بعد تعليمه إياها، على ٢٤ دماغاً:
+     *     ANSWER_MEMORY ١٢   ·   ASK_QUESTION ١٢
+     *
+     * أي أن **نصف ما يعرفه يسكت عنه بقرعة**. فحيث يكون الجواب متيناً وموافقاً
+     * لنوع الطلب تهبط الحرارة إلى أدناها: يُقال ما يُعرَف. ويبقى الاستكشاف
+     * حيث موضعُه — في الكلام الذي لا طلبَ فيه، وفيما لا يعرف جوابه. */
+    const temperature = settled ? EXPLOIT_TEMPERATURE : clamp(
       0.22 + 0.9 * conflict.level + 0.35 * intero.boredom + 0.25 * intero.curiosity
       - 0.5 * intero.confidence + this.emotion.temperatureShift
       // والمتعب لا يجرّب: من هدفه أن يستريح يلتزم أقصر ما يعرف
@@ -1035,9 +1065,18 @@ export class Zubair {
       });
     }
 
+    /* ————— والاستراتيجية تتبع المراجعة —————
+     *
+     * أسقطت المراجعةُ الدعوى؟ إذن لم يُجب من ذاكرته، بل أقرّ بجهله. وترك
+     * الاسم الأول على الفعل الثاني يكذب في ثلاثة مواضع معاً: الأثرُ يقول
+     * «أجاب من ذاكرة» وهو أقرّ، والامتحانُ يقرأ جزماً حيث وقع إمساك، والعُقد
+     * القاعدية تتعلّم على استراتيجيةٍ لم تُنفَّذ. والاسم يتبع الفعل. */
+    const strategy: Strategy = asserting && fact === null && generalized === null
+      ? 'ADMIT' : decision.strategy;
+
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
-      strategy: decision.strategy, percept, understanding, recall, fact, generalized,
+      strategy, percept, understanding, recall, fact, generalized,
       intero, unknownWords: unknownContent, contentWords: contentTokens,
       /* أقسام كلمات جملتك: بها يُصاغ سؤاله صحيحاً. وكان يسأل «علّمني أكثر عن
        * بيطير» لأنه لا يعرف أن ما بيده فعل. */
@@ -1050,7 +1089,7 @@ export class Zubair {
       lexicon: this.lexicon, selfName: this.name, rng: this.rng,
       /* نوع الكلام يُحسَب قبل صياغته كي لا يناقض الشعورُ المقال. وهو يُعرف من
        * الاستراتيجية وحدها: بروكا تختار الصيغة، والاستراتيجية تحدّد جنسها. */
-      feelingAr: this.emotion.colorAr(this.broca.speaksShami, speechKind(decision.strategy)),
+      feelingAr: this.emotion.colorAr(this.broca.speaksShami, speechKind(strategy)),
       /* جدول الملكية: نوع الطلب، وجوابُ مالكه إن كان المالك غير الجُداري */
       request,
       selfStateAr: request === 'حال' ? this.insula.howAmI(intero, this.broca.speaksShami) : null,
@@ -1068,6 +1107,9 @@ export class Zubair {
     this.hippocampus.store({
       said: percept.raw, tokens: percept.tokens, meaning: Array.from(understanding.meaning),
       intent: understanding.intent, subject: bound.subject, object: bound.object,
+      /* ولا تُخمَّن علاقةٌ لذكرى لم تُعلَّم حقيقةً: null تعني «لا علاقة هنا»،
+       * والنومُ يتجاوزها. والتخمين هو ما احتلّ خزانة الجنس أوّلاً. */
+      relation: learnedRelation,
       replied: refined, reward: 0, tick: this.ticks,
     });
 
@@ -1079,7 +1121,7 @@ export class Zubair {
       if (this.recentTopics.length > 6) this.recentTopics = this.recentTopics.slice(-6);
     }
 
-    this.prefrontal.push({ said: percept.raw, replied: refined, meaning: understanding.meaning, tick: this.ticks, strategy: decision.strategy });
+    this.prefrontal.push({ said: percept.raw, replied: refined, meaning: understanding.meaning, tick: this.ticks, strategy });
     this.broca.learnStyle(percept.raw);
 
     // التعلّم من الغريزة: حين يكون النمط السطحي صريحاً، تُدرَّب القشرة عليه.
@@ -1108,12 +1150,15 @@ export class Zubair {
     this.pending = {
       tick: this.ticks, said: percept.raw, replied: refined,
       meaning: understanding.meaning.slice(), state: state.slice(),
-      strategy: decision.strategy, intent: understanding.intent,
+      strategy, intent: understanding.intent,
       subject: bound.subject, object: bound.object, topic,
       sawFeatures: askingAboutSight && vision ? vision.features.slice() : null,
       namedFromSight: askingAboutSight ? (recognized?.name ?? null) : null,
-      assertedObject: decision.strategy === 'ANSWER_MEMORY' ? (fact?.object ?? null)
-        : decision.strategy === 'ANSWER_GENERAL' ? (generalized?.fact.object ?? null) : null,
+      assertedObject: strategy === 'ANSWER_MEMORY' ? (fact?.object ?? null)
+        : strategy === 'ANSWER_GENERAL' ? (generalized?.fact.object ?? null) : null,
+      relation: wanted,
+      request,
+      forced: lawful.length === 1,
     };
     this.lastSeenAt = at;
 
@@ -1122,7 +1167,7 @@ export class Zubair {
     });
 
     return {
-      text: refined, kind: speech.kind, strategy: decision.strategy,
+      text: refined, kind: speech.kind, strategy,
       intent: understanding.intent,
       confidence: clamp(1 - conflict.level, 0, 1),
       rank: asserting ? rank : 'ضعيف',
@@ -1188,7 +1233,24 @@ export class Zubair {
      * كل دماغ — تجربةٌ مشحونة تُوسَم من مرة، وباردةٌ تحتاج عشراً. */
     this.amygdala.condition(pending.meaning, reward, 0.05 * this.emotion.imprint);
     this.thalamus.reinforce(reward);
-    const { dopamine } = this.basalGanglia.learn(pending.state, pending.strategy, reward);
+    /* ————— ولا يُعاقَب على ما لم يختره —————
+     *
+     * قانونُ الفراغ يفرض الإقرارَ فرضاً: سُئل «وين الكنكارو؟» ولا خزانةَ أمكنةٍ
+     * عنده، فلم يبقَ في يده إلا «لا أعرف وين» — وهو الصواب. فإن صحّحه أبوه بعدها
+     * ضُعِّف «الإقرار بالجهل» في مثل هذا الموضع، وقُيس فوقع نصّاً:
+     *
+     *   ← أضعف «الإقرار بجهله» في مثل هذا الموضع
+     *
+     * ومع التكرار يتعلّم أن الصدق يُغضب أباه فيميل إلى الجزم — وهو نقيضُ ما
+     * بُنيت القوانين كلُّها له. والإسناد خاطئٌ في أصله: المكافأة تُنسَب إلى
+     * **اختيار**، والقانون لم يترك اختياراً.
+     *
+     * فما فُرض لا يُعزَّز ولا يُثبَّط. ويبقى الدرسُ نفسه محفوظاً: الحقيقة
+     * تُهدَم، والتصحيح يُتعلَّم، والذكرى تُوسَم — كلُّ ذلك يجري. الذي يُستثنى
+     * سطرٌ واحد: قيمةُ الاستراتيجية التي لم يخترها. */
+    const { dopamine } = pending.forced
+      ? { dopamine: 0 }
+      : this.basalGanglia.learn(pending.state, pending.strategy, reward);
     const feelings = this.emotion.judged({ reward, strategy: pending.strategy, dopamine });
     if (feelings.dominant) {
       learned.push(`شعر بـ«${feelings.dominant.name}» — ${feelings.reasonAr}`);
@@ -1196,9 +1258,11 @@ export class Zubair {
     this.verdicts.push(reward);
     if (this.verdicts.length > 400) this.verdicts = this.verdicts.slice(-400);
 
-    learned.push(reward > 0
-      ? `عزّز أن «${strategyAr(pending.strategy)}» تُرضيك في مثل هذا الموضع`
-      : `أضعف «${strategyAr(pending.strategy)}» في مثل هذا الموضع`);
+    learned.push(pending.forced
+      ? `«${strategyAr(pending.strategy)}» فرضها القانون فرضاً، فلا تُحاسَب عليها`
+      : reward > 0
+        ? `عزّز أن «${strategyAr(pending.strategy)}» تُرضيك في مثل هذا الموضع`
+        : `أضعف «${strategyAr(pending.strategy)}» في مثل هذا الموضع`);
 
     /* الحقيقة التي جزم بها تُهدَم بكلمة «خطأ» وحدها، ولا تنتظر أن يكتب الأب
      * الصواب.
@@ -1212,11 +1276,13 @@ export class Zubair {
     if (feedback.verdict === 'correct') {
       const asserted = pending.subject ?? pending.topic;
       if (asserted && pending.assertedObject) {
-        this.parietal.contradict(asserted, pending.assertedObject);
-        learned.push(`هدم ثقته في «${asserted} ← ${pending.assertedObject}»`);
+        // ويُهدَم في الخزانة التي أُخرج منها الجواب، لا في الافتراضية
+        this.parietal.contradict(asserted, pending.assertedObject, pending.relation ?? undefined);
+        learned.push(`هدم ثقته في «${asserted} ← ${pending.assertedObject}» (${pending.relation ?? 'جنس'})`);
       }
     }
 
+    let correctionRelation: RelationKind | null = null;
     if (feedback.verdict === 'correct' && feedback.correction && feedback.correction.trim()) {
       const correction = feedback.correction.trim();
 
@@ -1232,19 +1298,43 @@ export class Zubair {
       const subject = cBound.subject ?? pending.subject;
       const object = cBound.object ?? (cPercept.tokens.length === 1 ? cPercept.tokens[0]! : null);
 
-      if (subject && object) {
-        this.parietal.learnFact(subject, object, this.ticks, 'أبوه');
+      /* ————— وما لا خزانةَ له لا يُحفَظ في خزانةٍ مجاورة —————
+       *
+       * سُئل «وين الكنكارو؟» فأقرّ بجهله، فصُحِّح «الكنكارو بأستراليا». ولا
+       * خزانةَ أمكنةٍ عنده. فحفظُه صفةً يجعل «كيف الكنكارو؟ ← بأستراليا»، وهو
+       * جوابٌ خطأ عن سؤالٍ آخر — وذاك عين العطب الذي فكّه جدول الملكية.
+       *
+       * والصدق أن يُقال: عُلّمتُ شيئاً لا مكانَ له عندي. وهو قيدٌ معلَن يزول
+       * يوم تُبنى الخزانة، لا خطأٌ يُخبَّأ في خزانةٍ أخرى. */
+      const homeless = ASKS_KNOWLEDGE.has(pending.request)
+        && this.syntax.storeFor(pending.request) === null;
+      if (homeless) {
+        learned.push(`ما عندي مكانٌ أحفظ فيه جواب «${pending.request}» بعد — سمعتُه ولم أحفظه`);
+      } else if (subject && object) {
+        /* ————— التصحيح يدخل خزانة السؤال لا خزانةَ الافتراض —————
+         *
+         * قِيس فوقع: سُئل «وين الكنكارو؟» فأقرّ بجهله — وهو الصواب — فصُحِّح
+         * «الكنكارو بأستراليا». فدخل التصحيح خزانةَ **الجنس** لأنها الافتراضي،
+         * فنازعت «أستراليا» «حيوان» فسقط الاثنان. ثم سُئل «شو الكنكارو؟» فقال
+         * «ما بعرف». أي أن تصحيحك في بابٍ محا معرفته في بابٍ آخر.
+         *
+         * فالتصحيح يُحفظ حيث سُئل: الطلبُ يعرف خزانته، وهي محفوظةٌ في المعلّق. */
+        const where = pending.relation
+          ?? this.parietal.refineRelation(subject, object, 'جنس');
+        this.parietal.learnFact(subject, object, this.ticks, 'أبوه', where);
+        correctionRelation = where;
         const a = this.lexicon.idOf(subject);
         const b = this.lexicon.idOf(object);
         if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b, 0.05);
-        learned.push(`تعلّم من تصحيحك: ${subject} ← ${object}`);
+        learned.push(`تعلّم من تصحيحك: ${subject} ← ${object} (${where})`);
       }
 
       // ٤. الذكرى الصحيحة تُخزَّن بمكافأة موجبة كي يُعاد عليها في النوم
       this.hippocampus.store({
         said: correction, tokens: cPercept.tokens,
         meaning: Array.from(cUnderstanding.meaning), intent: 'TEACH_FACT',
-        subject, object, replied: null, reward: 0.5, tick: this.ticks,
+        subject, object, relation: correctionRelation,
+        replied: null, reward: 0.5, tick: this.ticks,
       });
       this.lessons++;
       this.lessonsSinceSleep++;
@@ -1288,9 +1378,22 @@ export class Zubair {
           this.amygdala.condition(meaning, episode.reward, 0.02);
         }
 
-        if (episode.subject && episode.object) {
-          const before = this.parietal.lookup(episode.subject);
-          this.parietal.learnFact(episode.subject, episode.object, this.ticks, episode.replays > 0 ? 'التثبيت' : 'أبوه');
+        /* ————— التثبيت يُعيد الدرس في خزانته —————
+         *
+         * وكان يُعيده في **الجنس** دائماً، لأن الذكرى لم تكن تحمل علاقتها.
+         * فكان النوم — وهو الموصوف بأنه يحوّل الحفظ إلى فهم — يدقّ الفعلَ
+         * والصفةَ في خزانة الجنس أربعاً وعشرين مرّةً في الدورة حتى تحتلّها:
+         *
+         *   قبل النوم:  جنس=حيوان(٠٫٧٤)   بعد النوم:  جنس=تأكل(١٫٠٠)
+         *
+         * وذكرى بلا علاقة لا تُخمَّن لها علاقة: تُتجاوَز. لأن التخمين هو ما
+         * أوقع الإتلاف، وذكرى قديمة محفوظة قبل هذا الحقل ليست درساً يُعاد. */
+        if (episode.subject && episode.object && episode.relation) {
+          const before = this.parietal.lookup(episode.subject, episode.relation);
+          this.parietal.learnFact(
+            episode.subject, episode.object, this.ticks,
+            episode.replays > 0 ? 'التثبيت' : 'أبوه', episode.relation,
+          );
           if (!before) factsFormed++;
           const a = this.lexicon.idOf(episode.subject);
           const b = this.lexicon.idOf(episode.object);
@@ -1445,7 +1548,14 @@ const QUESTION_WORDS = new Set([
 
 /** أدنى ثقةٍ يجوز الجزم بها. دونها يُقرّ بجهله ولو كان يملك المحمول: حقيقةٌ
  *  هدمها تصحيحُ الأب لا يجوز أن تُقال كأنها يقين. */
-const ASSERT_FLOOR = 0.35;
+/**
+ * حرارةُ من يعرف: أدنى ما تسمح به العُقد القاعدية، فيُختار الأرجحُ لا القرعة.
+ *
+ * ولا تُجعل صفراً: صفرٌ يعني حتميةً تامّة تُبطل التعلّم بالمكافأة حتى حين
+ * يكون المالك مخطئاً. وهذه تُبقي بابَ التعلّم مفتوحاً بمقدار ما لا يُخرس
+ * جواباً يعرفه.
+ */
+const EXPLOIT_TEMPERATURE = 0.08;
 
 /** مقدار ما يُرجَّح به ما يوافق هدفه. صغيرٌ بقصد: ميلٌ يُزيح ولا يحسم، فتبقى
  *  تجربتُه مع أبيه هي الحاكمة. */

@@ -88,7 +88,7 @@ test('مَن نزل فيه الدرس لا يقول «علّمني» ولا يُ
     factConfidence: 0.7,
     generalizeStrength: 0,
     lessonLanded: true,
-    ruleToTest: false, asksKnowledge: false,
+    ruleToTest: false, asksKnowledge: false, answerReady: false,
     };
 
   const allowed = prefrontal.inhibit(STRATEGIES, base);

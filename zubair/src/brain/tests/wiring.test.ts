@@ -146,7 +146,7 @@ test('والكبح يبقى كبحاً: الهدف لا يُبيح ممنوعا�
     factConfidence: 0,
     generalizeStrength: 0,
     lessonLanded: false,
-    ruleToTest: false, asksKnowledge: false,
+    ruleToTest: false, asksKnowledge: false, answerReady: false,
   });
   assert.ok(!allowed.includes('ANSWER_MEMORY'), 'جوابٌ بلا حقيقة ممنوع مهما كان هدفه');
 });

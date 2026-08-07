@@ -111,6 +111,7 @@ function episodeOf(said: string, meaning: readonly number[], tick: number, rewar
     intent: 'TEACH_FACT',
     subject: null,
     object: null,
+    relation: null,
     replied: null,
     reward,
     tick,

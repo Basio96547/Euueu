@@ -1,6 +1,6 @@
 {
-  "rate": 0.9885057471264368,
-  "passed": 172,
+  "rate": 1,
+  "passed": 174,
   "total": 174,
   "seeds": [
     24301,
@@ -12,22 +12,19 @@
     "درسٌ واحد": 18,
     "العلاقات": 18,
     "الحذف والضمير": 12,
-    "النفي والتصحيح": 8,
+    "النفي والتصحيح": 9,
     "حدود المعرفة": 18,
     "الاستثناء": 12,
     "السلسلة": 9,
     "اتّساق العبارة": 15,
-    "ما لا يُمتنَع عنه": 29,
+    "ما لا يُمتنَع عنه": 30,
     "الملتبس": 9
   },
-  "calibrationError": 0.31697115975634127,
-  "confidenceSpread": 0.07942517759192924,
+  "calibrationError": 0.3174713933564218,
+  "confidenceSpread": 0.07930682002436061,
   "confidenceSeparation": null,
-  "abstainedOnMustAnswer": 4,
+  "abstainedOnMustAnswer": 3,
   "mustAnswerCount": 30,
   "ranksOrdered": true,
-  "failed": [
-    "ans-05",
-    "neg-01"
-  ]
+  "failed": []
 }

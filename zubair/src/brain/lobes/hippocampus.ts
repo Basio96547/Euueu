@@ -23,6 +23,7 @@
 
 import { clamp, type Rng, type Vec } from '../core/tensor.js';
 import { DIMS, INTENTS, type Accelerator, type ComputePort, type Episode, type Lobe } from '../core/types.js';
+import type { RelationKind } from './syntax.js';
 
 /** بُعد المعنى — يُثبَّت في ثابت محلّي لأنه يدخل كل حساب عنوان في كتلة المفاتيح. */
 const D = DIMS.meaning;
@@ -136,6 +137,7 @@ export class Hippocampus implements Lobe<HippocampusState> {
       intent: e.intent,
       subject: e.subject,
       object: e.object,
+      relation: e.relation ?? null,
       replied: e.replied,
       reward: saneReward(e.reward),
       tick: saneNumber(e.tick, 0),
@@ -261,6 +263,9 @@ export class Hippocampus implements Lobe<HippocampusState> {
           intent: INTENTS.includes(raw.intent) ? raw.intent : 'UNKNOWN',
           subject: asText(raw.subject),
           object: asText(raw.object),
+          /* وذكرى محفوظةٌ قبل إضافة الحقل تُقرأ بلا علاقة: لا تُخمَّن لها
+           * علاقةٌ، فالتخمين هو ما أتلف الخزائن أوّلاً. */
+          relation: (raw as { relation?: RelationKind }).relation ?? null,
           replied: asText(raw.replied),
           reward: saneReward(raw.reward),
           tick: saneNumber(raw.tick, 0),
