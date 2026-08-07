@@ -1,0 +1,18 @@
+# ————— إعدادات المحرّر —————
+# مسافتان، وسطرٌ أخير، ولا فراغاتٍ معلّقة. تُطبَّق في كل محرّر يقرأ هذا الملف
+# (VS Code، WebStorm، Sublime، Vim…) فلا يختلف تنسيق الشيفرة باختلاف الجهاز.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+# والشيفرة هنا فيها عربيةٌ كثيرة في التعليقات: يُترك الالتفاف للمحرّر
+max_line_length = 100
+
+[*.md]
+trim_trailing_whitespace = false

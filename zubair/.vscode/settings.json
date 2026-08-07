@@ -1,0 +1,9 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "files.eol": "\n",
+  "editor.tabSize": 2,
+  "editor.rulers": [100],
+  "search.exclude": { "**/dist": true, "**/shots": true, "**/node_modules": true },
+  "files.associations": { "*.webmanifest": "json" }
+}
