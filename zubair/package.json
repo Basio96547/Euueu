@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"src/brain/tests/*.test.ts\"",
+    "exam": "tsx scripts/exam.ts",
     "icons": "tsx scripts/make-icons.ts"
   },
   "dependencies": {
