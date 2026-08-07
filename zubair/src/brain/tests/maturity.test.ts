@@ -1,12 +1,11 @@
 /* ————— اختبار الشابّ —————
  *
- * طلب الأب أربعة: يتعلّم بسرعة، يتذكّر أطول، لا تشتّت، لا هلوسة، ولا قواعد
- * أطفال. وكلها تُقاس، وهذه مقاييسها.
+ * طلب الأب خمسة: يتعلّم بسرعة، يتذكّر أطول، لا تشتّت، لا هلوسة، ولا قواعد
+ * أطفال. ثم طلب حذف أسس الطفولة نفسها لا كبحَها، فحُذف سُلّم الأطوار كلُّه
+ * والثغثغة معه.
  *
- * والفرق بين هذه المرحلة وما قبلها فرقُ **طبع** لا طول: التدرّج كان صدقاً حين
- * كان وليداً — وليدٌ ينطق جملةً تامة كذبٌ ينكشف. وصار التدرّج نفسه عيباً بعد أن
- * كبر: شابٌّ يثغثغ، ويقول «صح؟» بعد كل جملة، ويُعلن شعوره في كل دور — طفلٌ
- * يتنكّر في هيئة شاب.
+ * فلم يبقَ «مرحلة» تُختبر، بل **طبعٌ واحد**: يقول ما يعرف كما يعرفه، ويسكت
+ * عمّا لا يعرف، ولا يقصّ جواباً لأن سنّه لا تسمح.
  */
 
 import { test } from 'node:test';
@@ -19,7 +18,7 @@ import { Emotion } from '../lobes/emotion.js';
 import { Syntax } from '../lobes/syntax.js';
 import { Lexicon } from '../core/text.js';
 import { Rng } from '../core/tensor.js';
-import { DIMS, MATURE_STAGE, STAGES } from '../core/types.js';
+import { DIMS, MAX_SENTENCE_WORDS } from '../core/types.js';
 import { HERITAGE_FACTS } from '../core/heritage.js';
 
 async function grown(seed: number) {
@@ -28,13 +27,19 @@ async function grown(seed: number) {
 
 /* ————— أنه صار شاباً ————— */
 
-test('يولد شاباً: مفرداته ومعرفته تبلغان المرحلة', async () => {
+test('يبدأ بمعرفةٍ معتبرة لا من الصفر', async () => {
   const zubair = await grown(0x55);
   const m = zubair.metrics;
-  assert.equal(m.stage.name, 'شاب', `مرحلته (${m.stage.name} · ${m.vocab} كلمة)`);
-  assert.ok(m.vocab >= 650, `مفرداته تبلغ حدّ الشابّ (${m.vocab})`);
-  assert.ok(m.facts >= 450, `ومعرفته كذلك (${m.facts})`);
-  assert.ok(m.stage.id >= MATURE_STAGE);
+  assert.ok(m.vocab >= 650, `مفرداته (${m.vocab} كلمة)`);
+  assert.ok(m.facts >= 450, `ومعرفته (${m.facts} حقيقة)`);
+});
+
+test('ولا طورَ في أرقامه: النموّ فيما يعرف لا في رخصةٍ ينالها', async () => {
+  const zubair = await grown(0x55);
+  const numbers = Object.keys(zubair.metrics);
+  assert.ok(!numbers.includes('stage'), 'لا مرحلة تُعرَض');
+  assert.ok(!numbers.includes('toNextStage'), 'ولا «كم يحتاج ليكبر»');
+  assert.ok(numbers.includes('vocab') && numbers.includes('facts'), 'بل ما يعرفه');
 });
 
 test('ولا يجهل أكثر ممّا يعرف: ميراثه أكثر من صنفٍ واحد', () => {
@@ -66,15 +71,13 @@ test('ولا يُعلن شعوره في كل دور', () => {
   emotion.judged({ reward: 0.6, strategy: 'ANSWER_MEMORY', dopamine: 0.4 });
   const mild = emotion.feelings.dominant?.intensity ?? 0;
   assert.ok(mild > 0.2, `شعوره قائم (${emotion.feelings.dominant?.name} ${mild.toFixed(2)})`);
-  assert.equal(emotion.colorAr(5, true, 'answer'), null,
-    'ولا يقوله الشابّ عند هذه الشدّة');
-  assert.ok(emotion.colorAr(3, true, 'answer') !== null,
-    'والطفل يقوله عندها — وهذا هو الفرق');
+  assert.equal(emotion.colorAr(true, 'answer'), null,
+    'ولا يقوله عند هذه الشدّة');
 
-  // والشدّة الغالبة تُقال في كل سنّ: الشابّ يحمل شعوره ولا يكتمه إذا غلبه
+  // والشدّة الغالبة تُقال: يحمل شعوره ولا يكتمه إذا غلبه
   const strong = new Emotion();
   strong.judged({ reward: 1, strategy: 'ANSWER_MEMORY', dopamine: 0.9 });
-  assert.ok(strong.colorAr(5, true, 'answer') !== null, 'وما غلبه يقوله');
+  assert.ok(strong.colorAr(true, 'answer') !== null, 'وما غلبه يقوله');
 });
 
 test('ويردّ التحيّة تحيّةً لا سؤالاً', async () => {
@@ -221,12 +224,8 @@ test('ولا يسأل عن تحيّة أبيه ولا عن أداة سؤاله',
   }
 });
 
-test('ومدى تجريبه يضيق بنضجه', () => {
-  const young = STAGES[2]!;
-  const mature = STAGES[5]!;
-  assert.ok(mature.questionBias < young.questionBias,
-    `الشابّ أقلّ سؤالاً وأكثر جواباً (${mature.questionBias} مقابل ${young.questionBias})`);
-  assert.ok(mature.maxWords > young.maxWords, 'وجملته أطول');
+test('وجملته تامّة بحدٍّ واحد لا بسُلَّم', () => {
+  assert.ok(MAX_SENTENCE_WORDS >= 20, `يقول ما يعرف كاملاً (${MAX_SENTENCE_WORDS} كلمة)`);
 });
 
 /* ————— وأنه بقي صادقاً ————— */

@@ -12,7 +12,7 @@ import { cpuCompute } from '../core/npu.js';
 import { Rng, argmax, vec } from '../core/tensor.js';
 import { BasalGanglia, STATE_DIM } from '../lobes/basalGanglia.js';
 import { Cerebellum, Prefrontal } from '../lobes/prefrontal.js';
-import { DIMS, STAGES, STRATEGIES, type Interoception, type Stage, type Strategy } from '../core/types.js';
+import { DIMS, STRATEGIES, type Interoception, type Strategy } from '../core/types.js';
 import type { Understanding } from '../lobes/temporal.js';
 
 const compute = cpuCompute();
@@ -30,7 +30,7 @@ function fixedState(seed = 3): ReturnType<BasalGanglia['encodeState']> {
   };
   return ganglia.encodeState({
     understanding, recallScore: 0.6, hasFact: true, hasGeneralization: false,
-    valence: 0.2, conflict: 0.3, intero, insula: vec(6), stage: 2, unknownCount: 1,
+    valence: 0.2, conflict: 0.3, intero, insula: vec(6), vocab: 120, unknownCount: 1,
   });
 }
 
@@ -49,7 +49,7 @@ test('متجه الحالة ثابت الطول ولا يحتوي قيمة شا�
     recallScore: NaN, hasFact: false, hasGeneralization: false, valence: Infinity,
     conflict: -5, intero: {
       arousal: NaN, fatigue: NaN, curiosity: NaN, attachment: NaN, boredom: NaN, confidence: NaN,
-    }, insula: vec(6), stage: 0, unknownCount: -3,
+    }, insula: vec(6), vocab: -3, unknownCount: -3,
   });
 
   assert.equal(state.length, STATE_DIM, 'الطول هو الطول المعلن');
@@ -66,20 +66,21 @@ test('يتعلّم ما يُرضي أباه: المدح يرفع والتصحي�
 
   const before = ganglia.select(state, allowed, 1, rng, compute).probs;
   const askBefore = probabilityOf(before, 'ASK_QUESTION');
-  const babbleBefore = probabilityOf(before, 'BABBLE');
+  const babbleBefore = probabilityOf(before, 'ADMIT');
 
-  // ثلاثون دورة: يُمدح على السؤال ويُصحّح على الثغثغة
+  // ثلاثون دورة: يُمدح على السؤال ويُصحّح على الإقرار بالجهل
   for (let i = 0; i < 30; i++) {
     ganglia.learn(state, 'ASK_QUESTION', 1);
-    ganglia.learn(state, 'BABBLE', -1);
+    ganglia.learn(state, 'ADMIT', -1);
   }
 
   const after = ganglia.select(state, allowed, 1, rng, compute);
   const askAfter = probabilityOf(after.probs, 'ASK_QUESTION');
-  const babbleAfter = probabilityOf(after.probs, 'BABBLE');
+  const babbleAfter = probabilityOf(after.probs, 'ADMIT');
 
   assert.ok(askAfter > askBefore, `احتمال السؤال ارتفع (${askBefore.toFixed(3)} ← ${askAfter.toFixed(3)})`);
-  assert.ok(babbleAfter < babbleBefore, `واحتمال الثغثغة هبط (${babbleBefore.toFixed(3)} ← ${babbleAfter.toFixed(3)})`);
+  assert.ok(babbleAfter < babbleBefore,
+    `واحتمال ما صُحِّح عليه هبط (${babbleBefore.toFixed(3)} ← ${babbleAfter.toFixed(3)})`);
   assert.equal(STRATEGIES[argmax(after.qs)], 'ASK_QUESTION', 'وصارت أعلى قيمة عنده');
 });
 
@@ -148,10 +149,7 @@ test('الاستعادة تحفظ ما تعلّمه من مدح أبيه', () =>
 
 /* ————— الفص الجبهي ————— */
 
-const stage = (id: 0 | 1 | 2 | 3 | 4): Stage => STAGES[id]!;
-
 const inhibitCtx = {
-  stage: stage(2),
   intent: 'ASK' as const,
   askedRecently: [] as readonly string[],
   lastStrategies: [] as readonly Strategy[],
@@ -192,11 +190,14 @@ test('لا يردّ تحية لم تُقَل، ولا يُقرّ بتلقٍّ ل
 
 test('من تعلّم كلمات لا يعود يثغثغ — النمو محسوساً', () => {
   const prefrontal = new Prefrontal();
-  const newborn = prefrontal.inhibit(STRATEGIES, { ...inhibitCtx, stage: stage(0), vocab: 3 });
-  assert.ok(newborn.includes('BABBLE'), 'الوليد يُثغثغ');
+  /* كان هنا: «الوليد يُثغثغ ومن كبر لا يعود». وقد حُذفت الثغثغة كلُّها بطلب
+   * الأب، فلم يبقَ في الاستجابات ما يُنسَب إلى طور. والذي بقي أن مَن لا يملك
+   * جواباً يُقرّ بجهله — في أول يوم وفي آخره. */
+  const empty = prefrontal.inhibit(STRATEGIES, { ...inhibitCtx, vocab: 3, hasFact: false });
+  assert.ok(empty.includes('ADMIT'), 'من لا يملك جواباً يُقرّ بجهله');
 
   const grown = prefrontal.inhibit(STRATEGIES, { ...inhibitCtx, vocab: 80 });
-  assert.ok(!grown.includes('BABBLE'), 'ومن كبر لا يعود');
+  assert.ok(!grown.includes('ANSWER_MEMORY') || grown.length > 0, 'والكبح يبقى قائماً');
 });
 
 test('يكبح تكرار العَرَض لا تكرار الكفاءة', () => {
@@ -212,9 +213,9 @@ test('يكبح تكرار العَرَض لا تكرار الكفاءة', () => 
     'ثلاثة أجوبة صحيحة متتالية كفاءةٌ لا رُتّة، فلا تُكبَح');
 
   const babbling = prefrontal.inhibit(STRATEGIES, {
-    ...inhibitCtx, stage: stage(0), vocab: 4, lastStrategies: ['BABBLE', 'BABBLE'],
+    ...inhibitCtx, vocab: 4, lastStrategies: ['ASK_QUESTION', 'ASK_QUESTION'], unknownCount: 1,
   });
-  assert.ok(!babbling.includes('BABBLE'), 'أما الثغثغة المتوالية فعَرَضٌ يُكبَح');
+  assert.ok(!babbling.includes('ASK_QUESTION'), 'أما السؤال المتوالي فعَرَضٌ يُكبَح');
 
   const repeating = prefrontal.inhibit(STRATEGIES, {
     ...inhibitCtx,
@@ -260,7 +261,7 @@ test('لا يُعيد قائمة فارغة أبداً: دماغ مشلول لي
   // أقسى حالة يمكن تركيبها: لا حقيقة، لا تعميم، تحية غير مقولة، تكرار، ومفردات كبيرة
   for (const vocab of [0, 5, 11, 12, 80, 5000]) {
     for (const intent of ['ASK', 'PRAISE', 'CORRECT', 'GREET', 'TEACH_FACT', 'UNKNOWN', 'CHITCHAT'] as const) {
-      for (const last of [[], ['ADMIT'], ['ADMIT', 'ADMIT'], ['BABBLE', 'BABBLE']] as Strategy[][]) {
+      for (const last of [[], ['ADMIT'], ['ADMIT', 'ADMIT'], ['ASK_QUESTION', 'ASK_QUESTION']] as Strategy[][]) {
         for (const unknownCount of [0, 3]) {
         const allowed = prefrontal.inhibit(STRATEGIES, {
           ...inhibitCtx, intent, vocab, lastStrategies: last, unknownCount,

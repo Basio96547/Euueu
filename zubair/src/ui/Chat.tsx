@@ -22,7 +22,6 @@ const KIND_AR: Record<TickOutput['kind'], string> = {
   admission: 'إقرار بجهل',
   acknowledge: 'إقرار بالتلقّي',
   greeting: 'تحية',
-  babble: 'ثغثغة',
 };
 
 const UNIT_AR: Record<TraceStep['where'], string> = {

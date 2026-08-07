@@ -19,9 +19,6 @@ export function Growth(props: {
   onRestore: (file: File) => void;
 }) {
   const m = props.metrics;
-  const stageSpan = Math.max(1, m.vocab + m.toNextStage);
-  const progress = m.toNextStage === 0 ? 100 : Math.round((m.vocab / stageSpan) * 100);
-
   const delta = m.recentAccuracy - m.previousAccuracy;
   const trendClass = m.previousAccuracy === 0 && m.recentAccuracy === 0
     ? 'flat'
@@ -32,19 +29,18 @@ export function Growth(props: {
       <div className="card">
         <h2>حال زبير الآن</h2>
         <p>{summarize(m)}</p>
-        <div className="bar"><i style={{ width: `${progress}%` }} /></div>
+        {/* لا شريط «كم يحتاج ليكبر»: النموّ في ما يعرف لا في رخصةٍ ينالها بعدد
+            كلماته، وقد حُذف سُلّم الأطوار كلُّه. */}
         <span className="hint">
-          {m.toNextStage === 0
-            ? 'بلغ آخر مرحلة في نموّه'
-            : `يحتاج ${m.toNextStage} كلمة ليدخل المرحلة التالية`}
+          الذي منك {m.factsFromFather} حقيقة — وهو وحده مقياس تعليمك.
         </span>
       </div>
 
       <div className="card">
         <h2>الأرقام</h2>
         <div className="grid">
-          <Stat value={m.stage.name} label="مرحلته" />
           <Stat value={m.vocab} label="كلمة يعرفها" />
+          <Stat value={m.facts} label="حقيقة يعرفها" />
           <Stat value={m.factsFromFather} label="حقيقة علّمتَه إياها" />
           <Stat value={m.factsInherited} label="حقيقة ورِثها" />
           <Stat value={m.objectsSeen} label="شيئاً يعرفه بعينه" />

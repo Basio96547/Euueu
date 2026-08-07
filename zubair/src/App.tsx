@@ -141,7 +141,7 @@ export default function App() {
   }
 
   const compute = child.compute;
-  const newborn = metrics.lessons === 0 && metrics.vocab === 0;
+  const firstSession = metrics.lessons === 0;
 
   return (
     <div className="app">
@@ -149,7 +149,7 @@ export default function App() {
         <div className="avatar" aria-hidden="true">🌱</div>
         <div className="who">
           <b>{child.name}</b>
-          <small>{metrics.stage.name} · {metrics.vocab} كلمة · {compute.describeAr}</small>
+          <small>{metrics.vocab} كلمة · {metrics.facts} حقيقة · {compute.describeAr}</small>
         </div>
       </header>
 
@@ -164,24 +164,24 @@ export default function App() {
 
       {tab === 'chat' && (
         <>
-          {newborn && (
+          {firstSession && (
             <div className="card" style={{ margin: '12px 14px 0' }}>
-              <h2>زبير وُلد الآن</h2>
+              <h2>هذه أول جلسة معه</h2>
               <p>
-                جاء بعربية محيطه كما يجيء أي طفل: يعرف مئات الكلمات ويفهم ماذا تريد منه. لكنه
-                لا يعرفك أنت بعد، ولا يعرف شيئاً ممّا يخصّك.
+                زبير يجيء بعربية محيطه: مئات الكلمات وما يقابلها من معرفة، ويفهم ماذا تريد
+                منه. لكنه لا يعرفك أنت، ولا يعرف شيئاً ممّا يخصّك.
               </p>
               <p>
-                علّمه بجملة قصيرة: «القطة حيوان». ثم اسأله: «شو القطة؟». وحين يجيب اضغط
+                علّمه: «القطة حيوان». ثم اسأله: «شو القطة؟» أو «كيف القطة؟». وحين يجيب اضغط
                 «أحسنت» أو «خطأ» واكتب الصواب — التصحيح هو معلّمه الحقيقي.
               </p>
-              <p className="warn">لن يكبر إلا بقدر ما تكلّمه.</p>
+              <p className="warn">ولن يعرف عنك شيئاً إلا بقدر ما تكلّمه.</p>
             </div>
           )}
           <Chat
             turns={turns}
             busy={busy}
-            canJudge={!newborn || turns.length > 1}
+            canJudge={!firstSession || turns.length > 1}
             onSend={send}
             onJudge={judge}
           />

@@ -24,7 +24,7 @@ import { Rng } from '../core/tensor.js';
 import { Syntax } from '../lobes/syntax.js';
 import { Prefrontal } from '../lobes/prefrontal.js';
 import { Emotion } from '../lobes/emotion.js';
-import { STRATEGIES, STAGES } from '../core/types.js';
+import { STRATEGIES } from '../core/types.js';
 
 async function child(seed: number) {
   return Zubair.create({ storage: memoryStorage(), seed, fresh: true, heritage: true });
@@ -77,7 +77,6 @@ test('ولا يُحمَل ما لا يصحّ حمله: أول كلمة في ال
 test('مَن نزل فيه الدرس لا يقول «علّمني» ولا يُجيب عن سؤال لم يُسأل', () => {
   const prefrontal = new Prefrontal();
   const base = {
-    stage: STAGES[3]!,
     intent: 'UNKNOWN' as const,
     askedRecently: [] as readonly string[],
     lastStrategies: [] as readonly string[] as never,
@@ -124,9 +123,9 @@ test('الفخر لا يُلحَق بإقرار بجهل — «لا أعرف، �
   emotion.judged({ reward: 1, strategy: 'ANSWER_MEMORY', dopamine: 0.8 });
   assert.ok(emotion.feelings.complex['فخر'] > 0.5, 'فخره قائم');
 
-  assert.ok(emotion.colorAr(3, true, 'answer') !== null, 'ويُقال مع الجواب');
-  assert.equal(emotion.colorAr(3, true, 'admission'), null, 'ولا يُقال مع إقرار بجهل');
-  assert.equal(emotion.colorAr(3, true, 'babble'), null, 'ولا مع ثغثغة: من لا يُركّب لا يصف');
+  assert.ok(emotion.colorAr(true, 'answer') !== null, 'ويُقال مع الجواب');
+  assert.equal(emotion.colorAr(true, 'admission'), null, 'ولا يُقال مع إقرار بجهل');
+  assert.equal(emotion.colorAr(true, 'acknowledge'), null, 'ولا مع إقرارٍ بالتلقّي');
 });
 
 test('شعورٌ ضئيل لا يُسمّى غالباً على شعورٍ يفوقه أضعافاً', () => {

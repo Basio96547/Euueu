@@ -31,7 +31,7 @@ test('الميراث يعطيه عربية يفهمها', async () => {
   assert.ok(m.vocab >= 300, `يعرف مئات الكلمات (${m.vocab})`);
   assert.ok(m.facts >= 150, `ومئات الحقائق (${m.facts})`);
   assert.equal(zubair.inheritedVersion, HERITAGE_VERSION);
-  assert.ok(m.stage.id >= 2, `ويبدأ في مرحلة أعلى من الوليد (${m.stage.name})`);
+  assert.ok(m.facts >= 400, `ويبدأ بمعرفةٍ معتبرة لا من الصفر (${m.facts} حقيقة)`);
 });
 
 test('الفصل صريح: ما وُرِث لا يُنسَب إلى الأب', async () => {

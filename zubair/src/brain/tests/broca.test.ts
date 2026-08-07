@@ -1,8 +1,11 @@
 /* ————— اختبار الكلام: منطقة بروكا —————
  *
  * هذا الفص هو ما يراه الأب، فاختباره اختبارُ الصدق قبل أن يكون اختبار وظيفة:
- * أن يبقى الوليد وليداً في كلامه، وأن يُظهر التخمين تخميناً لا يقيناً، وأن يسأل
- * عمّا يجهله فعلاً لا عمّا يُلفَّق له.
+ * أن يُظهر التخمين تخميناً لا يقيناً، وأن يسأل عمّا يجهله فعلاً لا عمّا يُلفَّق
+ * له، وأن يقول ما يعرف بلا حشو ولا استئذان.
+ *
+ * وقد حُذف من هنا كل ما كان يقيس الأطوار: «الوليد يُثغثغ»، و«جملة المُهد أربع
+ * كلمات». لم يبقَ طور، ولا ثغثغة، ولا حدٌّ يتغيّر بالسنّ — بل لسانٌ واحد.
  */
 
 import { test } from 'node:test';
@@ -11,7 +14,7 @@ import assert from 'node:assert/strict';
 import { Lexicon } from '../core/text.js';
 import { Rng, vec } from '../core/tensor.js';
 import { Broca, type SpeechRequest } from '../lobes/broca.js';
-import { STAGES, STRATEGIES, type Fact, type Interoception, type Stage, type StageId, type Strategy } from '../core/types.js';
+import { MAX_SENTENCE_WORDS, STRATEGIES, type Fact, type Interoception, type Strategy } from '../core/types.js';
 
 const INTERO: Interoception = {
   arousal: 1, fatigue: 0.1, curiosity: 0.6, attachment: 0.5, boredom: 0.1, confidence: 0.3,
@@ -23,7 +26,6 @@ function fact(subject: string, object: string, confidence = 0.8): Fact {
 
 interface Options {
   strategy: Strategy;
-  stage?: StageId;
   said?: string;
   unknown?: readonly string[];
   askedBefore?: readonly string[];
@@ -37,10 +39,8 @@ interface Options {
 function request(options: Options): SpeechRequest {
   const lexicon = options.lexicon ?? new Lexicon(new Rng(0x5a1d));
   const percept = lexicon.perceive(options.said ?? 'القطة حيوان', true);
-  const stage: Stage = STAGES[options.stage ?? 2]!;
   return {
     strategy: options.strategy,
-    stage,
     percept,
     understanding: {
       meaning: vec(64), intent: 'ASK', intentProbs: Float32Array.from([0.6, 0.2, 0.2]), uncertainty: 0.3,
@@ -59,60 +59,57 @@ function request(options: Options): SpeechRequest {
 
 const wordCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
 
-/* ————— التدرّج: الصدق في المرحلة ————— */
+/* ————— حدُّ الجملة: واحدٌ لا سُلَّم ————— */
 
-test('الوليد لا ينطق جملة تامة مهما كان جوابه صحيحاً', () => {
+test('جملته تامّة ولا تتجاوز حدّ الوضوح', () => {
   const broca = new Broca();
-  const limit = STAGES[0]!.maxWords;
   for (let seed = 0; seed < 50; seed++) {
-    // حتى مع حقيقة صريحة يعرفها، لا يستطيع أن ينطقها جملة: هذا هو حدّ المرحلة
-    const speech = broca.speak(request({
-      strategy: 'ANSWER_MEMORY', stage: 0, fact: fact('قطه', 'حيوان'), seed,
-    }));
-    assert.ok(wordCount(speech.text) <= limit,
-      `«${speech.text}» فيها ${wordCount(speech.text)} كلمة وحدّ الوليد ${limit}`);
-    assert.ok(speech.text.trim().length > 0, 'ولا يسكت');
+    for (const strategy of STRATEGIES) {
+      const speech = broca.speak(request({
+        strategy, seed,
+        fact: fact('قطه', 'حيوان'),
+        generalized: { fact: fact('قطط', 'حيوان', 0.4), similarity: 0.4 },
+      }));
+      assert.ok(wordCount(speech.text) <= MAX_SENTENCE_WORDS,
+        `[${strategy}] «${speech.text}» تجاوزت ${MAX_SENTENCE_WORDS}`);
+    }
   }
 });
 
-test('كل مرحلة تحترم حدّها في خمسين توليدة', () => {
+test('ويقول الحقيقة جملةً تامّة، لا مقصوصةً بحدّ طور', () => {
+  /* كان الوليد يعرف «القطة حيوان» فيقول «حيوان» وحدها لأن مرحلته لا تسمح
+   * بكلمتين. وقد حُذف السُّلّم: ما يعرفه يقوله كما يعرفه. */
   const broca = new Broca();
-  for (const stage of STAGES) {
-    for (let seed = 0; seed < 50; seed++) {
-      for (const strategy of STRATEGIES) {
-        const speech = broca.speak(request({
-          strategy, stage: stage.id, seed,
-          fact: fact('قطه', 'حيوان'),
-          generalized: { fact: fact('قطط', 'حيوان', 0.4), similarity: 0.4 },
-        }));
-        assert.ok(wordCount(speech.text) <= stage.maxWords,
-          `[${stage.name}/${strategy}] «${speech.text}» تجاوزت ${stage.maxWords}`);
-      }
-    }
+  let full = 0;
+  for (let seed = 0; seed < 30; seed++) {
+    const speech = broca.speak(request({
+      strategy: 'ANSWER_MEMORY', fact: fact('قطه', 'حيوان'), seed,
+    }));
+    if (speech.text.includes('قطه') || speech.text.includes('القطة')) full++;
+    assert.ok(speech.text.includes('حيوان'), `يذكر المحمول: «${speech.text}»`);
   }
+  assert.ok(full >= 25, `ويذكر الموضوع معه في أكثر جمله (${full}/30)`);
 });
 
 test('لا فراغ ولا فاصلة معلّقة في آخر كلامه', () => {
   const broca = new Broca();
-  for (const stage of STAGES) {
-    for (const strategy of STRATEGIES) {
-      for (let seed = 0; seed < 20; seed++) {
-        const speech = broca.speak(request({ strategy, stage: stage.id, seed }));
-        assert.ok(speech.text.trim().length > 0, `[${stage.name}/${strategy}] لا يسكت`);
-        assert.ok(!/[،؛:,\-–—]$/u.test(speech.text.trim()),
-          `[${stage.name}/${strategy}] «${speech.text}» تنتهي بعلامة وصل معلّقة`);
-        assert.ok(!/[a-zA-Z]/.test(speech.text), 'ولا حرف لاتيني في كلام طفل عربي');
-      }
+  for (const strategy of STRATEGIES) {
+    for (let seed = 0; seed < 20; seed++) {
+      const speech = broca.speak(request({ strategy, seed }));
+      assert.ok(speech.text.trim().length > 0, `[${strategy}] لا يسكت`);
+      assert.ok(!/[،؛:,\-–—]$/u.test(speech.text.trim()),
+        `[${strategy}] «${speech.text}» تنتهي بعلامة وصل معلّقة`);
+      assert.ok(!/[a-zA-Z]/.test(speech.text), 'ولا حرف لاتيني في كلام عربي');
     }
   }
 });
 
-/* ————— السؤال: أسئلة أطفال ————— */
+/* ————— السؤال ————— */
 
 test('يسأل عن كلمة يجهلها فعلاً وحاضرة في كلامك', () => {
   const broca = new Broca();
   const speech = broca.speak(request({
-    strategy: 'ASK_QUESTION', stage: 1,
+    strategy: 'ASK_QUESTION',
     said: 'عندي شيء اسمه كنكارو',
     unknown: ['كنكارو'],
   }));
@@ -124,7 +121,7 @@ test('يسأل عن كلمة يجهلها فعلاً وحاضرة في كلام�
 test('لا يعيد سؤالاً سأله: يبحث عن جهل آخر', () => {
   const broca = new Broca();
   const speech = broca.speak(request({
-    strategy: 'ASK_QUESTION', stage: 2,
+    strategy: 'ASK_QUESTION',
     said: 'عندي كنكارو وأيضاً بنغول',
     unknown: ['كنكارو', 'بنغول'],
     askedBefore: ['كنكارو'],
@@ -133,37 +130,12 @@ test('لا يعيد سؤالاً سأله: يبحث عن جهل آخر', () => {
   assert.equal(speech.about, 'بنغول', 'بل ينتقل إلى جهله الآخر');
 });
 
-test('أسئلة الوليد ليست أسئلة اليافع', () => {
-  const broca = new Broca();
-  const collect = (stageId: StageId): Set<string> => {
-    const out = new Set<string>();
-    for (let seed = 0; seed < 30; seed++) {
-      out.add(broca.speak(request({
-        strategy: 'ASK_QUESTION', stage: stageId,
-        said: 'عندي شيء اسمه كنكارو', unknown: ['كنكارو'], seed,
-      })).text);
-    }
-    return out;
-  };
-
-  const infant = collect(1);
-  const youth = collect(4);
-  for (const question of infant) {
-    assert.ok(!youth.has(question), `سؤال المُهد «${question}» لا يقوله اليافع`);
-  }
-  // ويافعُه يسأل سؤالاً أطول وأعمق: هذا هو النمو في الكلام
-  const longestInfant = Math.max(...[...infant].map(wordCount));
-  const longestYouth = Math.max(...[...youth].map(wordCount));
-  assert.ok(longestYouth > longestInfant,
-    `سؤال اليافع أطول (${longestInfant} ← ${longestYouth} كلمة)`);
-});
-
 test('حين لا يجهل شيئاً حاضراً يسأل سؤالاً عامّاً ولا يسكت', () => {
   const broca = new Broca();
   const lexicon = new Lexicon(new Rng(3));
   for (let i = 0; i < 3; i++) lexicon.perceive('القطة حيوان', true);
   const speech = broca.speak(request({
-    strategy: 'ASK_QUESTION', stage: 1, said: 'القطة حيوان',
+    strategy: 'ASK_QUESTION', said: 'القطة حيوان',
     unknown: [], askedBefore: ['قطه', 'القطه', 'حيوان'], lexicon,
   }));
   assert.equal(speech.kind, 'question');
@@ -181,12 +153,12 @@ test('الجواب من ذاكرة صريحة بلا تحفّظ، والتعمي
   let generalHedged = 0;
   for (let seed = 0; seed < 30; seed++) {
     const fromMemory = broca.speak(request({
-      strategy: 'ANSWER_MEMORY', stage: 3, fact: fact('قطه', 'حيوان'), seed,
+      strategy: 'ANSWER_MEMORY', fact: fact('قطه', 'حيوان'), seed,
     }));
     if (hasHedge(fromMemory.text)) memoryHedged++;
 
     const byGuess = broca.speak(request({
-      strategy: 'ANSWER_GENERAL', stage: 3, seed,
+      strategy: 'ANSWER_GENERAL', seed,
       generalized: { fact: fact('قطه', 'حيوان', 0.5), similarity: 0.6 },
     }));
     if (hasHedge(byGuess.text)) generalHedged++;
@@ -201,7 +173,7 @@ test('شبه بعيد يستحقّ تحفّظاً أصرح', () => {
   let explicit = 0;
   for (let seed = 0; seed < 20; seed++) {
     const speech = broca.speak(request({
-      strategy: 'ANSWER_GENERAL', stage: 4, seed,
+      strategy: 'ANSWER_GENERAL', seed,
       generalized: { fact: fact('قطه', 'حيوان', 0.4), similarity: 0.35 },
     }));
     if (/مو متأكّد|لست متأكّد/.test(speech.text)) explicit++;
@@ -209,31 +181,15 @@ test('شبه بعيد يستحقّ تحفّظاً أصرح', () => {
   assert.ok(explicit >= 18, `يقول إنه غير متأكّد حين يكون الشبه بعيداً (${explicit} من ٢٠)`);
 });
 
-test('الإقرار بالجهل طلبُ تعليم لا اعتذار', () => {
+test('الإقرار بالجهل بيانُ حدٍّ لا اعتذار ولا استجداء', () => {
   const broca = new Broca();
   for (let seed = 0; seed < 20; seed++) {
-    const speech = broca.speak(request({ strategy: 'ADMIT', stage: 3, seed }));
+    const speech = broca.speak(request({ strategy: 'ADMIT', seed }));
     assert.equal(speech.kind, 'admission');
-    assert.ok(/علّمني|بدي أعرف|أريد أن أعرف/.test(speech.text),
-      `يطلب التعليم: «${speech.text}»`);
-  }
-});
-
-/* ————— الثغثغة ————— */
-
-test('يُثغثغ بما سمع لا بحروف عشوائية', () => {
-  const broca = new Broca();
-  const heard = 'دمشق';
-  for (let seed = 0; seed < 30; seed++) {
-    const speech = broca.speak(request({
-      strategy: 'BABBLE', stage: 0, said: heard, seed,
-    }));
-    assert.equal(speech.kind, 'babble');
-    // كل حرف في ثغثغته إمّا من كلمة أبيه أو صائت: الوليد يُثغثغ بما سمع
-    for (const letter of speech.text.replace(/\s/g, '')) {
-      assert.ok(heard.includes(letter) || 'اوي'.includes(letter),
-        `الحرف «${letter}» في «${speech.text}» ليس مما سمعه`);
-    }
+    assert.ok(/ما بعرف|ما عندي|ما وصلني|لا أعرف|لا أملك|لم يصلني/.test(speech.text),
+      `يبيّن حدّ معرفته: «${speech.text}»`);
+    assert.ok(!/آسف|عفوا|سامحني/.test(speech.text), 'ولا يعتذر عن جهله');
+    assert.ok(!/بدي أعرف|أريد أن أعرف/.test(speech.text), 'ولا يستجدي');
   }
 });
 
@@ -246,7 +202,7 @@ test('يتعلّم لهجتك: خمس جمل شامية تُحوّل كلامه'
   const count = (broca: Broca, markers: readonly string[]): number => {
     let hits = 0;
     for (let seed = 0; seed < 20; seed++) {
-      const text = broca.speak(request({ strategy: 'ADMIT', stage: 3, seed })).text;
+      const text = broca.speak(request({ strategy: 'ADMIT', seed })).text;
       if (markers.some((m) => text.includes(m))) hits++;
     }
     return hits;
@@ -262,8 +218,9 @@ test('يتعلّم لهجتك: خمس جمل شامية تُحوّل كلامه'
   assert.equal(shami.dialectAr, 'شامية', 'من كلّمه بالشامية صار شامياً');
   assert.equal(fusha.dialectAr, 'فصحى', 'ومن كلّمه بالفصحى صار فصيحاً');
 
-  const shamiHits = count(shami, ['ما بعرف', 'بدي']);
-  const fushaHits = count(fusha, ['لا أعرف', 'أريد']);
+  // علاماتُ اللهجة في صيغه الناضجة: «ما بعرف» و«هيك» و«حكيلي» شامية، ومقابلها فصيح
+  const shamiHits = count(shami, ['ما بعرف', 'هيك', 'حكيلي', 'هاد']);
+  const fushaHits = count(fusha, ['لا أعرف', 'لا أملك', 'حدّثني', 'ذلك']);
   assert.ok(shamiHits >= 18, `كلامه شاميّ (${shamiHits} من ٢٠)`);
   assert.ok(fushaHits >= 18, `وكلام الآخر فصيح (${fushaHits} من ٢٠)`);
 });
@@ -280,8 +237,8 @@ test('لا يحكم بلهجة قبل ثلاث شواهد: التخمين ليس
 test('نفس البذرة تُعطي نفس الكلام حرفياً', () => {
   const broca = new Broca();
   for (const strategy of STRATEGIES) {
-    const first = broca.speak(request({ strategy, stage: 2, seed: 777, fact: fact('قطه', 'حيوان') }));
-    const second = broca.speak(request({ strategy, stage: 2, seed: 777, fact: fact('قطه', 'حيوان') }));
+    const first = broca.speak(request({ strategy, seed: 777, fact: fact('قطه', 'حيوان') }));
+    const second = broca.speak(request({ strategy, seed: 777, fact: fact('قطه', 'حيوان') }));
     assert.equal(second.text, first.text, `«${strategy}» ثابت — وبلا ثبات لا يُختبر تعلّمه`);
   }
 });
@@ -293,7 +250,7 @@ test('يتكلّم بإملاء أبيه لا بالصورة المطبَّعة'
 
   // مفتاح الحقيقة مطبَّع («تفاحه») لأن الجُداري يُسقط التعريف ويطبّع
   const speech = broca.speak(request({
-    strategy: 'ANSWER_MEMORY', stage: 3, lexicon, fact: fact('تفاحه', 'فاكهه'),
+    strategy: 'ANSWER_MEMORY', lexicon, fact: fact('تفاحه', 'فاكهه'),
   }));
   assert.ok(speech.text.includes('فاكهة'), `يقول «فاكهة» لا «فاكهه»: «${speech.text}»`);
   assert.ok(!speech.text.includes('فاكهه'), 'فالتطبيع للفهم لا للكلام');
@@ -305,7 +262,7 @@ test('كلامه لا ينهار على مدخلات فقيرة', () => {
   for (const strategy of STRATEGIES) {
     for (const said of ['', '   ', '؟', '١٢٣']) {
       const speech = broca.speak(request({
-        strategy, stage: 0, said, unknown: [], askedBefore: [], fact: null,
+        strategy, said, unknown: [], askedBefore: [], fact: null,
         generalized: null, lexicon: empty,
       }));
       assert.ok(speech.text.trim().length > 0,
@@ -317,12 +274,12 @@ test('كلامه لا ينهار على مدخلات فقيرة', () => {
 test('أسلوب أبيه يُحفظ ويُستعاد', () => {
   const broca = new Broca();
   for (const sentence of ['شو هذا', 'ليش هيك', 'كيفك', 'بدي أعرف']) broca.learnStyle(sentence);
-  const expected = broca.speak(request({ strategy: 'ADMIT', stage: 3, seed: 42 })).text;
+  const expected = broca.speak(request({ strategy: 'ADMIT', seed: 42 })).text;
 
   const fresh = new Broca();
   fresh.load(JSON.parse(JSON.stringify(broca.save())));
   assert.equal(fresh.dialectAr, broca.dialectAr, 'اللهجة انتقلت');
-  assert.equal(fresh.speak(request({ strategy: 'ADMIT', stage: 3, seed: 42 })).text, expected,
+  assert.equal(fresh.speak(request({ strategy: 'ADMIT', seed: 42 })).text, expected,
     'ونفس الكلام بعد الاستعادة');
 
   for (const bad of [null, 'نص', 6, {}, { shami: 'خطأ', openers: 'لا' }]) {

@@ -10,9 +10,9 @@ import assert from 'node:assert/strict';
 
 import { bestAccelerator, cpuCompute, accelReport } from '../core/npu.js';
 import { browserStorage, memoryStorage, quotaHint } from '../core/persist.js';
-import { accuracyOf, stageOf, summarize, toNextStage, WINDOW } from '../core/growth.js';
+import { accuracyOf, summarize, WINDOW } from '../core/growth.js';
 import { cosine, vec } from '../core/tensor.js';
-import { STAGES, type GrowthMetrics } from '../core/types.js';
+import { MAX_SENTENCE_WORDS, type GrowthMetrics } from '../core/types.js';
 
 /* ————— نواة الحساب على المعالج ————— */
 
@@ -144,28 +144,12 @@ test('قياس الحجم لا يرمي حين لا يُخبر المتصفّح'
 
 /* ————— سجل النمو ————— */
 
-test('المراحل تُحسب على حدودها بالضبط', () => {
-  const expected: Array<[number, string]> = [
-    [0, 'وليد'], [11, 'وليد'], [12, 'مُهد'], [59, 'مُهد'], [60, 'طفل'],
-    [199, 'طفل'], [200, 'مميّز'], [499, 'مميّز'], [500, 'يافع'], [649, 'يافع'],
-    [650, 'شاب'], [10000, 'شاب'],
-  ];
-  for (const [vocab, name] of expected) {
-    assert.equal(stageOf(vocab).name, name, `${vocab} كلمة → ${name}`);
-  }
-  // ومدخلات شاذّة لا تُسقطه
-  for (const bad of [-5, NaN, Infinity, -Infinity]) {
-    assert.ok(STAGES.includes(stageOf(bad as number)), `${bad} يعيد مرحلة صالحة`);
-  }
-});
-
-test('ما يحتاجه للمرحلة التالية يُحسب صحيحاً', () => {
-  assert.equal(toNextStage(0), 12, 'الوليد يحتاج ١٢ كلمة');
-  assert.equal(toNextStage(11), 1);
-  assert.equal(toNextStage(12), 48, 'والمُهد يحتاج ٤٨ ليصير طفلاً');
-  assert.equal(toNextStage(500), 150, 'واليافع يحتاج ١٥٠ ليصير شاباً');
-  assert.equal(toNextStage(650), 0, 'وبالغُ المراحل لا ينتظر شيئاً');
-  assert.equal(toNextStage(99999), 0);
+test('حدُّ الجملة واحدٌ لا سُلَّم أطوار', () => {
+  /* كان هنا اختبارُ حدود المراحل — وليدٌ إلى اثنتي عشرة كلمة، ثم مُهد، ثم
+   * طفل — واختبارُ «كم يحتاج ليكبر». وقد حُذف السُّلّم كلُّه بطلب الأب: النموّ
+   * في ما يعرف لا في رخصةٍ ينالها بعدد كلماته. فبقي حدٌّ واحد للوضوح. */
+  assert.ok(MAX_SENTENCE_WORDS >= 20, `جملةٌ تامّة لا مقصوصة (${MAX_SENTENCE_WORDS} كلمة)`);
+  assert.ok(MAX_SENTENCE_WORDS <= 40, 'وحدٌّ للوضوح: ما تجاوزه ثرثرة');
 });
 
 test('نسبة الإصابة تُحسب من نافذتين لا من واحدة', () => {
@@ -192,7 +176,6 @@ function metrics(recent: number, previous: number, lessons = 30, vocab = 34): Gr
     ticks: 100, lessons, vocab, facts: 12, factsInherited: 8, factsFromFather: 4,
     objectsSeen: 3, episodes: 80, questionsAsked: 9,
     recentAccuracy: recent, previousAccuracy: previous, sleeps: 2,
-    stage: stageOf(vocab), toNextStage: toNextStage(vocab),
   };
 }
 
@@ -216,7 +199,7 @@ test('الجملة التي يقرؤها الأب صحيحة عربية وفيه
   const text = summarize(metrics(0.55, 0.3));
   assert.ok(/[؀-ۿ]/.test(text), 'عربية');
   assert.ok(text.includes('34'), 'وفيها عدد كلماته');
-  assert.ok(text.includes('مُهد'), 'ومرحلته');
+  assert.ok(text.includes('حقيقة') || text.includes('كلمة'), 'وما يعرفه لا اسمَ طورٍ');
   assert.ok(text.trim().endsWith('.'), 'وجملة تامة');
   assert.ok(!text.includes('NaN') && !text.includes('undefined'), 'ولا قيمة عطبة');
 });

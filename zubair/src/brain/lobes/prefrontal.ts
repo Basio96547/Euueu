@@ -2,7 +2,7 @@
  *
  * الجبهي هو الكبح: أحدث ما نما في الدماغ وآخر ما يكتمل في الإنسان، ووظيفته
  * ليست أن يفعل بل أن **يمنع**. طفل بلا فص جبهي يعيد السؤال نفسه عشر مرات
- * ويثغثغ بعد أن كبر. وهنا يمنع زبير من ذلك، ويحمل الحوار في رأسه.
+ * ويُجيب عن سؤال لم يُسأل. وهنا يمنع زبير من ذلك، ويحمل الحوار في رأسه.
  *
  * والمخيخ هو الإتقان: لا يقرّر ما يُقال بل كيف يُقال، ويتعلّم من تصحيح أبيه
  * ألّا يعيد نفس الخطأ في الصياغة.
@@ -10,7 +10,7 @@
 
 import { clamp, type Vec } from '../core/tensor.js';
 import type { Understanding } from './temporal.js';
-import { DIMS, MATURE_STAGE, STAGES, type Intent, type Interoception, type Lobe, type Stage, type Strategy } from '../core/types.js';
+import { DIMS, type Intent, type Interoception, type Lobe, type Strategy } from '../core/types.js';
 
 export interface Turn {
   said: string;
@@ -41,17 +41,17 @@ export const GOAL_FITS: Record<Goal, ReadonlySet<Strategy>> = {
   LEARN: new Set<Strategy>(['ASK_QUESTION', 'ADMIT', 'ACKNOWLEDGE']),
   ANSWER: new Set<Strategy>(['ANSWER_MEMORY', 'ANSWER_GENERAL', 'ADMIT']),
   BOND: new Set<Strategy>(['GREET_BACK', 'ACKNOWLEDGE', 'ANSWER_MEMORY']),
-  REST: new Set<Strategy>(['ACKNOWLEDGE', 'GREET_BACK', 'BABBLE']),
+  REST: new Set<Strategy>(['ACKNOWLEDGE', 'GREET_BACK']),
 };
 
-/** أدنى شبهٍ يجوز للشابّ أن يخمّن عليه. أعلى من عتبة الجُداري بكثير: التخمين
- *  مقبولٌ من طفلٍ يستكشف، ومن الشابّ يُقرأ اختراعاً. */
+/** أدنى شبهٍ يجوز أن يُخمَّن عليه. أعلى من عتبة الجُداري بكثير: التخمين على
+ *  شبه الحروف منبع الهلوسة الأول، فيُشدَّد عليه في الكلام لا في الاستنتاج. */
 const STRONG_LIKENESS = 0.55;
 
 export class Prefrontal implements Lobe<PrefrontalState> {
   readonly name = 'prefrontal';
   readonly ar = 'الفص الجبهي';
-  readonly role = 'يحمل الحوار في رأسه ويكبح نفسه: لا يعيد سؤالاً سأله، ولا يثغثغ بعد أن كبر';
+  readonly role = 'يحمل الحوار في رأسه ويكبح نفسه: لا يعيد سؤالاً سأله، ولا يجزم بما لا يعرف';
 
   private turns: Turn[] = [];
 
@@ -85,10 +85,9 @@ export class Prefrontal implements Lobe<PrefrontalState> {
    * الكبح: ما لا يصلح الآن يُمنع.
    *
    * لا يعيد قائمة فارغة أبداً — دماغ بلا استجابة مسموحة دماغ مشلول. فإن سقط
-   * كل شيء أعاد الإقرار بالجهل، أو الثغثغة إن كان لا يزال وليداً.
+   * كل شيء أعاد الإقرار بالجهل.
    */
   inhibit(candidates: readonly Strategy[], ctx: {
-    stage: Stage;
     intent: Intent;
     askedRecently: readonly string[];
     lastStrategies: readonly Strategy[];
@@ -120,9 +119,7 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     const preferred: Strategy[] = [];
     const lastTwo = ctx.lastStrategies.slice(-2);
     const stuckOn = lastTwo.length === 2 && lastTwo[0] === lastTwo[1] ? lastTwo[0] : null;
-    const firstStageVocab = STAGES[1]?.minVocab ?? 12;
-    /** أبلغَ مرحلة الشاب؟ عندها تُرفع أحكام الطفولة عنه */
-    const mature = ctx.stage.id >= MATURE_STAGE;
+
     // قصد الأب يحدّد ما يصلح أصلاً: مَن سُئل لا يردّ التحية، ومَن عُلّم لا يُجيب
     // عن سؤال لم يُسأل. بلا هذا الكبح يبدو زبير مجنوناً لا وليداً، ويضيع تعزيز
     // أبيه على استجابات لا علاقة لها بالموضع
@@ -149,7 +146,7 @@ export class Prefrontal implements Lobe<PrefrontalState> {
            * وهذا أصل الهلوسة في هذا الدماغ ومنبعها الوحيد تقريباً: أن يُنقَل
            * محمولُ شيءٍ إلى شيءٍ يشبهه في حروفه لا في معناه. فيُشدَّد عليه عند
            * النضج: شبهٌ دون العتبة العالية يُردّ ويُقرّ بجهله. */
-          if (mature && ctx.generalizeStrength < STRONG_LIKENESS) continue;
+          if (ctx.generalizeStrength < STRONG_LIKENESS) continue;
           break;
         case 'ASK_QUESTION':
           // سؤال أعاده عن نفس الكلمة يُنفّر أباه ولا يُعلّمه شيئاً جديداً
@@ -165,16 +162,6 @@ export class Prefrontal implements Lobe<PrefrontalState> {
           /* والتحيّة تُردّ بتحيّة: مَن قيل له «مرحبا» فسأل «شو صار؟» لم يردّ
            * السلام. ويبقى السؤال مباحاً إن كان في تحيّتك لفظٌ يجهله. */
           if (ctx.intent === 'GREET' && ctx.unknownCount === 0) continue;
-          break;
-        case 'BABBLE':
-          // من تعلّم كلمات لا يعود يثغثغ: هذا هو النمو محسوساً
-          if (ctx.vocab >= firstStageVocab) continue;
-          // والشاب لا يثغثغ بحال، ولو خلا رأسه: يسكت أو يسأل
-          if (mature) continue;
-          /* ووليدٌ يملك الجواب لا يُثغثغ به: الثغثغة عجزٌ عن الكلام لا اختيارٌ
-           * له. أُضيف بعد قياس: سُئل «شو هذا؟» وهو يرى تفاحةً سمّاها له أبوه
-           * قبل لحظة، فقال «شو؟» — يعرف ولا ينطق. */
-          if (ctx.hasFact && answering) continue;
           break;
         case 'ACKNOWLEDGE':
           /* الإقرار بالتلقّي لا معنى له إلا بعد تعليم أو حكم — والدرس النازل
@@ -215,15 +202,17 @@ export class Prefrontal implements Lobe<PrefrontalState> {
      * قواعد الصلاحية أعلاه **حَتْمٌ**: مَن عُلّم لا يقول «علّمني». وكبحُ التكرار
      * **تفضيلٌ**: لا يُعيد الصيغة نفسها ثلاثاً. وكانا في مرتبة واحدة، فاجتمعا
      * على إسقاط كل الخيارات في موضعٍ بعينه — درسٌ ثالث بعد درسين أُقرّ بتلقّيهما:
-     * الجواب ممنوع (أبوه يُعلّم لا يسأل)، والسؤال ممنوع (لا جهل حاضر)، والثغثغة
-     * ممنوعة (كبر)، و«حفظت» مكبوحة بالتكرار. فسقط إلى آخر السطر — «علّمني» —
+     * الجواب ممنوع (أبوه يُعلّم لا يسأل)، والسؤال ممنوع (لا جهل حاضر)، و«حفظت»
+     * مكبوحة بالتكرار. فسقط إلى آخر السطر — «علّمني» —
      * وهو أسوأ ما يُقال لمن يُعلّم.
      *
      * والصواب أن يُخالَف التفضيل عند الضيق ولا يُخالَف الحَتْم: أن يُعيد «حفظت»
      * خيرٌ من أن يطلب تعليماً نزل فيه للتوّ. */
     if (preferred.length > 0) return preferred;
     if (allowed.length > 0) return allowed;
-    return ctx.vocab < firstStageVocab ? ['BABBLE'] : ['ADMIT'];
+    /* وآخر السطر إقرارٌ بالجهل لا ثغثغة: من ضاق عليه كل شيء يقول «لا أعرف»،
+     * وهذا صدقٌ. والثغثغة كانت آخر السطر حين كان طفلاً. */
+    return ['ADMIT'];
   }
 
   save(): PrefrontalState {
@@ -271,11 +260,11 @@ const RULE_CAP = 200;
  * ٦٣–٧٥٪ في اثنتي عشرة جولة تعليم بلا تقدّم، وكان يُقرأ ضعفَ تعلّمٍ وهو منعٌ
  * مفروض عليه: نفس الأسئلة تفشل في كل جولة لا أسئلة مختلفة.
  *
- * وأن يجيب المرء صواباً ثلاث مرات متتالية كفاءةٌ لا رُتّة. أما الثغثغة والسؤال
+ * وأن يجيب المرء صواباً ثلاث مرات متتالية كفاءةٌ لا رُتّة. أما السؤال
  * والإقرار بالتلقّي وردّ التحية فتكرارها المتوالي عَرَضٌ لا معنى فيه.
  */
 const RUT_PRONE: ReadonlySet<Strategy> = new Set<Strategy>([
-  'BABBLE', 'ASK_QUESTION', 'ACKNOWLEDGE', 'GREET_BACK',
+  'ASK_QUESTION', 'ACKNOWLEDGE', 'GREET_BACK',
 ]);
 
 /** لواحق تنويع حين يُكرّر نفس الجملة حرفياً — لا يُعيد نفسه كالببغاء. */

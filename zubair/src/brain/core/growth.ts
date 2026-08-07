@@ -4,25 +4,10 @@
  * إلى أرقام يقرؤها أبوه، وشرطها الصدق: إن هبطت نسبة إصابته فلتقل ذلك.
  */
 
-import { STAGES, type GrowthMetrics, type Stage } from './types.js';
+import type { GrowthMetrics } from './types.js';
 
 /** نافذة القياس: عشرون جواباً. أقلّ منها ضجيج، وأكثر منها يُخفي التغيّر الحديث. */
 export const WINDOW = 20;
-
-/** أعلى مرحلة تحقّق شرط مفرداتها. */
-export function stageOf(vocab: number): Stage {
-  const known = Number.isFinite(vocab) ? Math.max(0, vocab) : 0;
-  let current = STAGES[0]!;
-  for (const stage of STAGES) if (known >= stage.minVocab) current = stage;
-  return current;
-}
-
-/** كم كلمة يحتاج ليدخل المرحلة التالية. صفر إن بلغ آخر مرحلة. */
-export function toNextStage(vocab: number): number {
-  const known = Number.isFinite(vocab) ? Math.max(0, vocab) : 0;
-  for (const stage of STAGES) if (known < stage.minVocab) return stage.minVocab - known;
-  return 0;
-}
 
 /**
  * نسبة إصابته في آخر عشرين حكماً، والعشرين التي قبلها.
@@ -46,7 +31,9 @@ function ratio(slice: readonly number[]): number {
 
 /** جملة عربية واحدة تصف حال زبير لأبيه. تقول الهبوط كما تقول الارتفاع. */
 export function summarize(m: GrowthMetrics): string {
-  const parts = [`زبير في مرحلة ${m.stage.name}`, `يعرف ${m.vocab} كلمة`];
+  /* لا اسمَ طورٍ هنا: كان يُقال «زبير في مرحلة طفل» فيُوصَف بسنّه لا بما يعرف.
+   * والذي يهمّ الأب أن يعرف **ما عنده** لا في أيّ درجةٍ من سُلَّم. */
+  const parts = [`زبير يعرف ${m.vocab} كلمة`];
   if (m.facts > 0) parts.push(`و${m.facts} حقيقة`);
 
   if (m.lessons === 0) {

@@ -140,7 +140,6 @@ test('ميل الهدف يُزيح الاختيار فعلاً — ولا يُل
 test('والكبح يبقى كبحاً: الهدف لا يُبيح ممنوعاً', () => {
   const prefrontal = new Prefrontal();
   const allowed = prefrontal.inhibit(STRATEGIES, {
-    stage: { id: 3, name: 'مميّز', minVocab: 200, maxWords: 12, questionBias: 0.3 },
     intent: 'GREET',
     askedRecently: [],
     lastStrategies: [],

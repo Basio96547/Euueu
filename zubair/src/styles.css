@@ -170,7 +170,6 @@ html, body {
 .turn.father .bubble { background: var(--panel-2); border-bottom-right-radius: 4px; }
 .turn.child .bubble { border-bottom-left-radius: 4px; }
 .turn.child .bubble.question { border-color: var(--seed); }
-.turn.child .bubble.babble { color: var(--muted); font-style: italic; }
 
 .meta {
   display: flex;

@@ -13,7 +13,6 @@ import assert from 'node:assert/strict';
 
 import { Zubair } from '../brain.js';
 import { memoryStorage } from '../core/persist.js';
-import { STAGES } from '../core/types.js';
 
 /** دروس أب حقيقي: أسماء وحقائق بلهجة مختلطة كما يتكلّم الناس. */
 const LESSONS: Array<[string, string]> = [
@@ -44,17 +43,16 @@ test('الميلاد: لا يعرف شيئاً ولا يزعم أنه يعرف',
   const zubair = await newborn();
   const metrics = zubair.metrics;
 
-  assert.equal(metrics.vocab, 0, 'الوليد لا يعرف كلمة');
-  assert.equal(metrics.facts, 0, 'الوليد لا يعرف حقيقة');
-  assert.equal(metrics.stage.id, 0, 'يبدأ في مرحلة الوليد');
+  assert.equal(metrics.vocab, 0, 'من لم يورَّث لا يعرف كلمة');
+  assert.equal(metrics.facts, 0, 'ولا حقيقة');
   assert.equal(metrics.lessons, 0);
 
   const first = await zubair.hear('مرحبا يا زبير');
   assert.ok(first.text.trim().length > 0, 'لا يخرج نصاً فارغاً أبداً');
-  // الوليد لا ينطق جملة تامة: هذا ليس عيباً بل هو الصدق
-  const words = first.text.split(/\s+/).filter(Boolean);
-  assert.ok(words.length <= STAGES[0]!.maxWords + 1,
-    `الوليد لا يتكلّم بجملة (قال ${words.length} كلمة: «${first.text}»)`);
+  /* ولا يُثغثغ: حُذفت الثغثغة كلُّها. ومَن لا يملك ما يقوله يُقرّ بذلك — وهذا
+   * أصدق من مقاطع لا معنى لها. */
+  assert.notEqual(first.kind, 'babble' as never, 'ولا يُثغثغ');
+  assert.ok(/[؀-ۿ]/.test(first.text), 'ويتكلّم عربية');
 });
 
 test('المفردات تنمو بما يسمع، ولا تنمو بالتكرار', async () => {
@@ -77,8 +75,7 @@ test('المراحل تتقدّم بما تعلّمه لا بعمره', async ()
     await zubair.hear(`الدرس رقم ${i} فيه كلمات جديدة مثل كلمة${i} وكلمة أخرى${i} وثالثة${i}`);
   }
   const metrics = zubair.metrics;
-  assert.ok(metrics.vocab >= 12, `تجاوز حدّ المرحلة الأولى (${metrics.vocab} كلمة)`);
-  assert.ok(metrics.stage.id >= 1, `دخل مرحلة أعلى (${metrics.stage.name})`);
+  assert.ok(metrics.vocab >= 12, `نمت مفرداته بما سمع (${metrics.vocab} كلمة)`);
 });
 
 test('يتعلّم الحقيقة من درس واحد ويحفظها', async () => {

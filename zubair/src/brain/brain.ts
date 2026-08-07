@@ -13,12 +13,12 @@ import { Rng, argmax, clamp, type Vec } from './core/tensor.js';
 import { Lexicon } from './core/text.js';
 import { bestAccelerator, cpuCompute } from './core/npu.js';
 import { browserStorage, memoryStorage } from './core/persist.js';
-import { accuracyOf, stageOf, toNextStage } from './core/growth.js';
+import { accuracyOf } from './core/growth.js';
 import {
   HERITAGE_EPOCHS, HERITAGE_FACTS, HERITAGE_INTENTS, HERITAGE_SOURCE, HERITAGE_VERSION,
 } from './core/heritage.js';
 import {
-  BRAIN_STATE_VERSION, DIMS, MATURE_STAGE, STAGES, STORAGE_KEY, STRATEGIES,
+  BRAIN_STATE_VERSION, DIMS, STORAGE_KEY, STRATEGIES,
   type Accelerator, type BrainState, type ComputePort, type ComputeUnit, type Episode,
   type Feedback, type GrowthMetrics, type Intent, type Strategy, type TickOutput, type TraceStep,
 } from './core/types.js';
@@ -205,8 +205,6 @@ export class Zubair {
       recentAccuracy: recent,
       previousAccuracy: previous,
       sleeps: this.sleeps,
-      stage: stageOf(vocab),
-      toNextStage: toNextStage(vocab),
     };
   }
 
@@ -818,10 +816,8 @@ export class Zubair {
     }
 
     /* ١١. الفص الجبهي: الهدف والكبح */
-    const stage = stageOf(this.lexicon.size);
     const goal = timed(this.prefrontal, 'حدّد هدفه', 'cpu', () => this.prefrontal.goal(intero, understanding));
     const allowed = timed(this.prefrontal, 'كبح ما لا يصلح الآن', 'cpu', () => this.prefrontal.inhibit(STRATEGIES, {
-      stage,
       intent: understanding.intent,
       askedRecently: this.askedWords.slice(-8),
       lastStrategies: this.prefrontal.recentStrategies,
@@ -853,16 +849,16 @@ export class Zubair {
       - 0.5 * intero.confidence + this.emotion.temperatureShift
       // والمتعب لا يجرّب: من هدفه أن يستريح يلتزم أقصر ما يعرف
       + (goal === 'REST' ? -0.25 : 0),
-      /* ومدى استكشافه يضيق بنضجه: الطفل يجرّب لأنه لا يملك ما يلتزم به، والشابّ
-       * يملك فيلتزم. ومدىً واسعٌ عند من يعرف هو التشتّت بعينه — يُجيب صواباً ثم
-       * يُقرّ بجهله في السؤال نفسه بلا سبب. */
-      stage.id >= MATURE_STAGE ? 0.08 : 0.12,
-      stage.id >= MATURE_STAGE ? 0.65 : 1.8,
+      /* ومدى استكشافه ضيّق: مدىً واسعٌ عند من يعرف هو التشتّت بعينه — يُجيب
+       * صواباً ثم يُقرّ بجهله في السؤال نفسه بلا سبب. وكان يتّسع كلما صغرت
+       * «مرحلته»، فحُذف مع سُلّم الأطوار. */
+      0.08,
+      0.65,
     );
     const state = this.basalGanglia.encodeState({
       understanding, recallScore: recall.bestScore, hasFact: fact !== null,
       hasGeneralization: generalized !== null, valence, conflict: conflict.level,
-      intero, insula: insulaVec, stage: stage.id, unknownCount: unknownContent.length,
+      intero, insula: insulaVec, vocab: this.lexicon.size, unknownCount: unknownContent.length,
     });
     const decision = timed(this.basalGanglia, `اختار استجابته (حرارة ${temperature.toFixed(2)})`, this.compute_.unit,
       () => this.basalGanglia.select(state, allowed, temperature, this.rng, this.compute_,
@@ -871,7 +867,7 @@ export class Zubair {
 
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
-      strategy: decision.strategy, stage, percept, understanding, recall, fact, generalized,
+      strategy: decision.strategy, percept, understanding, recall, fact, generalized,
       intero, unknownWords: unknownContent, contentWords: contentTokens,
       /* أقسام كلمات جملتك: بها يُصاغ سؤاله صحيحاً. وكان يسأل «علّمني أكثر عن
        * بيطير» لأنه لا يعرف أن ما بيده فعل. */
@@ -884,7 +880,7 @@ export class Zubair {
       lexicon: this.lexicon, selfName: this.name, rng: this.rng,
       /* نوع الكلام يُحسَب قبل صياغته كي لا يناقض الشعورُ المقال. وهو يُعرف من
        * الاستراتيجية وحدها: بروكا تختار الصيغة، والاستراتيجية تحدّد جنسها. */
-      feelingAr: this.emotion.colorAr(stage.id, this.broca.speaksShami, speechKind(decision.strategy)),
+      feelingAr: this.emotion.colorAr(this.broca.speaksShami, speechKind(decision.strategy)),
     }));
 
     /* ١٤. المخيخ: الإتقان ومنع التكرار */
@@ -942,7 +938,6 @@ export class Zubair {
       text: refined, kind: speech.kind, strategy: decision.strategy,
       intent: understanding.intent,
       confidence: clamp(1 - conflict.level, 0, 1),
-      stage: stage.id,
       usedEpisodes: recall.episodes.map((e) => e.id),
       trace,
     };
@@ -1307,7 +1302,6 @@ function speechKind(strategy: Strategy): TickOutput['kind'] {
     case 'ADMIT': return 'admission';
     case 'ACKNOWLEDGE': return 'acknowledge';
     case 'GREET_BACK': return 'greeting';
-    case 'BABBLE': return 'babble';
   }
 }
 
@@ -1319,7 +1313,6 @@ function strategyAr(strategy: Strategy): string {
     case 'ADMIT': return 'الإقرار بجهله';
     case 'ACKNOWLEDGE': return 'الإقرار بالتلقّي';
     case 'GREET_BACK': return 'ردّ التحية';
-    case 'BABBLE': return 'الثغثغة';
   }
 }
 
@@ -1341,5 +1334,5 @@ function round2(x: number): number {
 
 /** يُستخدم في الاختبارات للتأكّد أن كل استراتيجية معروفة لبروكا. */
 export const ALL_STRATEGIES = STRATEGIES;
-export { DIMS, STAGES, argmax };
+export { DIMS, argmax };
 export type { Episode, GrowthMetrics, TickOutput };

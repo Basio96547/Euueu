@@ -34,7 +34,7 @@
  */
 
 import { clamp } from '../core/tensor.js';
-import type { Interoception, Lobe, StageId, Strategy, TickOutput } from '../core/types.js';
+import type { Interoception, Lobe, Strategy, TickOutput } from '../core/types.js';
 
 /** نوع الكلام الذي سيُلوَّن — به يُمنع التناقض بين الشعور والمقال. */
 export type SpeechKind = TickOutput['kind'];
@@ -363,17 +363,16 @@ export class Emotion implements Lobe<EmotionState> {
    * وافتخر بعلمه في نفَسٍ واحد. والتناقض في هذا الموضع أسوأ من الصمت: هو أظهر
    * ما يفضح أن العبارة مُلصَقة لا مقولة.
    */
-  colorAr(stage: StageId, shami: boolean, kind: SpeechKind): string | null {
+  colorAr(shami: boolean, kind: SpeechKind): string | null {
     const feelings = this.snapshot();
     const dominant = feelings.dominant;
-    // الوليد لا يصف شعوره: يشعر ولا يملك عبارته. وصفُ الشعور يأتي بعد الكلام.
-    if (!dominant || stage < 2) return null;
-    /* والشابّ لا يُعلن شعوره مع كل جملة: يُقال عند الشدّة وحدها. وإعلانُه في كل
-     * دور تشتيتٌ لا صدق — الشابّ يحمل شعوره ولا يشرحه إلا إذا غلبه. */
-    const floor = stage >= 5
-      ? (dominant.complex ? 0.4 : 0.7)
-      : (dominant.complex ? 0.2 : 0.45);
-    if (dominant.intensity < floor) return null;
+    if (!dominant) return null;
+    /* لا يُعلن شعوره مع كل جملة: يُقال عند الشدّة وحدها. وإعلانُه في كل دور
+     * تشتيتٌ لا صدق — يحمل شعوره ولا يشرحه إلا إذا غلبه.
+     *
+     * وكانت العتبة تهبط مع صغر «مرحلته» فيصف شعوره في كل دور، وقد حُذف السُّلّم
+     * كلُّه: مَن يصف حاله كلما تكلّم لا يُقرأ صادقاً بل ثرثاراً. */
+    if (dominant.intensity < (dominant.complex ? 0.4 : 0.7)) return null;
     if (!sayableWith(dominant.name, kind)) return null;
     const phrases = shami ? SHAMI_COLOR : FUSHA_COLOR;
     return phrases[dominant.name] ?? null;
@@ -504,10 +503,8 @@ export class Emotion implements Lobe<EmotionState> {
  *   الفخر لا يُقال إلا مع جواب — لأنه ادّعاء علمٍ، ولا علم في إقرارٍ بجهل.
  *   والسعادة لا تُقال مع إقرار بجهل — لأن الإقرار طلبٌ لا رضا.
  *   والغيرة لا تُقال مع جواب — «القطة حيوان، وأنا كمان بدي» كلامٌ لا يستقيم.
- *   والثغثغة لا يُلحقها شيء: من لا يُركّب كلمتين لا يصف حاله.
  */
 function sayableWith(name: string, kind: SpeechKind): boolean {
-  if (kind === 'babble') return false;
   if (name === 'فخر') return kind === 'answer';
   if (name === 'سعادة') return kind !== 'admission';
   if (name === 'غيرة') return kind !== 'answer';

@@ -14,7 +14,7 @@ import { Rng, argmax, clamp, sampleCategorical, softmax, vec, type Vec } from '.
 import type { Understanding } from './temporal.js';
 import {
   STRATEGIES,
-  type ComputePort, type Interoception, type Lobe, type StageId, type Strategy,
+  type ComputePort, type Interoception, type Lobe, type Strategy,
 } from '../core/types.js';
 
 export interface Decision {
@@ -87,8 +87,9 @@ export class BasalGanglia implements Lobe<BasalGangliaState> {
     conflict: number;
     intero: Interoception;
     insula: Vec;
-    stage: StageId;
     unknownCount: number;
+    /** كم كلمة يعرف — حلّت محلّ «مرحلته» في متجه الحالة */
+    vocab: number;
   }): Vec {
     const s = this.state;
     s.fill(0);
@@ -105,7 +106,10 @@ export class BasalGanglia implements Lobe<BasalGangliaState> {
     const insulaBase = MEANING_SLICE + 6;
     for (let i = 0; i < 6; i++) s[insulaBase + i] = clamp(safe(input.insula[i]), 0, 1);
 
-    s[insulaBase + 6] = clamp(safe(input.stage) / 4, 0, 1);
+    /* كانت هنا خانة «مرحلته»، وقد حُذفت مع سُلّم الأطوار. ولا تُترك فارغة
+     * تجميلاً: خانةٌ ثابتة تُدخِل صفراً في كل قرار، فتشغل وزناً لا يتعلّم شيئاً.
+     * وحلّ محلّها ما يفيد فعلاً — كم يعرف، مقيساً لوغاريتمياً كما تُقاس الثقة. */
+    s[insulaBase + 6] = clamp(Math.log10(1 + Math.max(0, safe(input.vocab))) / 3, 0, 1);
     // تسوية لوغاريتمية: الفرق بين مجهول واحد واثنين يهمّ، وبين عشرين وثلاثين لا
     s[insulaBase + 7] = clamp(Math.log10(1 + Math.max(0, safe(input.unknownCount))) / 1.5, 0, 1);
 
