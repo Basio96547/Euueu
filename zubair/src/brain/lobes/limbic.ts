@@ -217,6 +217,38 @@ export class Insula implements Lobe<InsulaState> {
     return this.buffer;
   }
 
+  /**
+   * جوابُه حين يُسأل «كيفك؟».
+   *
+   * وهذا صفُّه في جدول الملكية: طلبُ «حال» مالكه الجزيرة لا الجُداري. وكان
+   * يُسأل عن حاله فيبحث في خزانة الحقائق فلا يجد، فيقول «ما وصلني شي عن هيك»
+   * — جوابٌ صحيح عن سؤالٍ لم يُطرح. وحاله ليس في خزانة الحقائق أصلاً: هو هنا،
+   * في ستّة أرقامٍ يقرؤها من داخله.
+   *
+   * والترتيب بالشدّة: يُقال أقواها لا أوّلها، فمن هو متعبٌ وفضوليٌّ معاً يشكو
+   * تعبه. والمشاعر تُلحَق من فص المشاعر في بروكا، فلا تُعاد هنا.
+   */
+  howAmI(intero: Interoception, shami: boolean): string {
+    const fatigue = clamp(safe(intero.fatigue, 0), 0, 1);
+    const arousal = clamp(safe(intero.arousal, 0), 0, 1);
+    const curiosity = clamp(safe(intero.curiosity, 0), 0, 1);
+    const confidence = clamp(safe(intero.confidence, 0), 0, 1);
+    const boredom = clamp(safe(intero.boredom, 0), 0, 1);
+
+    const claims: Array<[number, string, string]> = [
+      [fatigue, 'تعبان شوي', 'أشعر بالتعب قليلاً'],
+      [1 - arousal, 'نعسان', 'أشعر بالنعاس'],
+      [boredom, 'زهقان شوي', 'أشعر بشيء من الملل'],
+      [curiosity, 'منيح، وبدّي أتعلّم', 'بخير، وأودّ أن أتعلّم'],
+      [confidence, 'منيح، حاسس حالي عرفان', 'بخير، أشعر أنني أعرف'],
+    ];
+    let best = claims[0]!;
+    for (const claim of claims) if (claim[0] > best[0]) best = claim;
+    // ولا يُشتكى من شيءٍ ضعيف: من كل أرقامه هادئة يقول إنه بخير وكفى
+    if (best[0] < 0.5) return shami ? 'منيح، الحمدلله' : 'بخير، الحمد لله';
+    return shami ? best[1] : best[2];
+  }
+
   /** عبارة عن حاله — عند تجاوز عتبة فقط. طفل يتشكّى في كل نبضة مُزعج لا صادق. */
   express(intero: Interoception): string | null {
     if (safe(intero.fatigue, 0) > 0.85 && !this.recentlySaid('تعبت')) {

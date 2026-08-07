@@ -112,22 +112,22 @@ test('يقرأ العدد رقماً وكلمة', () => {
   assert.equal(parse('القطه حيوان').count, null);
 });
 
-/* ————— مطابقة الجواب للسؤال ————— */
+/* ————— مطابقة الجواب للطلب —————
+ *
+ * كانت هنا `answerFits`: تحكم بقوائم أصنافٍ مغلقة — «مدينة» مكان، «معلّم»
+ * شخص — فتقبل الجواب أو تردّه. وقد حُذفت مع جدول الملكية، وسقط معها وهمٌ
+ * كان فيها: أن نوع الجواب في **حروفه**. وهو في خزانته: «مدينة» جوابُ جنسٍ
+ * لسؤال «شو دمشق؟»، وجوابُ مكانٍ لا يكون إلا من خزانة أمكنةٍ لا يملكها.
+ *
+ * والحكم الآن في `core/ownership.ts` بمقارنة وسمين، ويُختبر في
+ * `ownership.test.ts`. وما يبقى للنحو وسمُ الجواب وحده. */
 
-test('لا يقبل جواباً لا يصلح للسؤال', () => {
-  // «وين دمشق؟» يطلب مكاناً، و«مدينة» جنسها «مكان» فتصلح
-  assert.equal(syntax.answerFits('مكان', 'مدينه', 'مكان'), true);
-  // لكن «حيوان» لا تصلح جواباً عن مكان
-  assert.equal(syntax.answerFits('مكان', 'حيوان', 'جنس'), false);
-  assert.equal(syntax.answerFits('شخص', 'معلم', 'مهنه'), true);
-  assert.equal(syntax.answerFits('عدد', 'ثلاثه', null), true);
-  assert.equal(syntax.answerFits('عدد', 'حيوان', 'جنس'), false);
-  // ما لا بنية له في دماغه يُردّ كي يُقرّ بجهله
-  assert.equal(syntax.answerFits('سبب', 'حيوان', 'جنس'), false);
-  assert.equal(syntax.answerFits('كيفية', 'حيوان', 'جنس'), false);
-  // وجنسٌ مجهول لا يُمنع: المنع بلا علم ظلم
-  assert.equal(syntax.answerFits('مكان', 'شيء', null), true);
-  assert.equal(syntax.answerFits(null, 'أي شيء', null), true);
+test('وسمُ الجواب من خزانته لا من حروفه', () => {
+  assert.equal(syntax.answerKind('مدينه', 'جنس'), 'جنس');
+  assert.equal(syntax.answerKind('حيوان', 'جنس'), 'جنس');
+  assert.equal(syntax.answerKind('سريع', 'صفة'), 'صفة');
+  assert.equal(syntax.answerKind('يطير', 'فعل'), 'فعل');
+  assert.equal(syntax.answerKind('ثلاثه', null), 'عدد');
 });
 
 test('وصف السؤال بالعربية يظهر للأب', () => {

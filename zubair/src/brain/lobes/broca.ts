@@ -18,6 +18,7 @@ import type { Recall } from './hippocampus.js';
 import type { Understanding } from './temporal.js';
 import type { Fact, Interoception, Lobe, Strategy, TickOutput } from '../core/types.js';
 import type { Gender, PartOfSpeech } from './syntax.js';
+import { ASKS_KNOWLEDGE, voidAnswer, type Request } from '../core/ownership.js';
 import { MAX_SENTENCE_WORDS } from '../core/types.js';
 
 /** قسمُ الكلمة كما يلزم للسؤال. والصفة زائدة على أقسام الصرف الثلاثة لأنها
@@ -50,6 +51,11 @@ export interface SpeechRequest {
   rng: Rng;
   /** عبارة شعوره الآن إن بلغ شدّةً تُقال — تأتي من فص المشاعر */
   feelingAr?: string | null;
+  /* ————— جدول الملكية ————— */
+  /** نوع الطلب كما استخرجه النحو: به يُقرّ بلسان الطلب، وبه يُعرَف المالك */
+  request?: Request;
+  /** جواب الجزيرة عن حاله — مالكُ طلبِ «حال» وحده. بلاه يُجيب الجُداري عن سؤالٍ ليس له */
+  selfStateAr?: string | null;
 }
 
 export interface Speech {
@@ -122,6 +128,12 @@ export class Broca implements Lobe<BrocaState> {
   }
 
   private compose(req: SpeechRequest): Speech {
+    /* المالك يتكلّم أولاً: سُئل عن حاله، فالجزيرة تُجيب لا الجُداري. وهذا قبل
+     * الاستراتيجية لا بعدها — الاستراتيجية تختار **كيف** يتكلّم، والملكية
+     * تقرّر **من** يتكلّم، والثانية أسبق. */
+    if (req.request === 'حال' && req.selfStateAr) {
+      return { text: req.selfStateAr, kind: 'answer', about: null };
+    }
     switch (req.strategy) {
       case 'ASK_QUESTION': return this.ask(req);
       case 'ANSWER_MEMORY': return this.answerFromMemory(req);
@@ -334,6 +346,16 @@ export class Broca implements Lobe<BrocaState> {
 
   /* ————— الإقرار بالجهل: يطلب التعليم لا يعتذر ————— */
   private admit(req: SpeechRequest): Speech {
+    /* ————— الإقرار بلسان الطلب لا بلسانٍ عام —————
+     *
+     * «وين الكنكارو؟ ← ما عندي معلومة عن هيك شي» جوابٌ صحيح يبدو تهرّباً،
+     * لأنه لا يقول **ماذا** لا يعرف. والصواب أن يُقرّ بما سُئل عنه بعينه: «ما
+     * بعرف وين». وهذه العبارة تأتي من صفّ الطلب في جدول الملكية لا من هنا —
+     * فمن غيّر الجدول غيّر لسانه معه. */
+    const named = req.request ? voidAnswer(req.request) : null;
+    if (named && req.request && ASKS_KNOWLEDGE.has(req.request)) {
+      return { text: named, kind: 'admission', about: null };
+    }
     /* يُقرّ بحدّ معرفته ولا يستجدي: «ما بعرف، علّمني» عبارةُ طفل. */
     const options = this.isShami
       ? ['ما عندي معلومة عن هيك شي', 'هاد ما بعرفه، حكيلي عنه', 'ما وصلني شي عن هيك']

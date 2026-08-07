@@ -34,25 +34,20 @@ async function child(seed: number) {
 
 /* ————— ١) السؤال يختار العلاقة ————— */
 
-test('كل سؤال يطلب علاقةً بعينها من معرفته', () => {
-  const syntax = new Syntax();
-  assert.equal(syntax.relationFor('جنس'), 'جنس', '«شو» يطلب الجنس');
-  assert.equal(syntax.relationFor('كيفية'), 'صفة', 'و«كيف» يطلب الصفة');
-  assert.equal(syntax.relationFor('عدد'), 'عدد');
-  assert.equal(syntax.relationFor('مكان'), 'جنس');
-  assert.equal(syntax.relationFor('سبب'), null, 'ولا سببية في دماغه فيُقرّ بجهله');
-  assert.equal(syntax.relationFor('اختيار'), null);
-  assert.equal(syntax.relationFor(null), 'جنس', 'وغير السؤال يُقرأ على الجنس');
-});
+/* وكانت هنا `relationFor` و`answerFits`: تقرآن نوع السؤال من `QuestionKind`،
+ * وتقرّران صلاحية الجواب بقوائم أصنافٍ («مدينة» مكان، «طبيب» شخص). وقد حُذفتا
+ * لأنهما صارتا سلطةً ثانيةً على السؤال نفسه بجانب جدول الملكية — وذاك عين
+ * الصلاحيات المتداخلة. فما تختباره الآن في `ownership.test.ts` بمالكٍ واحد. */
 
-test('جوابٌ من العلاقة المطلوبة يصلح، ومن غيرها يُردّ', () => {
+test('كل طلبٍ يُبحث في خزانته هو — وما لا خزانةَ له يُقرّ بفراغه', () => {
   const syntax = new Syntax();
-  assert.equal(syntax.answerFits('كيفية', 'صغيره', null, 'صفة'), true,
-    '«كيف القطة؟» يُجاب من صفاتها');
-  assert.equal(syntax.answerFits('كيفية', 'حيوان', 'جنس', 'جنس'), false,
-    'ولا يُجاب بجنسها');
-  assert.equal(syntax.answerFits('سبب', 'صغيره', null, 'صفة'), false,
-    'ولا سببية عنده بحال');
+  assert.equal(syntax.storeFor('جنس'), 'جنس', '«شو» يطلب الجنس');
+  assert.equal(syntax.storeFor('صفة'), 'صفة', 'و«كيف» يطلب الصفة');
+  assert.equal(syntax.storeFor('فعل'), 'فعل', 'و«شو يعمل» يطلب الفعل');
+  assert.equal(syntax.storeFor('عدد'), 'عدد');
+  assert.equal(syntax.storeFor('مكان'), null, 'ولا أمكنةَ عنده فيُقرّ بجهله');
+  assert.equal(syntax.storeFor('سبب'), null, 'ولا سببية');
+  assert.equal(syntax.storeFor('حديث'), 'جنس', 'وغير السؤال يُقرأ على الجنس');
 });
 
 test('يُخرِج ما حفظه بالعلاقة التي حُفظ بها — وكان محبوساً', async () => {
@@ -206,11 +201,12 @@ test('وما يحسّه جسده يُذكَر في نبضته', async () => {
 test('نوع العلاقة يُعرَّف في موضع واحد', async () => {
   const { RELATION_KINDS } = await import('../lobes/parietal.js');
   const syntax = new Syntax();
-  // كل ما يطلبه سؤالٌ يجب أن يكون علاقةً يعرفها الجُداري
-  for (const asks of ['جنس', 'كيفية', 'عدد', 'مكان', 'زمان', 'شخص', 'تصديق'] as const) {
-    const relation = syntax.relationFor(asks);
-    if (relation === null) continue;
-    assert.ok(RELATION_KINDS.includes(relation),
-      `«${asks}» يطلب «${relation}» وهي علاقة يعرفها الجُداري`);
+  const { OWNERSHIP } = await import('../core/ownership.js');
+  // كل خزانةٍ يُحيل إليها طلبٌ يجب أن تكون علاقةً يعرفها الجُداري فعلاً
+  for (const row of OWNERSHIP) {
+    const store = syntax.storeFor(row.request);
+    if (store === null) continue;
+    assert.ok(RELATION_KINDS.includes(store),
+      `«${row.request}» يُبحث له في «${store}» وليست خزانةً عند الجُداري`);
   }
 });

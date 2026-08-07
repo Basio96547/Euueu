@@ -37,6 +37,7 @@ import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js'
 import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
 import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
 import { Syntax, type RelationKind } from './lobes/syntax.js';
+import { instinctMaySpeak, rowOf, typeFits, voidIsFinal } from './core/ownership.js';
 import {
   transduceAudio, transduceBody, transduceVision,
   type RawAudio, type RawBody, type RawFrame, type RawTouch,
@@ -701,7 +702,19 @@ export class Zubair {
      * قبله: صار زبير يحفظ معرفته مفهرسةً بنوع العلاقة، ثم كان الجواب يبحث في
      * «الجنس» وحده. فيُعلّمه أبوه أن القطة صغيرة، ويسأله «كيف القطة؟»، فيُقرّ
      * بجهله — وهو يعرف. حفظٌ لا يُستخرَج ليس معرفة. */
-    const wanted = this.syntax.relationFor(parse.asks);
+    /* ————— جدول الملكية: من يجيب عن هذا الطلب؟ —————
+     *
+     * الاستخراج أولاً، ومالكه النحو وحده. ثم يُقرأ الصفُّ من الجدول فيُعرف
+     * المالك، والبقيّة أدلّة. ولا سطرَ هنا يقرّر شيئاً: كلُّه قراءةُ جدول. */
+    const request = this.syntax.request(percept, parse);
+    const row = rowOf(request);
+    trace.push({
+      lobe: this.syntax.name, ar: this.syntax.ar,
+      note: `الطلب «${row.ar}» — مالكه ${row.ownerAr}`,
+      where: 'cpu', ms: 0,
+    });
+
+    const wanted = this.syntax.storeFor(request);
     const knownFact = topic && wanted ? this.parietal.lookup(topic, wanted) : null;
 
     /* سؤالٌ عن المشار إليه («شو هذا؟») وهو يرى شيئاً يعرفه: الجواب مما يراه لا
@@ -725,16 +738,20 @@ export class Zubair {
      * «وين دمشق؟» يطلب مكاناً، وجوابه «مدينة» جوابُ سؤالٍ آخر. ولو أجاب به لبدا
      * كأنه لم يسمع السؤال. فيُسأل النحوُ: أيصلح هذا الجواب لهذا السؤال؟ ويُعطى
      * جنسُ الجواب نفسه من الجُداري («مدينة» جنسها «مكان») كي يُقاس عليه. */
+    /* ————— القانون الثاني: النوع —————
+     *
+     * مقارنةُ وسمين لا حكمٌ دلاليّ: للطلب وسمُ نوعه، وللجواب وسمُ نوعه، وما
+     * لم يتطابقا رُدّ الجواب. رخيصة، ولا تُخطئ، وتصطاد ما أفلت من الملكية. */
     const candidate = seenFact ?? knownFact;
     let fact = candidate;
     if (candidate && parse.asks !== null) {
-      const answerCategory = this.parietal.lookup(candidate.object)?.object ?? null;
-      // ومن أين جاء الجواب جزءٌ من فحص صلاحيته: جوابٌ من صفاته يصلح لـ«كيف»
+      // ووسمُ الجواب هو خزانتُه: ما خرج من خزانة الصفات صفةٌ وإن كان لفظُه اسماً
       const from = seenFact ? 'جنس' : wanted;
-      if (!this.syntax.answerFits(parse.asks, candidate.object, answerCategory, from)) {
+      const kind = this.syntax.answerKind(candidate.object, from);
+      if (!typeFits(request, kind)) {
         trace.push({
           lobe: this.syntax.name, ar: this.syntax.ar,
-          note: `«${candidate.object}» لا يصلح جواباً لسؤال عن ${parse.asks} — فيُقرّ بجهله`,
+          note: `«${candidate.object}» وسمُه «${kind}» والطلب «${request}» — فلا يُقال`,
           where: 'cpu', ms: 0,
         });
         fact = null;
@@ -765,7 +782,22 @@ export class Zubair {
       fact = null;
     }
 
-    const generalized = !fact && topic ? this.parietal.generalize(topic, this.lexicon) : null;
+    /* ————— القانون الأول: الفراغ —————
+     *
+     * طلبٌ لا خزانةَ لعنده تعني أن مالكه فارغ، وجوابُ المالك الفارغ **نهائي**:
+     * لا تعميمَ يملأ مكانه، ولا فصَّ آخر يُدلي بما يملك. فعطبُ «وين الكنكارو؟
+     * ← الكنكارو حيوان» لم يكن جهلَه بالمكان، بل أن جهله صار دعوةً لغيره. */
+    const ownerVoid = wanted === null && voidIsFinal(request);
+    if (ownerVoid) {
+      trace.push({
+        lobe: this.parietal.name, ar: row.ownerAr,
+        note: `لا خزانةَ عنده لطلب «${row.ar}» — والفراغ جوابٌ نهائي`,
+        where: 'none', ms: 0,
+      });
+    }
+
+    const generalized = !fact && !ownerVoid && topic
+      ? this.parietal.generalize(topic, this.lexicon) : null;
 
     /* أنزل الدرس فعلاً؟ يُقاس بما حُفظ لا بما قيل: أبٌ يُعلّم جملةً لم يفهمها
      * ابنه لم يُعلّمه شيئاً بعد. وعليه وحده يُكبَح «علّمني» و«شو هذا؟». */
@@ -834,6 +866,31 @@ export class Zubair {
       ruleToTest: akin !== null && understanding.intent !== 'ASK',
     }));
 
+    /* ————— قانونا الفراغ والغريزة على المسموحات —————
+     *
+     * الكبح الجبهي يقول ما **يصلح الآن**، وهذان يقولان ما **يجوز أصلاً**. وهما
+     * فوقه لا فيه: الجبهي يتعلّم ويُرجّح، والقانون لا يُرجَّح.
+     *
+     *   الفراغ: مالكٌ فارغ لا يُجاب عنه إلا إقراراً أو سؤالاً.
+     *   الغريزة: لا تكون جواباً ما دام ثمّة طلبٌ مستخرَج. تُلوّن النبرة — وذاك
+     *   يجري في بروكا — ولا تحتلّ مكان الجواب. */
+    let lawful = allowed;
+    /* والفراغ يُقرّ به إقراراً ولا يُلتفّ عليه بسؤال: «وين الكنكارو؟ ← كل شي
+     * حيوان متل الكنكارو؟» سؤالٌ يُهرّب الجنسَ الذي رُدّ، فلا يُقال. */
+    if (ownerVoid) lawful = ['ADMIT'];
+    if (!instinctMaySpeak(request)) {
+      const withoutInstinct = lawful.filter((s) => s !== 'GREET_BACK');
+      /* ولو لم يبقَ غيرُها فالإقرار أولى: تحيّةٌ في وجه سؤالٍ أسوأ من «لا أعرف» */
+      lawful = withoutInstinct.length > 0 ? withoutInstinct : ['ADMIT'];
+    }
+    if (lawful.length !== allowed.length) {
+      trace.push({
+        lobe: 'ownership', ar: 'جدول الملكية',
+        note: `قانونُ ${ownerVoid ? 'الفراغ' : 'الغريزة'}: بقي ${lawful.join('، ')}`,
+        where: 'none', ms: 0,
+      });
+    }
+
     /* ١٢. العُقد القاعدية: أي استجابة أختار؟
      * الحرارة ليست ثابتة: الملل والفضول يدفعانه للتجريب، واليقين يدفعه للالتزام
      * بما يعرف. هذا هو التوازن بين الاستكشاف والاستغلال، وبه يخرج من العادة. */
@@ -861,7 +918,7 @@ export class Zubair {
       intero, insula: insulaVec, vocab: this.lexicon.size, unknownCount: unknownContent.length,
     });
     const decision = timed(this.basalGanglia, `اختار استجابته (حرارة ${temperature.toFixed(2)})`, this.compute_.unit,
-      () => this.basalGanglia.select(state, allowed, temperature, this.rng, this.compute_,
+      () => this.basalGanglia.select(state, lawful, temperature, this.rng, this.compute_,
         // ميل الهدف: يُرجّح ما يوافقه ولا يمنع ما يخالفه
         (strategy) => (GOAL_FITS[goal].has(strategy) ? GOAL_LEAN : 0)));
 
@@ -881,6 +938,9 @@ export class Zubair {
       /* نوع الكلام يُحسَب قبل صياغته كي لا يناقض الشعورُ المقال. وهو يُعرف من
        * الاستراتيجية وحدها: بروكا تختار الصيغة، والاستراتيجية تحدّد جنسها. */
       feelingAr: this.emotion.colorAr(this.broca.speaksShami, speechKind(decision.strategy)),
+      /* جدول الملكية: نوع الطلب، وجوابُ مالكه إن كان المالك غير الجُداري */
+      request,
+      selfStateAr: request === 'حال' ? this.insula.howAmI(intero, this.broca.speaksShami) : null,
     }));
 
     /* ١٤. المخيخ: الإتقان ومنع التكرار */

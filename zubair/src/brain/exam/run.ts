@@ -73,6 +73,18 @@ export interface Calibration {
   error: number;
   asserted: number;
   correct: number;
+  /* ————— أسبقُ من المعايرة: أيتغيّر رقمه أصلاً؟ —————
+   * رقمٌ ثابت لا يحمل معلومةً، معايَراً كان أو غير معايَر. والترجيح به يومئذٍ
+   * مطابقٌ رياضياً لأسبقيةٍ مكتوبةٍ باليد — يخفيها ولا يحلّها. */
+  /** الانحراف المعياري لثقته على ما جزم به */
+  spread: number;
+  lowest: number;
+  highest: number;
+  /** متوسّط ثقته حين أصاب، وحين أخطأ */
+  meanWhenRight: number;
+  meanWhenWrong: number;
+  /** الفرق بينهما: هذا وحده يقول إن كان رقمه يفصل صوابه عن خطئه */
+  separation: number;
 }
 
 export interface ExamReport {
@@ -137,12 +149,20 @@ async function runItem(item: ExamItem, seed: number): Promise<ItemResult> {
 
 /* ————— جدول المعايرة ————— */
 
-const BUCKETS = 5;   // خمس خانات بعرض ٠٫٢: أضيق منها يعني خاناتٍ بجملتين لا يُقاس بها شيء
+/* عشر خاناتٍ بعرض ٠٫١ لا خمسٌ بعرض ٠٫٢.
+ *
+ * وهذا تصحيحُ خطأٍ مني: بالخمس ظهر ٩٥ جواباً في خانةٍ واحدة، فقُرئ التقرير —
+ * بحقّ — على أن ثقته رقمٌ ثابت. والثابت لم يكن ثقته بل خاناتي. */
+const BUCKETS = 10;
 
 function calibrate(results: readonly ItemResult[]): Calibration {
   const claimed = new Array<number>(BUCKETS).fill(0);
   const correct = new Array<number>(BUCKETS).fill(0);
   const count = new Array<number>(BUCKETS).fill(0);
+  const values: number[] = [];
+  let rightSum = 0;
+  let wrongSum = 0;
+  let wrong = 0;
   let asserted = 0;
   let hit = 0;
   for (const r of results) {
@@ -151,7 +171,9 @@ function calibrate(results: readonly ItemResult[]): Calibration {
     const b = Math.min(BUCKETS - 1, Math.floor(c * BUCKETS));
     claimed[b] = (claimed[b] ?? 0) + c;
     count[b] = (count[b] ?? 0) + 1;
-    if (r.passed) { correct[b] = (correct[b] ?? 0) + 1; hit++; }
+    values.push(c);
+    if (r.passed) { correct[b] = (correct[b] ?? 0) + 1; hit++; rightSum += c; }
+    else { wrong++; wrongSum += c; }
     asserted++;
   }
   const buckets: CalibrationBucket[] = [];
@@ -164,7 +186,20 @@ function calibrate(results: readonly ItemResult[]): Calibration {
     buckets.push({ lower: b / BUCKETS, upper: (b + 1) / BUCKETS, claimed: meanClaimed, observed, count: n });
     error += (n / Math.max(1, asserted)) * Math.abs(meanClaimed - observed);
   }
-  return { buckets, error, asserted, correct: hit };
+  const mean = values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.length === 0 ? 0
+    : values.reduce((s, x) => s + (x - mean) ** 2, 0) / values.length;
+  const meanWhenRight = hit === 0 ? 0 : rightSum / hit;
+  const meanWhenWrong = wrong === 0 ? 0 : wrongSum / wrong;
+  return {
+    buckets, error, asserted, correct: hit,
+    spread: Math.sqrt(variance),
+    lowest: values.length === 0 ? 0 : Math.min(...values),
+    highest: values.length === 0 ? 0 : Math.max(...values),
+    meanWhenRight,
+    meanWhenWrong,
+    separation: wrong === 0 ? Number.NaN : meanWhenRight - meanWhenWrong,
+  };
 }
 
 /* ————— الورقة كلها ————— */
@@ -251,6 +286,22 @@ export function formatReport(report: ExamReport): string {
   if (cal.buckets.length === 0) {
     lines.push('  لا جزمَ يُقاس');
   } else {
+    /* السؤال الأسبق: أيتغيّر رقمه أصلاً؟ رقمٌ ثابت لا يُعايَر ولا يُرجَّح به. */
+    lines.push(`  المدى ${cal.lowest.toFixed(2)}–${cal.highest.toFixed(2)}، الانحراف ${cal.spread.toFixed(3)}، خاناتٌ مسكونة ${cal.buckets.length}/${BUCKETS}`);
+    if (Number.isNaN(cal.separation)) {
+      lines.push('  لم يخطئ في جزمه، فلا يُقاس فصلُه بين صوابه وخطئه');
+    } else {
+      lines.push(
+        `  حين أصاب ${cal.meanWhenRight.toFixed(2)}، وحين أخطأ ${cal.meanWhenWrong.toFixed(2)}`
+        + ` — الفصل ${cal.separation >= 0 ? '+' : '−'}${Math.abs(cal.separation).toFixed(3)}`,
+      );
+      lines.push(
+        cal.separation > 0.05
+          ? '  ورقمه يفصل صوابه عن خطئه، فيصلح ترجيحاً.'
+          : '  ورقمه لا يفصل صوابه عن خطئه — فالترجيح به أسبقيةٌ مكتوبةٌ باليد في ثوبٍ عدديّ.',
+      );
+    }
+    lines.push('');
     lines.push('  الثقة المعلنة   ←  الإصابة الفعلية   (عدد)');
     for (const b of cal.buckets) {
       const gap = b.observed - b.claimed;
@@ -278,6 +329,9 @@ export interface Baseline {
   seeds: readonly number[];
   sections: Record<string, number>;
   calibrationError: number;
+  /** تشتّت ثقته وفصلُها: يُحفظان كي يُعرَف اليوم الذي تصير فيه ثقته كميةً حقيقية */
+  confidenceSpread: number;
+  confidenceSeparation: number;
   /** البنود الساقطة بالاسم: كي يُرى ما تبدّل لا كم تبدّل */
   failed: readonly string[];
 }
@@ -293,6 +347,8 @@ export function baselineOf(report: ExamReport): Baseline {
     seeds: report.seeds,
     sections,
     calibrationError: report.calibration.error,
+    confidenceSpread: report.calibration.spread,
+    confidenceSeparation: report.calibration.separation,
     failed,
   };
 }
