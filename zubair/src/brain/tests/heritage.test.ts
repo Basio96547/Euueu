@@ -43,7 +43,9 @@ test('الفصل صريح: ما وُرِث لا يُنسَب إلى الأب', a
   assert.equal(before.lessons, 0, 'والميراث لا يُعَدّ درساً أعطاه الأب');
 
   // ثم يعلّمه أبوه حقيقة ليست في الميراث
-  await zubair.hear('الطائرة مركبة');
+  /* والدرس على شيء ليس في الميراث أصلاً: لو عُلّم موروثاً لانتقلت نسبتُه إلى
+   * أبيه — وذاك صواب، لكنه يقيس شيئاً آخر. */
+  await zubair.hear('الزنبق نبات');
   const after = zubair.metrics;
   assert.equal(after.factsFromFather, 1, 'درسُ الأب وحده يُنسَب إليه');
   assert.equal(after.factsInherited, before.factsInherited, 'والموروث لا يتغيّر');
@@ -52,7 +54,7 @@ test('الفصل صريح: ما وُرِث لا يُنسَب إلى الأب', a
 
 test('كل حقيقة موروثة موسومة بمصدرها', async () => {
   const zubair = await born(true);
-  await zubair.hear('الطائرة مركبة');
+  await zubair.hear('الزنبق نبات');
 
   let inherited = 0;
   let fromFather = 0;
@@ -127,10 +129,10 @@ test('لا ينسب إلى أبيه ما لم يُعلّمه', async () => {
   }
 
   // وما علّمه أبوه فعلاً يجوز أن ينسبه إليه
-  await zubair.hear('الطائرة مركبة');
+  await zubair.hear('الزنبق نبات');
   let claimed = false;
   for (let i = 0; i < 12; i++) {
-    const out = await zubair.hear('شو الطائرة؟');
+    const out = await zubair.hear('شو الزنبق؟');
     if (out.text.includes('علّمتني')) claimed = true;
   }
   assert.ok(claimed, 'وينسب إليه ما علّمه إياه بنفسه');

@@ -66,7 +66,8 @@ test('«صغيرة» بعد «القطة حيوان» تُحفَظ عن القط
 test('ولا يُحمَل ما لا يصحّ حمله: أول كلمة في العمر لا تجد ما تُحمَل عليه', async () => {
   const zubair = await child(0x77b1);
   const out = await zubair.hear('صغيرة');
-  assert.equal(zubair.facts.filter((f) => f.object === 'صغيره').length, 0,
+  // الموروث فيه «النملة صغيرة»، فالفحص على ما حُمل حديثاً لا على وجود اللفظ
+  assert.equal(zubair.facts.filter((f) => f.object === 'صغيره' && f.taughtBy === 'أبوه').length, 0,
     'لا موضوع سابق فلا حمل — والحمل على غير موضعه أسوأ من تركه');
   assert.ok(out.text.length > 0);
 });
@@ -86,6 +87,7 @@ test('مَن نزل فيه الدرس لا يقول «علّمني» ولا يُ
     vocab: 400,
     unknownCount: 0,
     factConfidence: 0.7,
+    generalizeStrength: 0,
     lessonLanded: true,
     ruleToTest: false,
     };

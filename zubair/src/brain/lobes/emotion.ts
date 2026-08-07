@@ -368,7 +368,12 @@ export class Emotion implements Lobe<EmotionState> {
     const dominant = feelings.dominant;
     // الوليد لا يصف شعوره: يشعر ولا يملك عبارته. وصفُ الشعور يأتي بعد الكلام.
     if (!dominant || stage < 2) return null;
-    if (dominant.intensity < (dominant.complex ? 0.2 : 0.45)) return null;
+    /* والشابّ لا يُعلن شعوره مع كل جملة: يُقال عند الشدّة وحدها. وإعلانُه في كل
+     * دور تشتيتٌ لا صدق — الشابّ يحمل شعوره ولا يشرحه إلا إذا غلبه. */
+    const floor = stage >= 5
+      ? (dominant.complex ? 0.4 : 0.7)
+      : (dominant.complex ? 0.2 : 0.45);
+    if (dominant.intensity < floor) return null;
     if (!sayableWith(dominant.name, kind)) return null;
     const phrases = shami ? SHAMI_COLOR : FUSHA_COLOR;
     return phrases[dominant.name] ?? null;

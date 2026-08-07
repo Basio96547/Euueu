@@ -150,6 +150,7 @@ test('والكبح يبقى كبحاً: الهدف لا يُبيح ممنوعا�
     vocab: 300,
     unknownCount: 0,
     factConfidence: 0,
+    generalizeStrength: 0,
     lessonLanded: false,
     ruleToTest: false,
   });

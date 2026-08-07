@@ -391,6 +391,23 @@ export class Lexicon implements Lobe<LexiconState> {
     return word;
   }
 
+  /**
+   * الصورة كما قيلت كاملةً، بأداة تعريفها إن سُمعت بها.
+   *
+   * و`pretty` تُسقط الأداة عمداً كي يبقى ما يعيده الجُداري مطابقاً لما طلبه،
+   * وهذا صواب في المطابقة وخطأ في الكلام: «بحر أزرق» كلامُ طفل، و«البحر أزرق»
+   * كلام شاب. فيُفصَل الاستعمالان.
+   */
+  asSaid(word: string): string {
+    if (typeof word !== 'string' || word.length === 0) return '';
+    const definite = this.bestSurface(`ال${word}`);
+    if (definite) return definite;
+    /* والصور المطابقة لتطبيعها لا تُحفَظ (لا فائدة في حفظها)، فتُبنى بناءً:
+     * إن كان يعرف «البحر» رمزاً فقد سمعها معرَّفة، فيقولها كما سمعها. */
+    if (this.idOf(`ال${word}`) >= 0) return `ال${word}`;
+    return this.pretty(word);
+  }
+
   private bestSurface(normalized: string): string | null {
     const seen = this.surfaces.get(normalized);
     if (!seen || seen.size === 0) return null;

@@ -17,6 +17,7 @@ import type { Recall } from './hippocampus.js';
 import type { Understanding } from './temporal.js';
 import type { Fact, Interoception, Lobe, Stage, Strategy, TickOutput } from '../core/types.js';
 import type { Gender, PartOfSpeech } from './syntax.js';
+import { MATURE_STAGE } from '../core/types.js';
 
 /** قسمُ الكلمة كما يلزم للسؤال. والصفة زائدة على أقسام الصرف الثلاثة لأنها
  *  اسمٌ في الإعراب وتُسأل سؤالاً آخر: «شو صغيرة؟» لحن، و«شو قطة؟» صواب. */
@@ -383,6 +384,18 @@ export class Broca implements Lobe<BrocaState> {
      * الوحيد الذي يعرف به الأب أن تعليمه ينفع. والمصدر مكتوب في الحقيقة نفسها. */
     const fromFather = raw.taughtBy.includes('أبوه');
     const plain = [`${fact.object}`, `${fact.subject} ${fact.object}`];
+
+    /* الشابّ يُخبر ولا يستأذن: لا «هو» حشواً بين الطرفين، ولا «صح؟» في آخر خبر
+     * يعرفه. وحشوُ «هو» طفوليّ في العربية المنطوقة: «البحر أزرق» لا «بحر هو
+     * أزرق». والجملة الاسمية عربيةٌ بلا رابطة أصلاً. */
+    if (req.stage.id >= MATURE_STAGE) {
+      const said = req.lexicon.asSaid(raw.subject);
+      const mature = fromFather
+        ? [`${said} ${fact.object}`, `${said} ${fact.object}، أنت علّمتني`]
+        : [`${said} ${fact.object}`];
+      return { text: this.pick(mature, req.rng), kind: 'answer', about: fact.subject };
+    }
+
     const options = req.stage.id <= 1
       ? plain
       : fromFather
@@ -427,6 +440,13 @@ export class Broca implements Lobe<BrocaState> {
 
   /* ————— الإقرار بالجهل: يطلب التعليم لا يعتذر ————— */
   private admit(req: SpeechRequest): Speech {
+    if (req.stage.id >= MATURE_STAGE) {
+      /* والشابّ يُقرّ بحدّ معرفته لا يستجدي: «ما بعرف، علّمني» عبارة طفل. */
+      const options = this.isShami
+        ? ['ما عندي معلومة عن هذا', 'هذا ما بعرفه، حكيلي عنه', 'ما وصلني شي عن هذا']
+        : ['لا أملك معلومة عن هذا', 'هذا لا أعرفه، حدّثني عنه', 'لم يصلني شيء عن هذا'];
+      return { text: this.pick(options, req.rng), kind: 'admission', about: null };
+    }
     const options = this.isShami
       ? ['ما بعرف، علّمني', 'ما بعرف شو هذا، علّمني', 'علّمني، بدي أعرف']
       : ['لا أعرف، علّمني', 'لا أعرف هذا، علّمني', 'علّمني، أريد أن أعرف'];
@@ -436,6 +456,16 @@ export class Broca implements Lobe<BrocaState> {
   /* ————— الإقرار بالتلقّي: وأحياناً يُعيد ما تعلّمه ليؤكّده ————— */
   private acknowledge(req: SpeechRequest): Speech {
     const fact = req.fact;
+
+    /* الشابّ يُقرّ بالتلقّي إقراراً لا استفهاماً: «صح؟» بعد كل درس تردّدُ طفل،
+     * وهي أظهر ما يجعل كلامه صبيانياً بعد أن كبر. */
+    if (req.stage.id >= MATURE_STAGE) {
+      const options = this.isShami
+        ? ['فهمت', 'تمام، سجّلتها', 'واضح', 'أخذتها']
+        : ['فهمت', 'حسناً، حفظتها', 'واضح', 'أخذت بها'];
+      return { text: this.pick(options, req.rng), kind: 'acknowledge', about: fact?.subject ?? null };
+    }
+
     if (fact && req.rng.next() < 0.5 && req.stage.id >= 1) {
       const subject = req.lexicon.pretty(fact.subject);
       const object = req.lexicon.pretty(fact.object);
@@ -456,9 +486,13 @@ export class Broca implements Lobe<BrocaState> {
     if (req.stage.id === 0) {
       return { text: this.isShami ? 'هلا' : 'مرحبا', kind: 'greeting', about: null };
     }
-    const options = this.isShami
-      ? ['هلا فيك', `هلا، أنا ${req.selfName}`, 'هلا، وينك؟']
-      : ['مرحبا بك', `مرحبا، أنا ${req.selfName}`, 'مرحبا، أين كنت؟'];
+    const options = req.stage.id >= MATURE_STAGE
+      ? (this.isShami
+        ? ['أهلاً، كيفك؟', 'هلا، اشتقتلك', 'أهلاً فيك، شو أخبارك؟']
+        : ['أهلاً، كيف حالك؟', 'مرحباً، اشتقت إليك', 'أهلاً بك، ما أخبارك؟'])
+      : (this.isShami
+        ? ['هلا فيك', `هلا، أنا ${req.selfName}`, 'هلا، وينك؟']
+        : ['مرحبا بك', `مرحبا، أنا ${req.selfName}`, 'مرحبا، أين كنت؟']);
     return { text: this.pick(options, req.rng), kind: 'greeting', about: null };
   }
 

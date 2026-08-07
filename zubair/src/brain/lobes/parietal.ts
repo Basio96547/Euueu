@@ -65,6 +65,10 @@ const GENERALIZE_THRESHOLD = 0.3;
  */
 const GENERALIZE_MARGIN = 0.05;
 
+/** وسم الميراث كما يُكتب في `taughtBy`. يُعاد هنا نصّاً لا استيراداً كي لا
+ *  يعتمد فصٌّ معرفيّ على ملفّ محتوى. */
+const HERITAGE_MARK = 'الميراث';
+
 /** أقلّ عدد حروف يبقى بعد نزع أداة التعريف. «الآن» ← «ان» ليس تجريداً بل تشويه. */
 const MIN_STEM = 3;
 
@@ -343,6 +347,19 @@ export class Parietal implements Lobe<ParietalState> {
       return record.main;
     }
 
+    /* وكلمةُ الأب تعلو الموروث من أول مرة، ولا تُنازعه.
+     *
+     * والفرق بينهما فرقُ **مصدرٍ** لا فرقُ ثقة: الموروث عربيةُ محيطٍ عامّة،
+     * وكلامُ الأب خبرٌ عن هذا الشيء بعينه في بيتهما. فمن ورِث «القطة أليفة» ثم
+     * قال له أبوه «القطة شرسة» فالثانية أولى، ولا معنى لأن ينازع محيطُه أباه
+     * ثماني مرات قبل أن يصدّقه. وهذا نصف «التعلّم السريع»: ألّا يُعاند ما وُرِث. */
+    if (record.main.taughtBy === HERITAGE_MARK && by !== HERITAGE_MARK) {
+      record.alt = null;
+      record.main = { subject: s, object: o, confidence: INITIAL_CONFIDENCE, taughtBy: by, lastSeenTick: at };
+      this.view = null;
+      return record.main;
+    }
+
     // محمول مخالف: يُحفظ بديلاً ويُنازع الغالب على الثقة
     if (record.alt && record.alt.object === o) {
       record.alt.confidence = reinforced(record.alt.confidence);
@@ -355,6 +372,35 @@ export class Parietal implements Lobe<ParietalState> {
     }
     this.settle(s, record);
     return record.main;
+  }
+
+  /**
+   * يُصحّح نوع العلاقة بما تعلّمه من قبل، لا بقائمة صفاتٍ مكتوبة.
+   *
+   * قوائم الصفات لا تنتهي: «شرسة» لم تكن فيها، فقُرئت جنساً، فمحت «القطة
+   * حيوان». والعلامة الصرفية عاجزة هنا حقاً — «شرسة» و«فاكهة» سواء في الصورة.
+   *
+   * لكن الدماغ يملك ما هو أوثق من القائمة: **ما استُعمل جنساً من قبل**. فـ
+   * «حيوان» و«فاكهة» و«مهنة» أجناسٌ لعشرات الأشياء عنده، و«شرسة» لم تكن جنساً
+   * لشيء قط. فإن كان للموضوع جنسٌ معروف وجاء محمولٌ لم يكن جنساً لشيء، فهو
+   * صفة. وهذا تصحيحٌ **يتحسّن بالتعلّم** لا يجمد على قائمة.
+   */
+  refineRelation(subject: string, object: string, relation: RelationKind): RelationKind {
+    if (relation !== 'جنس') return relation;
+    const s = factKey(subject);
+    const o = factKey(object);
+    if (!this.records.has(recordKey(s, 'جنس'))) return relation;
+    return this.isCategory(o) ? 'جنس' : 'صفة';
+  }
+
+  /** أاستُعمل هذا اللفظ جنساً لشيءٍ من قبل؟ */
+  isCategory(word: string): boolean {
+    const o = factKey(word);
+    if (o.length === 0) return false;
+    for (const record of this.records.values()) {
+      if (record.relation === 'جنس' && record.main.object === o) return true;
+    }
+    return false;
   }
 
   /** ما يعرفه عن هذا الموضوع الآن، أو `null`. المفتاح يُطبَّع كما يُطبَّع في

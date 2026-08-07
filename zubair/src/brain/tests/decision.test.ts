@@ -12,7 +12,7 @@ import { cpuCompute } from '../core/npu.js';
 import { Rng, argmax, vec } from '../core/tensor.js';
 import { BasalGanglia, STATE_DIM } from '../lobes/basalGanglia.js';
 import { Cerebellum, Prefrontal } from '../lobes/prefrontal.js';
-import { STAGES, STRATEGIES, type Interoception, type Stage, type Strategy } from '../core/types.js';
+import { DIMS, STAGES, STRATEGIES, type Interoception, type Stage, type Strategy } from '../core/types.js';
 import type { Understanding } from '../lobes/temporal.js';
 
 const compute = cpuCompute();
@@ -161,6 +161,7 @@ const inhibitCtx = {
   vocab: 80,
   unknownCount: 1,
   factConfidence: 0.8,
+  generalizeStrength: 0,
   lessonLanded: false,
   ruleToTest: false,
 };
@@ -295,7 +296,8 @@ test('ذاكرته العاملة محدودة السعة وتُستعاد', () 
   for (let i = 0; i < 20; i++) {
     prefrontal.push({ said: `قول ${i}`, replied: `رد ${i}`, meaning: vec(4), tick: i, strategy: 'ADMIT' });
   }
-  assert.ok(prefrontal.recent.length <= 6, `سعتها محدودة (${prefrontal.recent.length})`);
+  assert.ok(prefrontal.recent.length <= DIMS.workingMemory,
+    `سعتها محدودة (${prefrontal.recent.length} من ${DIMS.workingMemory})`);
   assert.equal(prefrontal.recent.at(-1)?.said, 'قول 19', 'وتحمل الأحدث');
   assert.ok(prefrontal.recentStrategies.length > 0, 'وتعرف ما اختاره قريباً');
 

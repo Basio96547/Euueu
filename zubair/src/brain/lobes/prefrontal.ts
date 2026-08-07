@@ -10,7 +10,7 @@
 
 import { clamp, type Vec } from '../core/tensor.js';
 import type { Understanding } from './temporal.js';
-import { DIMS, STAGES, type Intent, type Interoception, type Lobe, type Stage, type Strategy } from '../core/types.js';
+import { DIMS, MATURE_STAGE, STAGES, type Intent, type Interoception, type Lobe, type Stage, type Strategy } from '../core/types.js';
 
 export interface Turn {
   said: string;
@@ -43,6 +43,10 @@ export const GOAL_FITS: Record<Goal, ReadonlySet<Strategy>> = {
   BOND: new Set<Strategy>(['GREET_BACK', 'ACKNOWLEDGE', 'ANSWER_MEMORY']),
   REST: new Set<Strategy>(['ACKNOWLEDGE', 'GREET_BACK', 'BABBLE']),
 };
+
+/** أدنى شبهٍ يجوز للشابّ أن يخمّن عليه. أعلى من عتبة الجُداري بكثير: التخمين
+ *  مقبولٌ من طفلٍ يستكشف، ومن الشابّ يُقرأ اختراعاً. */
+const STRONG_LIKENESS = 0.55;
 
 export class Prefrontal implements Lobe<PrefrontalState> {
   readonly name = 'prefrontal';
@@ -96,6 +100,8 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     unknownCount: number;
     /** ثقته في الحقيقة التي يملكها الآن — بها يُعرف أإقرارُه بالجهل صدقٌ أم عجز */
     factConfidence: number;
+    /** قوّة الشبه الذي يبني عليه تعميمه — دونها لا يخمّن الشابّ */
+    generalizeStrength: number;
     /** أنزل درسُ أبيه في هذه النبضة فعلاً؟ أي: فُهم وحُفظ لا أنه قيل فحسب */
     lessonLanded: boolean;
     /**
@@ -115,6 +121,8 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     const lastTwo = ctx.lastStrategies.slice(-2);
     const stuckOn = lastTwo.length === 2 && lastTwo[0] === lastTwo[1] ? lastTwo[0] : null;
     const firstStageVocab = STAGES[1]?.minVocab ?? 12;
+    /** أبلغَ مرحلة الشاب؟ عندها تُرفع أحكام الطفولة عنه */
+    const mature = ctx.stage.id >= MATURE_STAGE;
     // قصد الأب يحدّد ما يصلح أصلاً: مَن سُئل لا يردّ التحية، ومَن عُلّم لا يُجيب
     // عن سؤال لم يُسأل. بلا هذا الكبح يبدو زبير مجنوناً لا وليداً، ويضيع تعزيز
     // أبيه على استجابات لا علاقة لها بالموضع
@@ -136,6 +144,12 @@ export class Prefrontal implements Lobe<PrefrontalState> {
           if (!ctx.hasGeneralization) continue;
           if (!answering) continue;
           if (ctx.lessonLanded) continue;
+          /* والجواب بالتعميم تخمينٌ مُعلَن، والشاب لا يخمّن إلا على شبهٍ قويّ.
+           *
+           * وهذا أصل الهلوسة في هذا الدماغ ومنبعها الوحيد تقريباً: أن يُنقَل
+           * محمولُ شيءٍ إلى شيءٍ يشبهه في حروفه لا في معناه. فيُشدَّد عليه عند
+           * النضج: شبهٌ دون العتبة العالية يُردّ ويُقرّ بجهله. */
+          if (mature && ctx.generalizeStrength < STRONG_LIKENESS) continue;
           break;
         case 'ASK_QUESTION':
           // سؤال أعاده عن نفس الكلمة يُنفّر أباه ولا يُعلّمه شيئاً جديداً
@@ -148,10 +162,15 @@ export class Prefrontal implements Lobe<PrefrontalState> {
           /* ومَن نزل فيه الدرس لا يسأل عن شيء ليس فيه جهلٌ حاضر: قال له أبوه
            * «القطة حيوان» فحفظها، فسؤاله بعدها «شو هذا؟» يُظهره كأنه لم يسمع. */
           if (ctx.lessonLanded && ctx.unknownCount === 0 && !ctx.ruleToTest) continue;
+          /* والتحيّة تُردّ بتحيّة: مَن قيل له «مرحبا» فسأل «شو صار؟» لم يردّ
+           * السلام. ويبقى السؤال مباحاً إن كان في تحيّتك لفظٌ يجهله. */
+          if (ctx.intent === 'GREET' && ctx.unknownCount === 0) continue;
           break;
         case 'BABBLE':
           // من تعلّم كلمات لا يعود يثغثغ: هذا هو النمو محسوساً
           if (ctx.vocab >= firstStageVocab) continue;
+          // والشاب لا يثغثغ بحال، ولو خلا رأسه: يسكت أو يسأل
+          if (mature) continue;
           /* ووليدٌ يملك الجواب لا يُثغثغ به: الثغثغة عجزٌ عن الكلام لا اختيارٌ
            * له. أُضيف بعد قياس: سُئل «شو هذا؟» وهو يرى تفاحةً سمّاها له أبوه
            * قبل لحظة، فقال «شو؟» — يعرف ولا ينطق. */
@@ -179,6 +198,10 @@ export class Prefrontal implements Lobe<PrefrontalState> {
            * هذا الردّ، فعُزّز «الإقرار بالجهل» في موضع التعليم، فصار يقولها
            * في كل درس بعده. عطلٌ واحد في الكبح أفسد التعليم كلَّه. */
           if (ctx.lessonLanded) continue;
+          /* ولا يُقرّ بالجهل في وجه تحيّةٍ أو مدح: «لا أعرف» ليست رداً على
+           * «مرحبا» ولا على «أحسنت». وهذا آخر ما بقي من غير المنطقيّ في ردّه:
+           * قِيسَ فقال لأبيه حين حيّاه «ما عندي معلومة عن هذا». */
+          if (ctx.intent === 'GREET' || ctx.intent === 'PRAISE') continue;
           break;
       }
       allowed.push(strategy);

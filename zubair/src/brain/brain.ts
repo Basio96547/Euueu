@@ -18,7 +18,7 @@ import {
   HERITAGE_EPOCHS, HERITAGE_FACTS, HERITAGE_INTENTS, HERITAGE_SOURCE, HERITAGE_VERSION,
 } from './core/heritage.js';
 import {
-  BRAIN_STATE_VERSION, DIMS, STAGES, STORAGE_KEY, STRATEGIES,
+  BRAIN_STATE_VERSION, DIMS, MATURE_STAGE, STAGES, STORAGE_KEY, STRATEGIES,
   type Accelerator, type BrainState, type ComputePort, type ComputeUnit, type Episode,
   type Feedback, type GrowthMetrics, type Intent, type Strategy, type TickOutput, type TraceStep,
 } from './core/types.js';
@@ -53,6 +53,12 @@ interface PendingJudgement {
   intent: Intent;
   subject: string | null;
   object: string | null;
+  /** موضوع الكلام كما تبيّن — لا طرفَ الربط وحده.
+   *
+   *  والفرق جوهريّ: الربط يشترط قصداً تعليمياً، فيعود فارغاً في **كل سؤال**.
+   *  فكان تصحيح الأب لجوابٍ عن سؤال لا يمسّ الحقيقة التي بُني عليها الجواب:
+   *  يقول له «خطأ» عشر مرات وثقته في الحقيقة الخاطئة لا تتحرّك. */
+  topic: string | null;
   /** وصف ما كان يراه إن كان جوابه عن منظر — لازم لتصحيح تسميته البصرية */
   sawFeatures: Vec | null;
   /** الاسم الذي أعطاه لما رآه، إن سُئل عن منظر */
@@ -224,16 +230,21 @@ export class Zubair {
     const vocabBefore = this.lexicon.size;
     const factsBefore = this.parietal.facts.length;
 
-    for (const [subject, object] of HERITAGE_FACTS) {
+    for (const [subject, object, relation] of HERITAGE_FACTS) {
       /* تُمرَّر الجملة على الحاسّة أولاً لا على المعجم مباشرة: بها تُسجَّل صور
        * الكلمات كما تُكتب («تفاحة» لا «تفاحه») فيتكلّم بإملاء صحيح، وتنمو
        * مفرداته كما تنمو بالسماع. */
       const percept = this.lexicon.perceive(`${subject} ${object}`, true);
       const bound = this.parietal.bind(percept, 'TEACH_FACT');
-      if (!bound.subject || !bound.object) continue;
-      this.parietal.learnFact(bound.subject, bound.object, 0, HERITAGE_SOURCE);
-      const a = this.lexicon.idOf(bound.subject);
-      const c = this.lexicon.idOf(bound.object);
+      /* والنحو يسدّ ما يعجز عنه الرابط: «العصفور يطير» فعلٌ لا يقبله الرابط
+       * جملةً اسمية، وهو موروثٌ صحيح يجب أن يصل. */
+      const parsed = this.syntax.parse(percept);
+      const s = bound.subject ?? parsed.topic;
+      const o = bound.object ?? parsed.comment;
+      if (!s || !o) continue;
+      this.parietal.learnFact(s, o, 0, HERITAGE_SOURCE, relation ?? parsed.relation ?? 'جنس');
+      const a = this.lexicon.idOf(s);
+      const c = this.lexicon.idOf(o);
       if (a >= 0 && c >= 0) this.lexicon.embedding.associate(a, c, 0.03);
     }
 
@@ -407,7 +418,9 @@ export class Zubair {
      * المكرّرة تفترق، وقسمُ الكلمة موضعه فصٌّ واحد. */
     const isContent = (word: string): boolean =>
       !QUESTION_WORDS.has(word) && !STOP_WORDS.has(word) && !DEMONSTRATIVE_KEYS.has(word)
-      && this.syntax.classify(word).pos !== 'حرف';
+      && this.syntax.classify(word).pos !== 'حرف'
+      // ولا لفظُ تحيّةٍ أو مدح: «شو يعني مرحبا؟» سؤالٌ عن تحيّة أبيه لا عن شيء
+      && !this.syntax.social({ ...percept, tokens: [word] });
     const unknownContent = percept.unknown.filter(isContent);
     /** كلمات المعنى في جملته كلها — عنها يُسأل، لا عن أدوات سؤاله */
     const contentTokens = percept.tokens.filter(isContent);
@@ -579,7 +592,9 @@ export class Zubair {
      * الصورة وليسا تعليماً في القصد. */
     const teachesByStructure = parse.topic !== null && parse.comment !== null
       && parse.asks === null && !parse.negated
-      && understanding.intent !== 'PRAISE' && understanding.intent !== 'GREET';
+      /* والمدحُ يُستثنى بلفظه لا بتصنيفه: «البحر أزرق» خبرٌ صنّفه المصنِّف مدحاً
+       * بعد أن اتّسع ميراثه، فسقط الدرس. والألفاظ تُحصى، والتصنيف يُخطئ. */
+      && !this.syntax.social(percept);
 
     const teaching = understanding.intent === 'TEACH_FACT'
       || understanding.intent === 'TEACH_WORD'
@@ -587,8 +602,13 @@ export class Zubair {
       || teachesNegation
       || teachesByStructure
       /* والحذف تعليمٌ كالتعليم الصريح: «صغيرة» بعد «القطة حيوان» درسٌ عن
-       * القطة. ولولا هذا لسمعه زبير كلمةً غريبة يسأل عنها. */
-      || (ellipsis !== null && understanding.intent !== 'PRAISE' && understanding.intent !== 'CORRECT');
+       * القطة. ولولا هذا لسمعه زبير كلمةً غريبة يسأل عنها.
+       *
+       * ولا يُشترط معه قصدٌ من المصنِّف: النحو نفسه يستثني التحية والمدح
+       * والتصحيح والسؤال والضمير قبل أن يحكم بالحذف، فاشتراطُ القصد فوق ذلك
+       * تكرارٌ يُسقط الدرس إذا أخطأ المصنِّف. قِيسَ: صار «صغيرة» تُقرأ مدحاً
+       * بعد أن اتّسع ميراثه، فسقط الدرس كلُّه. */
+      || ellipsis !== null;
 
     if (teachesNegation && parse.topic && parse.comment) {
       /* النفي يُهدم به المحمول المنفيّ ولا يُبنى محمولٌ جديد: «القطة ليست نبات»
@@ -612,8 +632,12 @@ export class Zubair {
        * وبلا هذا الإبدال يعود الضمير ثم لا يُنتفَع به، فيبقى الكلام معلّقاً. */
       const subject = (bound.subject ?? resolvedSubject ?? parse.topic)!;
       const object = (bound.object ?? parse.comment ?? ellipsis?.comment)!;
-      this.parietal.learnFact(subject, object, this.ticks, 'أبوه',
-        parse.relation ?? ellipsis?.relation ?? 'جنس');
+      /* والجُداري يصحّح نوع العلاقة بما يعرفه: «القطة شرسة» ليست جنساً جديداً
+       * يمحو «حيوان»، لأن «شرسة» لم تكن جنساً لشيء قط. */
+      const relation = this.parietal.refineRelation(
+        subject, object, parse.relation ?? ellipsis?.relation ?? 'جنس',
+      );
+      this.parietal.learnFact(subject, object, this.ticks, 'أبوه', relation);
       this.lessons++;
       this.lessonsSinceSleep++;
       // ترابط هيبي: طرفا الحقيقة يتقاربان في تمثيله، فيصير «قطة» و«حيوان»
@@ -630,7 +654,7 @@ export class Zubair {
 
       trace.push({
         lobe: this.parietal.name, ar: this.parietal.ar,
-        note: `حفظ: ${subject} ← ${object}${(parse.relation ?? ellipsis?.relation ?? 'جنس') !== 'جنس' ? ` (${parse.relation ?? ellipsis?.relation})` : ''}`,
+        note: `حفظ: ${subject} ← ${object}${relation !== 'جنس' ? ` (${relation})` : ''}`,
         where: 'cpu', ms: 0,
       });
     }
@@ -668,7 +692,11 @@ export class Zubair {
     /* موضوع الحوار يُصفّى بالنحو مهما كان مصدره: الحرف لا يصلح موضوعاً بحال،
      * لا من الربط ولا من الانتباه. قِيسَ فخرج «وماذا أيضاً عن هيك؟». */
     const boundTopic = bound.subject ?? resolvedSubject ?? this.salientTopic(percept, gated.weights);
-    const topic = boundTopic && this.syntax.classify(boundTopic).pos !== 'حرف' ? boundTopic : null;
+    const topic = boundTopic
+      && this.syntax.classify(boundTopic).pos !== 'حرف'
+      // ولا تحيّةٌ ولا مدح: «ومرحبا شو كمان؟» سؤالٌ عن تحيّة أبيه لا عن شيء
+      && !this.syntax.social({ ...percept, tokens: [boundTopic] })
+      ? boundTopic : null;
     /* البحث في العلاقة التي يطلبها السؤال لا في «الجنس» دائماً.
      *
      * وهذا أخطر عطلٍ وُجد في مراجعة الفصوص كلها، لأنه يُبطل ميزةً كاملة بُنيت
@@ -714,6 +742,31 @@ export class Zubair {
         fact = null;
       }
     }
+    /* موضوع الكلام وما وجده عنه: يُعرَض للأب صراحةً.
+     *
+     * وهو أنفع سطرٍ في أثر النبضة على الإطلاق: أكثر ما يبدو «عجزاً عن الجواب»
+     * سببُه أن الموضوع الذي بحث عنه غير الذي سأل عنه أبوه. */
+    trace.push({
+      lobe: this.parietal.name, ar: this.parietal.ar,
+      note: topic
+        ? `موضوع الكلام «${topic}»${wanted ? ` — بحث في ${wanted}` : ''}: ${knownFact ? `وجد «${knownFact.object}»` : 'لا شيء'}`
+        : 'لم يتبيّن موضوع الكلام',
+      where: 'none', ms: 0,
+    });
+
+    /* أرضية الجزم: حقيقةٌ ثقتُه فيها دون هذا الحدّ لا يُجيب بها جزماً.
+     *
+     * وهذا ثاني منبعَي الهلوسة: حقيقةٌ هُدمت بتصحيح الأب فبقيت بثقةٍ ضئيلة، ثم
+     * يُجاب بها كأنها يقين. والصدق أن يُقرّ بجهله حتى يُعاد تعليمه. */
+    if (fact && fact.confidence < ASSERT_FLOOR) {
+      trace.push({
+        lobe: this.parietal.name, ar: this.parietal.ar,
+        note: `يعرف «${fact.object}» بثقة ${Math.round(fact.confidence * 100)}٪ — دون حدّ الجزم فلا يجزم`,
+        where: 'none', ms: 0,
+      });
+      fact = null;
+    }
+
     const generalized = !fact && topic ? this.parietal.generalize(topic, this.lexicon) : null;
 
     /* أنزل الدرس فعلاً؟ يُقاس بما حُفظ لا بما قيل: أبٌ يُعلّم جملةً لم يفهمها
@@ -778,6 +831,7 @@ export class Zubair {
       vocab: this.lexicon.size,
       unknownCount: unknownContent.length,
       factConfidence: fact?.confidence ?? 0,
+      generalizeStrength: generalized?.similarity ?? 0,
       lessonLanded,
       /* ولا يمتحن قاعدةً في وجه سؤال: مَن سُئل يُجيب. الامتحان يأتي بعد الدرس
        * أو في الكلام العادي، وهو موضعه عند الطفل أيضاً. */
@@ -799,8 +853,11 @@ export class Zubair {
       - 0.5 * intero.confidence + this.emotion.temperatureShift
       // والمتعب لا يجرّب: من هدفه أن يستريح يلتزم أقصر ما يعرف
       + (goal === 'REST' ? -0.25 : 0),
-      0.12,
-      1.8,
+      /* ومدى استكشافه يضيق بنضجه: الطفل يجرّب لأنه لا يملك ما يلتزم به، والشابّ
+       * يملك فيلتزم. ومدىً واسعٌ عند من يعرف هو التشتّت بعينه — يُجيب صواباً ثم
+       * يُقرّ بجهله في السؤال نفسه بلا سبب. */
+      stage.id >= MATURE_STAGE ? 0.08 : 0.12,
+      stage.id >= MATURE_STAGE ? 0.65 : 1.8,
     );
     const state = this.basalGanglia.encodeState({
       understanding, recallScore: recall.bestScore, hasFact: fact !== null,
@@ -869,7 +926,7 @@ export class Zubair {
       tick: this.ticks, said: percept.raw, replied: refined,
       meaning: understanding.meaning.slice(), state: state.slice(),
       strategy: decision.strategy, intent: understanding.intent,
-      subject: bound.subject, object: bound.object,
+      subject: bound.subject, object: bound.object, topic,
       sawFeatures: askingAboutSight && vision ? vision.features.slice() : null,
       namedFromSight: askingAboutSight ? (recognized?.name ?? null) : null,
       assertedObject: decision.strategy === 'ANSWER_MEMORY' ? (fact?.object ?? null)
@@ -953,19 +1010,30 @@ export class Zubair {
       ? `عزّز أن «${strategyAr(pending.strategy)}» تُرضيك في مثل هذا الموضع`
       : `أضعف «${strategyAr(pending.strategy)}» في مثل هذا الموضع`);
 
+    /* الحقيقة التي جزم بها تُهدَم بكلمة «خطأ» وحدها، ولا تنتظر أن يكتب الأب
+     * الصواب.
+     *
+     * وكان الهدم داخل شرط «إن كتب التصحيح»، فكان زر «خطأ» في التطبيق — وهو
+     * أكثر ما يضغطه الأب — لا يمسّ الحقيقة الخاطئة بشيء: يُصحَّح له عشر مرات
+     * ويعيدها في الحادية عشرة بثقةٍ كما هي. وهذا أخطر منابع الإصرار على الخطأ:
+     * تصحيحٌ لا يُغيّر ما صُحِّح.
+     *
+     * ولا يُمحى المحمول من مرة: تُخفَض ثقته، فإن أصرّ الأب سقط. */
+    if (feedback.verdict === 'correct') {
+      const asserted = pending.subject ?? pending.topic;
+      if (asserted && pending.assertedObject) {
+        this.parietal.contradict(asserted, pending.assertedObject);
+        learned.push(`هدم ثقته في «${asserted} ← ${pending.assertedObject}»`);
+      }
+    }
+
     if (feedback.verdict === 'correct' && feedback.correction && feedback.correction.trim()) {
       const correction = feedback.correction.trim();
 
-      // ١. نمط الخطأ: ما قاله خطأً وما كان صحيحاً — يتعلّمه المخيخ لئلا يعيده
+      // نمط الخطأ: ما قاله خطأً وما كان صحيحاً — يتعلّمه المخيخ لئلا يعيده
       this.cerebellum.learnFromCorrection(pending.replied, correction);
 
-      // ٢. الحقيقة الخاطئة تُهدَم. لا نمحوها فوراً: نخفض ثقتها، فإن أصرّ الأب سقطت.
-      if (pending.subject && pending.assertedObject) {
-        this.parietal.contradict(pending.subject, pending.assertedObject);
-        learned.push(`هدم ثقته في «${pending.subject} ← ${pending.assertedObject}»`);
-      }
-
-      // ٣. تصحيحك درس كامل لا كلمة «خطأ»: يُقرأ ويُفهم ويُحفظ كما لو علّمته ابتداءً
+      // وتصحيحك درس كامل لا كلمة «خطأ»: يُقرأ ويُفهم ويُحفظ كما لو علّمته ابتداءً
       const cPercept = this.lexicon.perceive(correction, true);
       const cReflex = this.brainstem.reflexIntent(cPercept);
       const cGate = this.thalamus.gate(cPercept, this.hypothalamus.state, this.compute_);
@@ -994,8 +1062,9 @@ export class Zubair {
 
     if (feedback.verdict === 'praise') {
       // المدح على جواب من ذاكرة صريحة يقوّي الحقيقة نفسها لا الاستراتيجية وحدها
-      if (pending.subject && pending.assertedObject) {
-        this.parietal.learnFact(pending.subject, pending.assertedObject, this.ticks, 'أبوه');
+      const asserted = pending.subject ?? pending.topic;
+      if (asserted && pending.assertedObject) {
+        this.parietal.learnFact(asserted, pending.assertedObject, this.ticks, 'أبوه');
       }
     }
 
@@ -1181,6 +1250,10 @@ const QUESTION_WORDS = new Set([
   'ما', 'ماذا', 'شو', 'مين', 'من', 'كيف', 'ليش', 'لماذا', 'هل', 'اين', 'وين', 'متي',
   'امتي', 'كم', 'ايش', 'شنو', 'شلون', 'قديش', 'ليه', 'اي', 'فين',
 ]);
+
+/** أدنى ثقةٍ يجوز الجزم بها. دونها يُقرّ بجهله ولو كان يملك المحمول: حقيقةٌ
+ *  هدمها تصحيحُ الأب لا يجوز أن تُقال كأنها يقين. */
+const ASSERT_FLOOR = 0.35;
 
 /** مقدار ما يُرجَّح به ما يوافق هدفه. صغيرٌ بقصد: ميلٌ يُزيح ولا يحسم، فتبقى
  *  تجربتُه مع أبيه هي الحاكمة. */
