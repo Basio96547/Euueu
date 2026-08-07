@@ -133,7 +133,7 @@ export function Reading(props: { child: Zubair; onLearned: () => void }) {
       {report && stage !== 'idle' && stage !== 'reading' && (
         <div className="card">
           <h2>ماذا فهم</h2>
-          <div className="grid">
+          <div className="grid three">
             <div className="stat"><b>{report.sentences}</b><span>جملة قرأها</span></div>
             <div className="stat"><b>{report.understood.length}</b><span>فهمها</span></div>
             <div className="stat"><b>{report.skipped}</b><span>أهملها</span></div>

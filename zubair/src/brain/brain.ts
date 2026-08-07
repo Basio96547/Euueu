@@ -1179,7 +1179,10 @@ export class Zubair {
       text: refined, kind: speech.kind, strategy,
       intent: understanding.intent,
       confidence: clamp(1 - conflict.level, 0, 1),
-      rank: asserting ? rank : 'ضعيف',
+      /* وحالُه يعرفه يقيناً: الجزيرة تقرؤه من داخله لا من خزانةٍ قد تخيب.
+       * وقد ظهر موسوماً «ضعيفاً» على الشاشة لأن مسار الحقائق لم يمرّ به — وهو
+       * أصدق ما يعرفه زبير على الإطلاق. */
+      rank: request === 'حال' ? 'يقين' : asserting ? rank : 'ضعيف',
       usedEpisodes: recall.episodes.map((e) => e.id),
       trace,
     };

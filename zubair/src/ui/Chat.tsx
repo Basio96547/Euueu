@@ -24,6 +24,13 @@ const KIND_AR: Record<TickOutput['kind'], string> = {
   greeting: 'تحية',
 };
 
+/** رتبةُ ما قاله بعبارةٍ يقرؤها الأب — لا رقماً لا يعني شيئاً. */
+const RANK_AR: Record<string, string> = {
+  'يقين': 'يجزم',
+  'راجح': 'يظنّ',
+  'ضعيف': 'ضعيف',
+};
+
 const UNIT_AR: Record<TraceStep['where'], string> = {
   npu: 'المعالج العصبي',
   gpu: 'الرسوميات',
@@ -75,7 +82,13 @@ export function Chat(props: {
             {turn.out && (
               <div className="meta">
                 <span>{KIND_AR[turn.out.kind]}</span>
-                <span>ثقته {Math.round(turn.out.confidence * 100)}٪</span>
+                {/* ————— الرتبة لا الرقم —————
+                    كان هنا «ثقته ٧٩٪». وقِيس الرقم على الامتحان فلم يفصل صوابه
+                    عن خطئه (٠٫٦٨ حين أصاب و٠٫٦٩ حين أخطأ)، ثم رُئي على الشاشة
+                    معلَّقاً على «ما بعرف وين» — رقمُ ثقةٍ على إقرارٍ بجهل.
+                    فالرتبة تُعرَض حيث تعني شيئاً — على ما جزم به — ولا يُعرَض
+                    على الإقرار شيء. */}
+                {turn.out.kind === 'answer' && <span className={`rank ${turn.out.rank}`}>{RANK_AR[turn.out.rank]}</span>}
                 {turn.out.trace.length > 0 && <TraceView steps={turn.out.trace} />}
               </div>
             )}

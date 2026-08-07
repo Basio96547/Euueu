@@ -12,6 +12,7 @@
     "test": "tsx --test \"src/brain/tests/*.test.ts\"",
     "exam": "tsx scripts/exam.ts",
     "ownership": "tsx scripts/ownership.ts",
+    "phone": "pnpm build && tsx scripts/phone.ts",
     "icons": "tsx scripts/make-icons.ts"
   },
   "dependencies": {
