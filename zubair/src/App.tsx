@@ -13,8 +13,9 @@ import type { Feelings } from './brain/lobes/emotion.js';
 import { Chat, type Turn } from './ui/Chat.js';
 import { Growth } from './ui/Growth.js';
 import { BrainMap } from './ui/BrainMap.js';
+import { Reading } from './ui/Reading.js';
 
-type Tab = 'chat' | 'growth' | 'brain';
+type Tab = 'chat' | 'read' | 'growth' | 'brain';
 
 export default function App() {
   const [child, setChild] = useState<Zubair | null>(null);
@@ -156,8 +157,10 @@ export default function App() {
       <nav className="tabs" role="tablist">
         <button type="button" role="tab" className="tab" aria-selected={tab === 'chat'}
           onClick={() => setTab('chat')}>الحوار</button>
+        <button type="button" role="tab" className="tab" aria-selected={tab === 'read'}
+          onClick={() => setTab('read')}>يقرأ</button>
         <button type="button" role="tab" className="tab" aria-selected={tab === 'growth'}
-          onClick={() => setTab('growth')}>سجل نموّه</button>
+          onClick={() => setTab('growth')}>نموّه</button>
         <button type="button" role="tab" className="tab" aria-selected={tab === 'brain'}
           onClick={() => setTab('brain')}>دماغه</button>
       </nav>
@@ -191,6 +194,8 @@ export default function App() {
           />
         </>
       )}
+
+      {tab === 'read' && <Reading child={child} onLearned={() => refresh(child)} />}
 
       {tab === 'growth' && (
         <Growth

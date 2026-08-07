@@ -233,6 +233,54 @@ html, body {
 
 .fix { display: flex; gap: 8px; margin-top: 4px; }
 
+/* ————— شاشة القراءة —————
+   السطر الواحد يحمل ثلاثة: الحقيقة، والجملة التي جاءت منها، وتحذيرُ المخالفة.
+   والجملة تُعرض لأن الأب يحكم على السياق لا على طرفين مجرّدين. */
+
+.paste {
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+
+.paste:focus { outline: 2px solid var(--leaf); outline-offset: 1px; }
+
+.reads { list-style: none; margin: 0; padding: 0; }
+
+.reads li { border-top: 1px solid var(--line); }
+.reads li:first-child { border-top: 0; }
+
+.reads li button {
+  display: grid;
+  grid-template-columns: 1.4em 1fr;
+  gap: 4px 9px;
+  width: 100%;
+  padding: 9px 2px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.reads li b { color: var(--muted); font-size: 15px; grid-row: 1; }
+.reads li span { color: var(--muted); font-size: 14.5px; grid-row: 1; }
+.reads li em { font-style: normal; font-size: 12.5px; opacity: 0.75; }
+.reads li small { grid-column: 2; font-size: 12.5px; opacity: 0.7; }
+
+.reads li.on b { color: var(--leaf); }
+.reads li.on span { color: var(--text); }
+
+.reads li.clash span { color: var(--danger); }
+.reads li .clashNote { color: var(--danger); opacity: 1; }
+
 /* ————— اللوحات ————— */
 
 .panel { padding: 14px; overflow-y: auto; flex: 1; }

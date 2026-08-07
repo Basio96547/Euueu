@@ -228,6 +228,8 @@ export interface GrowthMetrics {
   factsInherited: number;
   /** ومنها ما علّمه أبوه بنفسه — وهذا وحده مقياس تعليمه */
   factsFromFather: number;
+  /** ومنها ما قرأه في كتابٍ أذِنتَ به: لا يُحسب لك ولا يبلغ اليقين */
+  factsRead: number;
   /** كم شيئاً يعرفه بعينه — لا بالكتابة */
   objectsSeen: number;
   /** كم ذكرى يحمل */

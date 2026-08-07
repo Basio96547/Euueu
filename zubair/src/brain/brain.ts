@@ -39,6 +39,8 @@ import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
 import { Syntax, type RelationKind } from './lobes/syntax.js';
 import { ASKS_KNOWLEDGE, instinctMaySpeak, rowOf, typeFits, voidIsFinal, type Request } from './core/ownership.js';
 import { rankOf, review, type Claim, type Verdict } from './core/review.js';
+import { read as readText, READ_SOURCE, type ReadFact, type ReadingReport } from './core/reading.js';
+import { readPdf, type PdfText } from './core/pdf.js';
 import { Arbiter } from './lobes/arbiter.js';
 import {
   transduceAudio, transduceBody, transduceVision,
@@ -201,14 +203,19 @@ export class Zubair {
     const vocab = this.lexicon.size;
     const { recent, previous } = accuracyOf(this.verdicts);
     let inherited = 0;
-    for (const fact of this.parietal.facts) if (fact.taughtBy === HERITAGE_SOURCE) inherited++;
+    let fromReading = 0;
+    for (const fact of this.parietal.facts) {
+      if (fact.taughtBy === HERITAGE_SOURCE) inherited++;
+      else if (fact.taughtBy === READ_SOURCE) fromReading++;
+    }
     return {
       ticks: this.ticks,
       lessons: this.lessons,
       vocab,
       facts: this.parietal.facts.length,
       factsInherited: inherited,
-      factsFromFather: this.parietal.facts.length - inherited,
+      factsFromFather: this.parietal.facts.length - inherited - fromReading,
+      factsRead: fromReading,
       objectsSeen: this.inferotemporal.knownCount,
       episodes: this.hippocampus.count,
       questionsAsked: this.questionsAsked,
@@ -1038,6 +1045,7 @@ export class Zubair {
       fact: decision.strategy === 'ANSWER_GENERAL' ? (generalized?.fact ?? null) : fact,
       generalized: decision.strategy === 'ANSWER_GENERAL',
       dispute: fact === null ? 'لا نزاع' : this.parietal.disputeOf(fact.subject, wanted ?? 'جنس'),
+      read: (fact?.taughtBy ?? '') === READ_SOURCE,
       seen: seenFact !== null && fact === seenFact,
     };
     const rank = rankOf(claim);
@@ -1350,6 +1358,52 @@ export class Zubair {
 
     await this.save();
     return { dopamine, learned };
+  }
+
+  /* ————— القراءة: مصدرٌ ثالث لا مصدرٌ مساوٍ —————
+   *
+   * ثلاث خطواتٍ منفصلة بقصد: يقرأ، فيعرض، فيحفظ ما أُذن فيه. وبين الثانية
+   * والثالثة يقف الأب — ولولاه لكان الكتاب معلّماً ثانياً لا يُراجَع.
+   */
+
+  /** يقرأ ملفَّ PDF ويُخرج نصّه، ويقول بالعربية ما عجز عنه ولماذا. */
+  async readFile(bytes: Uint8Array): Promise<PdfText> {
+    return readPdf(bytes);
+  }
+
+  /**
+   * يقرأ نصّاً ويُخرج ما فهمه منه — **ولا يحفظ حرفاً**.
+   *
+   * والرقم الذي يخرج منها أصدقُ ما في هذه الميزة كلِّها: «قرأتُ ٤٠٠ جملة،
+   * فهمتُ منها ٣١». وسيبدو قليلاً، وهو الحقيقة: نحوُه يفكّ الجملة التعريفية
+   * («النمر حيوان مفترس») ولا يفكّ السرد. فالمعاجم والقوائم تُطعمه أكثر
+   * ممّا تُطعمه القصص، ومن وعد بغير ذلك كذب.
+   */
+  study(text: string): ReadingReport {
+    return readText(text, { lexicon: this.lexicon, syntax: this.syntax, parietal: this.parietal });
+  }
+
+  /**
+   * يحفظ ما أذِن به الأب من قراءته.
+   *
+   * ويُحفَظ بوسم `المقروء` لا بوسم أبيه: يُفصَل في الأرقام، ولا يبلغ اليقين
+   * في الرتبة، ويُقال «بظنّي». فإن أكّده أبوه بلسانه صار كلامَ أبيه وبلغه.
+   */
+  async absorb(facts: readonly ReadFact[]): Promise<{ learned: number; words: number }> {
+    const before = this.lexicon.size;
+    let learned = 0;
+    for (const fact of facts) {
+      if (!fact.accepted) continue;
+      /* الآن تُضاف كلماته إلى معجمه — بما فُهم لا بما مرّ عليه البصر */
+      this.lexicon.perceive(`${fact.subject} ${fact.object}`, true);
+      this.parietal.learnFact(fact.subject, fact.object, this.ticks, READ_SOURCE, fact.relation);
+      const a = this.lexicon.idOf(fact.subject);
+      const b = this.lexicon.idOf(fact.object);
+      if (a >= 0 && b >= 0) this.lexicon.embedding.associate(a, b, 0.03);
+      learned++;
+    }
+    if (learned > 0) await this.save();
+    return { learned, words: this.lexicon.size - before };
   }
 
   /* ————— النوم: هنا يتحوّل الحفظ إلى فهم —————

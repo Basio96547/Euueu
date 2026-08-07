@@ -102,6 +102,7 @@ export function Growth(props: {
             كلماته، وقد حُذف سُلّم الأطوار كلُّه. */}
         <span className="hint">
           الذي منك {m.factsFromFather} حقيقة — وهو وحده مقياس تعليمك.
+          {m.factsRead > 0 && <> وما قرأه {m.factsRead}، يقولها «بظنّي» حتى تؤكّدها بلسانك.</>}
         </span>
       </div>
 
@@ -112,6 +113,7 @@ export function Growth(props: {
           <Stat value={m.facts} label="حقيقة يعرفها" />
           <Stat value={m.factsFromFather} label="حقيقة علّمتَه إياها" />
           <Stat value={m.factsInherited} label="حقيقة ورِثها" />
+          <Stat value={m.factsRead} label="حقيقة قرأها" />
           <Stat value={m.objectsSeen} label="شيئاً يعرفه بعينه" />
           <Stat value={m.lessons} label="درساً أعطيته" />
           <Stat value={m.questionsAsked} label="مرة سألك" />

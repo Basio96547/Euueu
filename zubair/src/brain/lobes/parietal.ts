@@ -72,6 +72,15 @@ const GENERALIZE_MARGIN = 0.05;
  *  يعتمد فصٌّ معرفيّ على ملفّ محتوى. */
 const HERITAGE_MARK = 'الميراث';
 
+/**
+ * مصادرُ دون الأب: تُزاح بكلمته من أول مرة ولا تنازعه.
+ *
+ * والميراثُ عربيةُ محيطٍ عامّة، والمقروءُ كتابٌ لا يسمع الجواب فيصحّحه. وكلاهما
+ * ينفع حتى يتكلّم الأب، فإذا تكلّم فقولُه الفصل — ولا معنى لأن ينازعه كتابٌ
+ * ثماني مرات قبل أن يُصدَّق. وهذا نصفُ «التعلّم السريع»: ألّا يُعاند ما قرأ.
+ */
+const WEAKER_SOURCES: ReadonlySet<string> = new Set([HERITAGE_MARK, 'المقروء']);
+
 /** أقلّ عدد حروف يبقى بعد نزع أداة التعريف. «الآن» ← «ان» ليس تجريداً بل تشويه. */
 const MIN_STEM = 3;
 
@@ -356,7 +365,7 @@ export class Parietal implements Lobe<ParietalState> {
      * وكلامُ الأب خبرٌ عن هذا الشيء بعينه في بيتهما. فمن ورِث «القطة أليفة» ثم
      * قال له أبوه «القطة شرسة» فالثانية أولى، ولا معنى لأن ينازع محيطُه أباه
      * ثماني مرات قبل أن يصدّقه. وهذا نصف «التعلّم السريع»: ألّا يُعاند ما وُرِث. */
-    if (record.main.taughtBy === HERITAGE_MARK && by !== HERITAGE_MARK) {
+    if (WEAKER_SOURCES.has(record.main.taughtBy) && !WEAKER_SOURCES.has(by)) {
       record.alt = null;
       record.main = { subject: s, object: o, confidence: INITIAL_CONFIDENCE, taughtBy: by, lastSeenTick: at };
       this.view = null;

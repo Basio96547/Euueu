@@ -173,7 +173,7 @@ test('نسبة الإصابة تُحسب من نافذتين لا من واحد�
 
 function metrics(recent: number, previous: number, lessons = 30, vocab = 34): GrowthMetrics {
   return {
-    ticks: 100, lessons, vocab, facts: 12, factsInherited: 8, factsFromFather: 4,
+    ticks: 100, lessons, vocab, facts: 12, factsInherited: 8, factsFromFather: 4, factsRead: 0,
     objectsSeen: 3, episodes: 80, questionsAsked: 9,
     recentAccuracy: recent, previousAccuracy: previous, sleeps: 2,
   };

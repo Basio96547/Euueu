@@ -29,7 +29,7 @@ function fact(confidence: number, taughtBy = 'أبوه'): Fact {
   return { subject: 'س', object: 'ص', confidence, taughtBy, lastSeenTick: 1 };
 }
 
-const BASE: Claim = { fact: fact(0.6), generalized: false, dispute: 'لا نزاع', seen: false };
+const BASE: Claim = { fact: fact(0.6), generalized: false, dispute: 'لا نزاع', seen: false, read: false };
 
 async function afterTeaching(seed: number, lessons: readonly string[], ask: string) {
   const zubair = await Zubair.create({ storage: memoryStorage(), seed, fresh: true, heritage: true });
