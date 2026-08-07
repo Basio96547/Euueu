@@ -9,7 +9,7 @@
  * خطوته لكل وزن على حدة، فيلتقط من الأمثلة القليلة ما لا يلتقطه غيره.
  */
 
-import { Rng, dReluFromOutput, dSigmoidFromOutput, dTanhFromOutput, reluInto, sigmoidInto, tanhInto, matvec, matvecTransposed, type Vec } from './tensor.js';
+import { Rng, dReluFromOutput, dSigmoidFromOutput, dTanhFromOutput, packVec, readVec, reluInto, sigmoidInto, tanhInto, matvec, matvecTransposed, unpackVec, type Vec } from './tensor.js';
 import type { ComputePort } from './types.js';
 
 export type Activation = 'none' | 'tanh' | 'sigmoid' | 'relu';
@@ -17,13 +17,12 @@ export type Activation = 'none' | 'tanh' | 'sigmoid' | 'relu';
 export interface DenseState {
   inDim: number;
   outDim: number;
-  w: number[];
-  b: number[];
-  mW: number[];
-  vW: number[];
-  mB: number[];
-  vB: number[];
+  /** الأوزان بايتاتٍ مضغوطة — وتُقرأ مصفوفةَ أرقامٍ في الأدمغة المحفوظة قبل الضغط */
+  w: string | number[];
+  b: string | number[];
   steps: number;
+  /** عزومُ Adam: لم تعد تُكتب، وتُقرأ ثم تُهمَل في الأدمغة القديمة */
+  mW?: unknown; vW?: unknown; mB?: unknown; vB?: unknown;
 }
 
 /** طبقة موصولة بالكامل: العملة الأساسية في كل فصوص زبير. */
@@ -172,16 +171,20 @@ export class Dense {
     }
   }
 
+  /* ————— ولا تُحفظ عزوم Adam —————
+   *
+   * كانت تُحفظ (mW وvW وmB وvB)، فكان كلُّ فصٍّ يُكتب **ثلاث مرات**: وزنُه
+   * ومعه عزماه. وهي ليست معرفةً بل أثرُ مُحسِّنٍ يقيس اتّجاه الخطوات الأخيرة،
+   * وفقدانها يُكلّف خطواتٍ معدودة من التكيّف لا حرفاً من علم.
+   *
+   * والفرق بين ما هو معرفةٌ وما هو سقالةٌ للتعلّم يجب أن يظهر في **ما يُكتب
+   * على الجهاز**: الأول يُحفظ، والثاني يُعاد بناؤه. */
   save(): DenseState {
     return {
       inDim: this.inDim,
       outDim: this.outDim,
-      w: Array.from(this.w),
-      b: Array.from(this.b),
-      mW: Array.from(this.mW),
-      vW: Array.from(this.vW),
-      mB: Array.from(this.mB),
-      vB: Array.from(this.vB),
+      w: packVec(this.w),
+      b: packVec(this.b),
       steps: this.steps,
     };
   }
@@ -190,12 +193,11 @@ export class Dense {
     // لا نثق بالحجم: دماغ محفوظ بنسخة أقدم قد تختلف أبعاده، والانفجار هنا
     // يعني فقدان دماغ زبير كله. نتجاهل الحالة غير المطابقة ونُبقي التهيئة.
     if (state.inDim !== this.inDim || state.outDim !== this.outDim) return;
-    this.w.set(state.w);
-    this.b.set(state.b);
-    this.mW.set(state.mW);
-    this.vW.set(state.vW);
-    this.mB.set(state.mB);
-    this.vB.set(state.vB);
+    this.w.set(readVec(state.w, this.w.length));
+    this.b.set(readVec(state.b, this.b.length));
+    /* والعزوم تبدأ صفراً: دماغٌ استُعيد يتعلّم من جديد بخطواتٍ أوّليةٍ أحذر،
+     * ثم يستقرّ. وهذا أرخص من أن يُكتب ضِعفا الملف في كل درس. */
+    this.mW.fill(0); this.vW.fill(0); this.mB.fill(0); this.vB.fill(0);
     this.steps = state.steps;
   }
 }
@@ -256,8 +258,12 @@ export class Mlp {
  */
 export interface EmbeddingState {
   dim: number;
-  rows: number[][];
-  moments: number[][];
+  /** عدد الصفوف، وكلُّها في كتلةٍ واحدة مضغوطة */
+  count?: number;
+  packed?: string;
+  /** صورةُ الأدمغة المحفوظة قبل الضغط */
+  rows?: number[][];
+  moments?: unknown;
 }
 
 export class Embedding {
@@ -322,20 +328,35 @@ export class Embedding {
     }
   }
 
+  /**
+   * المعجم أثقلُ ما في الملف، وينمو **بكل كلمةٍ جديدة**.
+   *
+   * فيُكتب صفوفه كتلةً واحدة مضغوطة لا صفّاً صفّاً: ألفُ كلمةٍ كانت ألفَ
+   * مصفوفةٍ من ثمانيةٍ وأربعين عدداً عشرياً كامل الدقّة. والعزوم لا تُحفظ.
+   */
   save(): EmbeddingState {
-    return {
-      dim: this.dim,
-      rows: this.rows.map((r) => Array.from(r)),
-      moments: this.moments.map((m) => Array.from(m)),
-    };
+    const flat = new Float32Array(this.rows.length * this.dim);
+    for (let i = 0; i < this.rows.length; i++) flat.set(this.rows[i]!, i * this.dim);
+    return { dim: this.dim, count: this.rows.length, packed: packVec(flat) };
   }
 
   load(state: EmbeddingState): void {
     if (!state || state.dim !== this.dim) return;
-    this.rows = state.rows.map((r) => Float32Array.from(r));
-    this.moments = state.moments.map((m) => Float32Array.from(m));
-    // الحالة المحفوظة قد تنقصها العزوم لو حُفظت بنسخة أقدم
-    while (this.moments.length < this.rows.length) this.moments.push(new Float32Array(this.dim));
+    if (typeof state.packed === 'string') {
+      const count = Math.max(0, Math.floor(state.count ?? 0));
+      const flat = unpackVec(state.packed, count * this.dim);
+      this.rows = [];
+      for (let i = 0; i < count; i++) {
+        this.rows.push(flat.slice(i * this.dim, (i + 1) * this.dim));
+      }
+    } else if (Array.isArray(state.rows)) {
+      // صورةُ الأدمغة المحفوظة قبل الضغط: تُقرأ فلا يُفقَد دماغٌ قديم
+      this.rows = state.rows.map((r) => Float32Array.from(r));
+    } else {
+      return;
+    }
+    // والعزوم تبدأ صفراً: سقالةُ تعلّمٍ لا معرفة
+    this.moments = this.rows.map(() => new Float32Array(this.dim));
   }
 }
 

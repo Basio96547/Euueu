@@ -118,6 +118,7 @@ export function Growth(props: {
           <Stat value={m.lessons} label="درساً أعطيته" />
           <Stat value={m.questionsAsked} label="مرة سألك" />
           <Stat value={m.episodes} label="ذكرى يحملها" />
+          <Stat value={m.episodesProtected} label="ذكرى لا تُنسى" />
           <Stat value={m.sleeps} label="مرة نام" />
           <Stat value={m.ticks} label="مرة فكّر" />
         </div>

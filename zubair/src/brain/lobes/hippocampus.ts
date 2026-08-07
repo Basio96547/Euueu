@@ -23,6 +23,8 @@
 
 import { clamp, type Rng, type Vec } from '../core/tensor.js';
 import { DIMS, INTENTS, type Accelerator, type ComputePort, type Episode, type Lobe } from '../core/types.js';
+import { tokenize } from '../core/text.js';
+import { checkedVec, packVec } from '../core/tensor.js';
 import type { RelationKind } from './syntax.js';
 
 /** بُعد المعنى — يُثبَّت في ثابت محلّي لأنه يدخل كل حساب عنوان في كتلة المفاتيح. */
@@ -46,12 +48,41 @@ export interface Recall {
   bestScore: number;
 }
 
+/**
+ * الذكرى كما تُكتب على الجهاز.
+ *
+ * وتختلف عن `Episode` في حقلين، وهذا الفرق قِيسَ لا قُدِّر:
+ *
+ *   **المعنى** يُكتب حروفاً مضغوطة (base64) لا مصفوفةَ أرقام. لأن أربعةً
+ *   وستّين رقماً عشرياً بدقّةٍ كاملة تُكتب في نحو ١٣٠٠ حرف، وهي في الذاكرة
+ *   ٢٥٦ بايتاً لا غير. وقِيس الفرق: ذكرى واحدة كانت **٤٩٠٠ بايت** على
+ *   الجهاز، فسعةُ ١٦٣٨٤ ذكرى تعني ثمانين ميغابايت — وعدٌ لا يفي به جوال،
+ *   والتطبيق يحفظ بعد **كل** درس.
+ *
+ *   **الرموز** لا تُكتب أصلاً: تُشتقّ من النصّ المحفوظ بالتجزئة نفسها التي
+ *   وُلدت منها. وما يُشتقّ لا يُخزَّن.
+ */
+export interface StoredEpisode extends Omit<Episode, 'meaning' | 'tokens'> {
+  /** المعنى مضغوطاً: بايتات Float32 بترميز base64 */
+  m: string;
+}
+
 export interface HippocampusState {
   capacity: number;
   /** بُعد المعنى وقت الحفظ — به يُرفض دماغ حُفظ بأبعاد أخرى بدل أن يُقرأ خطأً */
   meaningDim: number;
   nextId: number;
-  episodes: Episode[];
+  episodes: StoredEpisode[];
+}
+
+/* ————— ضغطُ المتجه: الأداة مشتركة في `core/tensor.ts` ————— */
+
+
+
+/** ويُرجِع null لما لا يُفكّ: ذكرى بلا معنىً لا تُستدعى، فتركُها أصدق من حفظها. */
+function unpackVector(packed: string, dim: number): number[] | null {
+  const checked = checkedVec(packed, dim);
+  return checked ? Array.from(checked) : null;
 }
 
 /**
@@ -229,11 +260,11 @@ export class Hippocampus implements Lobe<HippocampusState> {
       meaningDim: D,
       nextId: this.nextId,
       // نسخ صريح: لقطة الحفظ لا يجوز أن تتغيّر لو تعلّم زبير شيئاً قبل أن تُكتب
-      episodes: this.episodes.map((e) => ({
-        ...e,
-        tokens: [...e.tokens],
-        meaning: [...e.meaning],
-      })),
+      episodes: this.episodes.map((e) => {
+        const { meaning, tokens, ...rest } = e;
+        void tokens;   // تُشتقّ من `said` عند القراءة
+        return { ...rest, m: packVec(meaning) };
+      }),
     };
   }
 
@@ -252,13 +283,19 @@ export class Hippocampus implements Lobe<HippocampusState> {
       const kept: Episode[] = [];
       for (const raw of saved) {
         if (!raw) continue;
-        const meaning = raw.meaning;
-        if (!Array.isArray(meaning) || meaning.length !== D) continue; // ذكرى بأبعاد غريبة تُترك بصمت
+        /* المضغوطة أوّلاً، ثم صورةُ الأدمغة المحفوظة قبل الضغط — لا يُفقَد
+         * دماغٌ قديم لأن صيغة الحفظ تغيّرت. */
+        const legacy = (raw as unknown as { meaning?: unknown }).meaning;
+        const meaning = typeof raw.m === 'string'
+          ? unpackVector(raw.m, D)
+          : Array.isArray(legacy) ? legacy as number[] : null;
+        if (!meaning || meaning.length !== D) continue; // ذكرى بأبعاد غريبة تُترك بصمت
         const id = Math.floor(saneNumber(raw.id, 0));
         kept.push({
           id: id > 0 ? id : kept.length + 1,
           said: typeof raw.said === 'string' ? raw.said : '',
-          tokens: Array.isArray(raw.tokens) ? raw.tokens.filter((t) => typeof t === 'string') : [],
+          // الرموز تُشتقّ من النصّ بالتجزئة نفسها: ما يُشتقّ لا يُخزَّن
+          tokens: tokenize(typeof raw.said === 'string' ? raw.said : ''),
           meaning: meaning.map((v) => saneNumber(v, 0)),
           intent: INTENTS.includes(raw.intent) ? raw.intent : 'UNKNOWN',
           subject: asText(raw.subject),
@@ -340,10 +377,11 @@ export class Hippocampus implements Lobe<HippocampusState> {
     const n = this.episodes.length;
     if (n === 0) return;
     const { min, span } = this.tickSpan();
-    let worst = 0;
+    let worst = -1;
     let worstValue = Infinity;
     for (let i = 0; i < n; i++) {
       const episode = this.episodes[i]!;
+      if (protectedMemory(episode)) continue;
       const recency = (episode.tick - min) / span;
       const value = Math.abs(episode.reward) + episode.replays + recency;
       if (value < worstValue) {
@@ -351,7 +389,18 @@ export class Hippocampus implements Lobe<HippocampusState> {
         worst = i;
       }
     }
+    /* ————— وإن كانت كلُّها محميّة —————
+     * فالأقدمُ من المحميّات يسقط. ولا يُمنَع الحفظ: دماغٌ يرفض أن يتعلّم
+     * لأن ذاكرته امتلأت بالمحميّ أسوأ من دماغٍ ينسى أقدم ما حُمي. */
+    if (worst < 0) worst = 0;
     this.removeAt(worst);
+  }
+
+  /** كم ذكرى لا تُنسى الآن — يُعرَض للأب كي لا تكون الحماية دعوى. */
+  get protectedCount(): number {
+    let count = 0;
+    for (const episode of this.episodes) if (protectedMemory(episode)) count++;
+    return count;
   }
 
   private removeAt(index: number): void {
@@ -376,6 +425,30 @@ export class Hippocampus implements Lobe<HippocampusState> {
     // ذكريات كلها في نبضة واحدة: المدى صفر، والقسمة عليه تُنتج NaN فيصير الترتيب اعتباطياً
     return { min, span: Math.max(1, max - min) };
   }
+}
+
+/* ————— الطبقة التي لا تُنسى —————
+ *
+ * كان النسيان يُقيَّم بـ«المكافأة + الإعادات + الحداثة»، ويُنسى الأدنى. وذاك
+ * **بعينه** ما يحذف النادرَ المهمّ: درسٌ علّمه أبوه مرّةً واحدة، لم يُسأل عنه
+ * فلم يُحكَم عليه، ولم يُعَد في نومٍ لأنه لم يُذكر — فقيمتُه أدنى ما في
+ * الحُصين، وهو قد يكون اسم أمّه.
+ *
+ * والحمايةُ ليست بالقيمة بل بالنوع، وشرطاها ظاهران لا مُقدَّران:
+ *
+ *  ١) **ما حكم عليه الأب**: كلُّ ذكرى لها مكافأة — مدحاً أو تصحيحاً — لا
+ *     تُنسى. لأن حكمه هو الإشارة الوحيدة التي لا يملكها زبير من نفسه، وحذفُ
+ *     ما حُكم عليه حذفٌ للتعليم نفسه.
+ *  ٢) **وما رسخ بالتثبيت**: ما أُعيد في النوم مراراً صار معرفةً لا حادثة،
+ *     وهذه هي «الترقية إلى طبقةٍ لا تُنسى» بالتكرار.
+ */
+
+/** كم مرّةَ إعادةٍ في النوم تُرقّي الذكرى فوق النسيان. */
+const CONSOLIDATED = 3;
+
+function protectedMemory(episode: Episode): boolean {
+  if (episode.reward !== 0) return true;
+  return episode.replays >= CONSOLIDATED;
 }
 
 /** حُصين فارغ ليس خطأً بل حال الوليد: يُعاد استدعاء خالٍ لا استثناء. */

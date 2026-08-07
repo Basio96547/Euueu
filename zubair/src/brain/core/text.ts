@@ -12,7 +12,7 @@
  */
 
 import { Embedding, type EmbeddingState } from './net.js';
-import { Rng, norm, scaleInto, vec, type Vec } from './tensor.js';
+import { Rng, checkedVec, norm, scaleInto, vec, type Vec } from './tensor.js';
 import { DIMS, type Lobe } from './types.js';
 
 /* ————— التطبيع ————— */
@@ -548,25 +548,43 @@ export class Lexicon implements Lobe<LexiconState> {
       const embedding: Partial<EmbeddingState> | null | undefined = raw.embedding;
       if (!Array.isArray(words) || !Array.isArray(counts)) return;
       if (embedding === null || embedding === undefined || typeof embedding !== 'object') return;
-      if (embedding.dim !== DIMS.word || !Array.isArray(embedding.rows)) return;
-      // مفردات وتمثيلات غير متساوية: لا نعرف أي كلمة لأي صفّ، فالتجاهل أسلم
-      if (embedding.rows.length !== words.length) return;
+      if (embedding.dim !== DIMS.word) return;
       if (!words.every((word) => typeof word === 'string')) return;
 
-      const rows: number[][] = [];
-      for (const row of embedding.rows) {
-        if (!Array.isArray(row) || row.length !== DIMS.word) return;
-        // قيمة غير عددية تصير NaN في Float32Array، وNaN واحد في تمثيل كلمة
-        // يُفسد كل حساب يمرّ عليه لاحقاً بلا أثر ظاهر
-        rows.push(row.map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : 0)));
+      /* التمثيلات: مضغوطةً كتلةً واحدة، أو صفوفاً في الأدمغة المحفوظة قبل
+       * الضغط. والفحص **بعد** الفكّ لا قبله — وNaN واحد في تمثيل كلمة يُفسد
+       * كل حساب يمرّ عليه بلا أثر ظاهر. */
+      let vectors: Float32Array | null = null;
+      if (typeof embedding.packed === 'string') {
+        /* وعددُ الصفوف يُفحَص صراحةً: الفكُّ يقتطع ما زاد بلا شكوى، فبلا هذا
+         * الفحص يُقرأ معجمُ ثلاث كلماتٍ على أنه معجمُ كلمتين — وتُنسَب
+         * تمثيلاتٌ إلى كلماتٍ ليست لها. */
+        if (embedding.count !== words.length) return;
+        vectors = checkedVec(embedding.packed, words.length * DIMS.word);
+      } else if (Array.isArray(embedding.rows)) {
+        // مفردات وتمثيلات غير متساوية: لا نعرف أي كلمة لأي صفّ، فالتجاهل أسلم
+        if (embedding.rows.length !== words.length) return;
+        const flat = new Float32Array(words.length * DIMS.word);
+        for (let i = 0; i < embedding.rows.length; i++) {
+          const row: unknown = embedding.rows[i];
+          if (!Array.isArray(row) || row.length !== DIMS.word) return;
+          /* والصفُّ القديم يُنظَّف ولا يُردّ: عددٌ واحد NaN في ملفٍّ قديم لا
+           * يجوز أن يُفقد المعجم كلَّه، وتصفيرُ خانةٍ أهون من فقدان الكلمات.
+           * أما الكتلة المضغوطة فتُردّ كلُّها — لأن عطبها عطبُ ترميزٍ لا
+           * عطبُ قيمة، ولا يُوثَق بجزءٍ منها. */
+          for (let j = 0; j < DIMS.word; j++) {
+            const v: unknown = row[j];
+            flat[i * DIMS.word + j] = typeof v === 'number' && Number.isFinite(v) ? v : 0;
+          }
+        }
+        vectors = flat;
       }
+      if (!vectors) return;
 
-      const savedMoments = Array.isArray(embedding.moments) ? embedding.moments : [];
-      const moments = rows.map((_, i) => {
-        const m = savedMoments[i];
-        if (!Array.isArray(m) || m.length !== DIMS.word) return new Array<number>(DIMS.word).fill(0);
-        return m.map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : 0));
-      });
+      const rows: number[][] = [];
+      for (let i = 0; i < words.length; i++) {
+        rows.push(Array.from(vectors.subarray(i * DIMS.word, (i + 1) * DIMS.word)));
+      }
 
       const safeCounts = rows.map((_, i) => {
         const c = counts[i];
@@ -574,7 +592,7 @@ export class Lexicon implements Lobe<LexiconState> {
       });
 
       // لا تبديل قبل أن يجتاز كل شيء الفحص: هنا فقط تُمسّ الحالة
-      this.embedding.load({ dim: DIMS.word, rows, moments });
+      this.embedding.load({ dim: DIMS.word, rows });
       this.wordList = words.slice();
       this.counts = safeCounts;
       this.index = new Map<string, number>();

@@ -218,6 +218,7 @@ export class Zubair {
       factsRead: fromReading,
       objectsSeen: this.inferotemporal.knownCount,
       episodes: this.hippocampus.count,
+      episodesProtected: this.hippocampus.protectedCount,
       questionsAsked: this.questionsAsked,
       recentAccuracy: recent,
       previousAccuracy: previous,

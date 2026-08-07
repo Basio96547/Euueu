@@ -392,7 +392,8 @@ test('الحُصين: الحفظ والاستعادة يُبقيان الذاك�
   // ذكرى واحدة بأبعاد غريبة تُترك وحدها لا تُسقط البقية
   const mixed = new Hippocampus(8);
   const half = JSON.parse(JSON.stringify(source.save())) as HippocampusState;
-  half.episodes[1] = { ...half.episodes[1]!, meaning: [1, 2, 3] };
+  // معنىً لا يُفكّ: ذكرى واحدة تسقط ولا تُسقط البقية
+  half.episodes[1] = { ...half.episodes[1]!, m: '@@@' };
   mixed.load(half);
   assert.equal(mixed.count, 4, 'الذكرى المعطوبة وحدها تُتجاهل');
   assert.ok(!mixed.all.some((e) => e.id === source.all[1]!.id));
@@ -624,4 +625,110 @@ test('المهاد: الحفظ والاستعادة يُبقيان ما تعلّ
     const survived = mean(revived.gate(percept, intero, port).weights);
     assert.ok(Math.abs(survived - learned) < 1e-6, 'الحالة المعطوبة لا يجوز أن تُغيّر البوابة ولا أن ترمي');
   }
+});
+
+/** معنىً مصطنعٌ ثابتٌ بطول العقد — لا عشوائيةَ فيه فتتكرّر النتيجة. */
+function meaningOf(n: number): number[] {
+  return Array.from({ length: DIMS.meaning }, (_, i) => Math.sin(n + i) * 0.1);
+}
+
+/* ————— الطبقة التي لا تُنسى —————
+ *
+ * كان النسيان يُقيَّم بـ«المكافأة + الإعادات + الحداثة» ويُنسى الأدنى، وذاك
+ * بعينه ما يحذف **النادرَ المهمّ**: درسٌ قيل مرّةً، لم يُسأل عنه فلم يُحكَم
+ * عليه، ولم يُعَد في نومٍ لأنه لم يُذكر — فقيمتُه أدنى ما في الحُصين، وهو قد
+ * يكون اسم أمّه.
+ */
+
+test('ما حكم عليه الأب لا يُنسى ولو أغرقته آلافُ الذكريات', () => {
+  const hippocampus = new Hippocampus(10);
+  hippocampus.store({
+    said: 'أمي اسمها فاطمة', tokens: [], meaning: meaningOf(1), intent: 'TEACH_FACT',
+    subject: 'امي', object: 'فاطمه', relation: 'جنس', replied: null, reward: 1, tick: 1,
+  });
+  for (let i = 0; i < 40; i++) {
+    hippocampus.store({
+      said: `كلام ${i}`, tokens: [], meaning: meaningOf(i + 10), intent: 'CHITCHAT',
+      subject: null, object: null, relation: null, replied: null, reward: 0, tick: 10 + i,
+    });
+  }
+  assert.equal(hippocampus.count, 10);
+  assert.ok(
+    hippocampus.all.some((e) => e.said.includes('فاطمة')),
+    'نُسي أوّلُ ما حُكم عليه — وهو النادرُ المهمّ بعينه',
+  );
+  assert.equal(hippocampus.protectedCount, 1);
+});
+
+test('وما رسخ بالتثبيت يُرقّى فوق النسيان', () => {
+  const hippocampus = new Hippocampus(6);
+  const rare = hippocampus.store({
+    said: 'الزقفوط نبات', tokens: [], meaning: meaningOf(2), intent: 'TEACH_FACT',
+    subject: 'زقفوط', object: 'نبات', relation: 'جنس', replied: null, reward: 0, tick: 1,
+  });
+  // ثلاث إعاداتٍ في النوم تُصيّرها معرفةً لا حادثة
+  rare.replays = 3;
+  for (let i = 0; i < 20; i++) {
+    hippocampus.store({
+      said: `كلام ${i}`, tokens: [], meaning: meaningOf(i + 30), intent: 'CHITCHAT',
+      subject: null, object: null, relation: null, replied: null, reward: 0, tick: 5 + i,
+    });
+  }
+  assert.ok(hippocampus.all.some((e) => e.said.includes('الزقفوط')));
+});
+
+test('ولا يمتنع عن التعلّم لو امتلأ بالمحميّ', () => {
+  const hippocampus = new Hippocampus(4);
+  for (let i = 0; i < 12; i++) {
+    hippocampus.store({
+      said: `درس ${i}`, tokens: [], meaning: meaningOf(i), intent: 'TEACH_FACT',
+      subject: null, object: null, relation: null, replied: null, reward: 1, tick: i,
+    });
+  }
+  /* دماغٌ يرفض أن يتعلّم لأن ذاكرته امتلأت بالمحميّ أسوأ من دماغٍ ينسى أقدم
+   * ما حُمي: فالأقدم يسقط، ويبقى الأحدث. */
+  assert.equal(hippocampus.count, 4);
+  assert.ok(hippocampus.all.some((e) => e.said === 'درس 11'));
+});
+
+/* ————— حجمُ ما يُكتب على الجهاز —————
+ *
+ * التطبيق يحفظ الدماغ كاملاً **بعد كل درس**، لأن جوالاً يُقفل فجأةً لا ينتظر
+ * إذناً. فحجمُ الملف كلفةٌ تُدفع في كل جملة لا مرّةً عند الإغلاق. وكانت
+ * الأوزان تُكتب نصّاً عشرياً كامل الدقّة: عشرون حرفاً لعددٍ هو أربعة بايتات.
+ */
+
+test('الأوزان تُكتب بايتاتٍ لا نصّاً عشرياً', () => {
+  const hippocampus = new Hippocampus(50);
+  for (let i = 0; i < 50; i++) {
+    hippocampus.store({
+      said: `الزقفوط${i} حيوان`, tokens: [], meaning: meaningOf(i), intent: 'TEACH_FACT',
+      subject: `زقفوط${i}`, object: 'حيوان', relation: 'جنس', replied: null, reward: 0, tick: i,
+    });
+  }
+  const bytes = JSON.stringify(hippocampus.save()).length / 50;
+  /* قِيس قبل الضغط: ١٣٠٠ بايتاً للذكرى — أي أن سعة ١٦٣٨٤ تعني عشرين ميغابايت */
+  assert.ok(bytes < 700, `الذكرى ${Math.round(bytes)} بايتاً على الجهاز`);
+});
+
+test('والدماغ المحفوظ بالصورة القديمة يُقرأ ولا يُفقَد', () => {
+  const source = new Hippocampus(8);
+  source.store({
+    said: 'القطة حيوان', tokens: ['القطه', 'حيوان'], meaning: meaningOf(3), intent: 'TEACH_FACT',
+    subject: 'قطه', object: 'حيوان', relation: 'جنس', replied: null, reward: 0, tick: 1,
+  });
+  /* صورةُ ما قبل الضغط: مصفوفةُ أرقامٍ باسم `meaning` لا حروفٌ باسم `m` */
+  const legacy = JSON.parse(JSON.stringify(source.save())) as unknown as {
+    episodes: Array<Record<string, unknown>>; capacity: number; meaningDim: number; nextId: number;
+  };
+  legacy.episodes[0] = {
+    ...legacy.episodes[0]!,
+    m: undefined,
+    meaning: Array.from(meaningOf(3)),
+    tokens: ['القطه', 'حيوان'],
+  };
+  const revived = new Hippocampus(8);
+  revived.load(legacy as never);
+  assert.equal(revived.count, 1, 'ضاع دماغٌ قديم لأن صيغة الحفظ تغيّرت');
+  assert.equal(revived.all[0]?.said, 'القطة حيوان');
 });

@@ -11,6 +11,7 @@
  */
 
 import { Dense, type DenseState } from '../core/net.js';
+import { checkedVec } from '../core/tensor.js';
 import { LifLayer, type LifState } from '../core/spiking.js';
 import { SelfAttention, type AttentionState } from '../core/attention.js';
 import { Rng, clamp, vec, type Vec } from '../core/tensor.js';
@@ -117,11 +118,7 @@ function unitValue(x: number): number {
 /** أطوال مصفوفات الحالة المحفوظة تُتحقَّق قبل تمريرها لـ `Dense.load`، لأن `set`
  *  على مصفوفة أطول من الهدف ترمي، والرمي هنا يعني فقدان الدماغ. */
 function finiteArray(value: unknown, length: number): boolean {
-  if (!Array.isArray(value)) return false;
-  const items: readonly unknown[] = value;
-  if (items.length !== length) return false;
-  for (let i = 0; i < length; i++) if (!Number.isFinite(items[i])) return false;
-  return true;
+  return checkedVec(value, length) !== null;
 }
 
 export class Thalamus implements Lobe<ThalamusState> {
@@ -391,8 +388,8 @@ export class Thalamus implements Lobe<ThalamusState> {
       // كل مصفوفة تُفحَص طولاً وقيماً: وزن واحد NaN يُغلق البوابة على كل كلمة إلى الأبد
       if (!finiteArray(gate.w, GATE_IN)) return;
       if (!finiteArray(gate.b, 1)) return;
-      if (!finiteArray(gate.mW, GATE_IN) || !finiteArray(gate.vW, GATE_IN)) return;
-      if (!finiteArray(gate.mB, 1) || !finiteArray(gate.vB, 1)) return;
+      /* والعزوم لم تعد تُحفظ: سقالةُ تعلّمٍ لا معرفة. وفحصُها كان يردّ كلَّ
+       * حالةٍ سليمة بعد أن كفّت عن الكتابة. */
       if (!Number.isFinite(gate.steps)) return;
       this.net.load(gate);
       // الخلايا تُستعاد بعد البوابة وباستقلال عنها: جهدٌ محفوظ عطب لا يُسقط
