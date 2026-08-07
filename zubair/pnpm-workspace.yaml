@@ -1,2 +1,21 @@
+# ————— إعدادات pnpm للمشروع —————
+#
+# `onlyBuiltDependencies` كان مكتوباً في حقل `pnpm` داخل `package.json`، وpnpm
+# الأحدث **لم يعد يقرأه هناك** فيتجاهله بتحذير، ثم يرفض تشغيل سكربت بناء
+# esbuild، ثم يفشل `pnpm dev` بشيفرة خروج ١:
+#
+#   WARN  The "pnpm" field in package.json is no longer read by pnpm
+#   ERR_PNPM_IGNORED_BUILDS  Ignored build scripts: esbuild@…
+#
+# وقع هذا على جهاز الأب بنسخةٍ أحدث من التي بُني بها المشروع. وموضعُه الصحيح
+# هذا الملفّ — وتقرؤه نسخةُ ١٠ والأحدث معاً، فلا ينكسر على أحدهما.
+#
+# ولماذا esbuild وحده: vite يستعمله للبناء، ويحتاج سكربت تنصيبٍ يضع الملفّ
+# التنفيذي الموافق لنظامك. وما عداه من الحزم لا يُسمح له بتشغيل شيء عند
+# التنصيب — وهذا احترازٌ مقصود لا تقصير.
+
 packages:
   - '.'
+
+onlyBuiltDependencies:
+  - esbuild
