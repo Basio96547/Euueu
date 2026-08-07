@@ -42,6 +42,9 @@ const CONTRADICT_FACTOR = 0.4;
 /** دون هذه الثقة لا تبقى الحقيقة في دماغه: خير له أن يجهل من أن يعرف خطأ. */
 const DOUBT_FLOOR = 0.2;
 
+/** فرقُ ثقةٍ دونه يُعدّ النزاع قائماً. فوقه استقرّ الأب على قولٍ وانقضى. */
+const CONTEST_LIVE = 0.15;
+
 /**
  * أقلّ تشابه يُبيح نقل محمول إلى موضوع لم يُعلَّم قط.
  *
@@ -442,6 +445,34 @@ export class Parietal implements Lobe<ParietalState> {
       if (this.records.has(recordKey(s, relation))) return relation;
     }
     return null;
+  }
+
+  /**
+   * أثمّة نزاعٌ **قائم** على هذا الموضوع في هذه الخزانة؟
+   *
+   * تقرؤها المراجعة: المتنازَع فيه لا يُجزَم به، لأن الأب قال فيه قولين ولم
+   * يستقرّ. لكنّ **وجود** محمولٍ بديل ليس نزاعاً قائماً: من قال «فاكهة» مرّةً
+   * ثم «خضار» ثلاثاً فقد استقرّ، والبديل أثرٌ لا منازِع.
+   *
+   * وقد قِيس الفرق: بعدّ كل بديلٍ نزاعاً سقط بابُ «النفي والتصحيح» من ٨٩٪ إلى
+   * ٥٦٪ — صار زبير يُقرّ بجهله بما أصرّ عليه أبوه ثلاث مرات. فالنزاع قائمٌ
+   * حين يتقارب الاثنان، ومنقضٍ حين يفترقان.
+   */
+  isContested(subject: string, relation: RelationKind = 'جنس'): boolean {
+    return this.disputeOf(subject, relation) === 'قائم';
+  }
+
+  /**
+   * حالُ النزاع على هذا الموضوع: لا نزاع، أو نزاعٌ انقضى، أو نزاعٌ قائم.
+   *
+   * والثلاثة تختلف في الحكم لا في الدرجة: ما لم يُنازَع قطّ يُقال جزماً، وما
+   * نُوزع ثم استقرّ يُقال ظنّاً — لأن أباه غيّر رأيه فيه مرّة، وقد يغيّره
+   * ثانية — وما النزاع فيه قائمٌ لا يُقال.
+   */
+  disputeOf(subject: string, relation: RelationKind = 'جنس'): 'لا نزاع' | 'انقضى' | 'قائم' {
+    const record = this.records.get(recordKey(factKey(subject), relation));
+    if (!record?.alt) return 'لا نزاع';
+    return record.main.confidence - record.alt.confidence < CONTEST_LIVE ? 'قائم' : 'انقضى';
   }
 
   contradict(subject: string, wrongObject: string, relation?: RelationKind): void {

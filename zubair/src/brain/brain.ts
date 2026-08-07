@@ -38,6 +38,8 @@ import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
 import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
 import { Syntax, type RelationKind } from './lobes/syntax.js';
 import { ASKS_KNOWLEDGE, instinctMaySpeak, rowOf, typeFits, voidIsFinal } from './core/ownership.js';
+import { rankOf, review, type Claim, type Verdict } from './core/review.js';
+import { Arbiter } from './lobes/arbiter.js';
 import {
   transduceAudio, transduceBody, transduceVision,
   type RawAudio, type RawBody, type RawFrame, type RawTouch,
@@ -117,6 +119,7 @@ export class Zubair {
   private readonly amygdala: Amygdala;
   private readonly hypothalamus = new Hypothalamus();
   private readonly insula = new Insula();
+  private readonly arbiter = new Arbiter();
   private readonly cingulate = new Cingulate();
   private readonly emotion = new Emotion();
   private readonly basalGanglia: BasalGanglia;
@@ -359,6 +362,28 @@ export class Zubair {
   }
 
   /** لهجته كما تعلّمها منك: شامية أم فصحى. تُعرض في سجل نموّه. */
+  /**
+   * سجلّ المراجعات: ماذا فعل الحَكَم، وماذا فعلتَ أنت بعده.
+   *
+   * وهذا هو البند الذي يُقرأ بعد شهر: قاعدةٌ خفّضت جواباً إلى ظنٍّ ثم مدحتَه
+   * قاعدةٌ متشدّدة، وقاعدةٌ أقرّت جواباً ثم صحّحتَه قاعدةٌ متساهلة. فتُعدَّل
+   * — وربما تُعلَّم بدل أن تُكتب.
+   */
+  get arbitration(): {
+    summaryAr: string;
+    rows: Array<{ action: string; times: number; praised: number; corrected: number }>;
+    recent: Array<{ request: string; owner: string; rank: string; action: string; why: string; said: string; fatherSaid: string | null }>;
+  } {
+    return {
+      summaryAr: this.arbiter.summaryAr,
+      rows: this.arbiter.tally(),
+      recent: this.arbiter.entries.slice(-8).reverse().map((e) => ({
+        request: e.request, owner: e.owner, rank: e.rank,
+        action: e.action, why: e.why, said: e.said, fatherSaid: e.fatherSaid,
+      })),
+    };
+  }
+
   get dialectAr(): string {
     return this.broca.dialectAr;
   }
@@ -370,7 +395,7 @@ export class Zubair {
       this.parietal, this.amygdala, this.hypothalamus, this.insula, this.cingulate,
       this.emotion, this.basalGanglia, this.prefrontal, this.cerebellum, this.broca,
       this.visualCortex, this.auditoryCortex, this.somatosensory, this.inferotemporal,
-      this.syntax,
+      this.syntax, this.arbiter,
     ];
     return all.map((lobe) => ({ name: lobe.name, ar: lobe.ar, role: lobe.role }));
   }
@@ -768,11 +793,15 @@ export class Zubair {
      * لم يتطابقا رُدّ الجواب. رخيصة، ولا تُخطئ، وتصطاد ما أفلت من الملكية. */
     const candidate = seenFact ?? knownFact;
     let fact = candidate;
+    /* أطابق وسمُ الجواب وسمَ الطلب؟ يُحفَظ لتقرأه المراجعة، فلا تُعيد الحساب
+     * ولا تختلف عنه — سلطتان تحسبان الشيء نفسه تفترقان يوماً. */
+    let kindFits = true;
     if (candidate && parse.asks !== null) {
       // ووسمُ الجواب هو خزانتُه: ما خرج من خزانة الصفات صفةٌ وإن كان لفظُه اسماً
       const from = seenFact ? 'جنس' : wanted;
       const kind = this.syntax.answerKind(candidate.object, from);
-      if (!typeFits(request, kind)) {
+      kindFits = typeFits(request, kind);
+      if (!kindFits) {
         trace.push({
           lobe: this.syntax.name, ar: this.syntax.ar,
           note: `«${candidate.object}» وسمُه «${kind}» والطلب «${request}» — فلا يُقال`,
@@ -965,6 +994,47 @@ export class Zubair {
         // ميل الهدف: يُرجّح ما يوافقه ولا يمنع ما يخالفه
         (strategy) => (GOAL_FITS[goal].has(strategy) ? GOAL_LEAN : 0)));
 
+    /* ————— ١٢٫٥ المراجعة: مرورٌ واحد، إعادةٌ واحدة، بلا تعاود —————
+     *
+     * تجري **بعد** اختيار الاستجابة لا قبله، لأنها تراجع دعوىً قائمة لا تختار
+     * بين دعاوى. ولها ثلاث سلطات لا رابع: تُعيد إلى المالك، أو تُخفض إلى ظنّ،
+     * أو تُسقط إلى «لا أعرف». ولا تُستدعى على الملتبس — ذاك جوابه سؤال.
+     *
+     * والإعادة الواحدة معناها: إن ردّت الجوابَ إلى مالكه، سُئل المالك مرّةً
+     * ثانية بخزانةٍ أخرى — خزانةِ الجنس، وهي أعمّ ما عنده. فإن عاد بغير نوع
+     * الطلب ثانيةً سقط. ولا ثالثة: التعاود يجعل المراجعة حلقةً لا حَكَماً. */
+    const asserting = decision.strategy === 'ANSWER_MEMORY' || decision.strategy === 'ANSWER_GENERAL';
+    const claim: Claim = {
+      fact: decision.strategy === 'ANSWER_GENERAL' ? (generalized?.fact ?? null) : fact,
+      generalized: decision.strategy === 'ANSWER_GENERAL',
+      dispute: fact === null ? 'لا نزاع' : this.parietal.disputeOf(fact.subject, wanted ?? 'جنس'),
+      seen: seenFact !== null && fact === seenFact,
+    };
+    const rank = rankOf(claim);
+    let verdict: Verdict = { action: 'أُقرّت', why: 'لا دعوى تُراجَع' };
+    let hedge = false;
+    if (asserting && request !== 'مُلتبس') {
+      verdict = review({ request, rank, claim, typeFits: kindFits, isRedo: false });
+      if (verdict.action === 'أُعيدت') {
+        /* الإعادة الوحيدة: يُسأل المالك ثانيةً في أعمّ خزائنه */
+        const again = topic ? this.parietal.lookup(topic, 'جنس') : null;
+        const againFits = again !== null
+          && typeFits(request, this.syntax.answerKind(again.object, 'جنس'));
+        verdict = review({
+          request, rank: rankOf({ ...claim, fact: again }),
+          claim: { ...claim, fact: again }, typeFits: againFits, isRedo: true,
+        });
+        fact = verdict.action === 'أُسقطت' ? null : again;
+      }
+      if (verdict.action === 'أُسقطت') { fact = null; generalized = null; }
+      if (verdict.action === 'أُخفضت') hedge = true;
+      trace.push({
+        lobe: this.arbiter.name, ar: this.arbiter.ar,
+        note: `رتبةُ ما يقوله «${rank}» — ${verdict.action}: ${verdict.why}`,
+        where: 'none', ms: 0,
+      });
+    }
+
     /* ١٣. بروكا: الكلام */
     const speech = timed(this.broca, 'صاغ جملته', 'cpu', () => this.broca.speak({
       strategy: decision.strategy, percept, understanding, recall, fact, generalized,
@@ -985,6 +1055,8 @@ export class Zubair {
       request,
       selfStateAr: request === 'حال' ? this.insula.howAmI(intero, this.broca.speaksShami) : null,
       ownerVoid,
+      /* والمراجعة تبلّغ بروكا كيف يُقال ما يُقال، لا ماذا يُقال */
+      hedge,
     }));
 
     /* ١٤. المخيخ: الإتقان ومنع التكرار */
@@ -1022,6 +1094,17 @@ export class Zubair {
       if (this.askedWords.length > 64) this.askedWords = this.askedWords.slice(-64);
     }
 
+    /* ————— السجلّ —————
+     * يُكتب كلُّ ما يلزم لقراءة القاعدة بعد شهر: الطلب، ومالكه، والرتبة، وماذا
+     * فعلت المراجعة — ثم يُلحَق به حكمُ الأب في `judge`. وبلا الحكم الملحَق
+     * يبقى السجلّ سرداً لا يُتعلَّم منه شيء. */
+    if (asserting && request !== 'مُلتبس') {
+      this.arbiter.record({
+        tick: this.ticks, request, owner: row.ownerAr, rank,
+        action: verdict.action, why: verdict.why, said: refined.slice(0, 80),
+      });
+    }
+
     this.pending = {
       tick: this.ticks, said: percept.raw, replied: refined,
       meaning: understanding.meaning.slice(), state: state.slice(),
@@ -1042,6 +1125,7 @@ export class Zubair {
       text: refined, kind: speech.kind, strategy: decision.strategy,
       intent: understanding.intent,
       confidence: clamp(1 - conflict.level, 0, 1),
+      rank: asserting ? rank : 'ضعيف',
       usedEpisodes: recall.episodes.map((e) => e.id),
       trace,
     };
@@ -1081,6 +1165,10 @@ export class Zubair {
     const learned: string[] = [];
 
     this.hippocampus.annotate(pending.tick, pending.replied, reward);
+    /* وحكمُك يُلحَق بآخر مراجعة. وهذا نصف قيمة السجلّ: قاعدةٌ خفّضت جواباً ثم
+     * مدحتَه قاعدةٌ متشدّدة، وقاعدةٌ أقرّت جواباً ثم صحّحتَه قاعدةٌ متساهلة —
+     * ولا يُعرَف ذلك إلا بجمع الحكمين في سطر. */
+    this.arbiter.fatherJudged(feedback.verdict);
 
     /* تصحيح التسمية البصرية: أخطر من تصحيح الكلام لأنه يُعدّل ما يراه لا ما
      * يحفظه. ويمرّ على نفس منطق الحقائق: لا يُمحى النموذج من مرة واحدة. */
@@ -1267,6 +1355,7 @@ export class Zubair {
         auditoryCortex: this.auditoryCortex.save(),
         somatosensory: this.somatosensory.save(),
         inferotemporal: this.inferotemporal.save(),
+        arbiter: this.arbiter.save(),
       },
     };
   }
@@ -1313,6 +1402,7 @@ export class Zubair {
     this.auditoryCortex.load(lobes['auditoryCortex'] as never);
     this.somatosensory.load(lobes['somatosensory'] as never);
     this.inferotemporal.load(lobes['inferotemporal'] as never);
+    this.arbiter.load(lobes['arbiter'] as never);
   }
 
   async save(): Promise<void> {

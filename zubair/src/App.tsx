@@ -201,6 +201,7 @@ export default function App() {
           computeDetails={compute.details}
           storageAr={storageAr}
           dialectAr={child.dialectAr}
+          arbitration={child.arbitration}
           busy={busy}
           lastSleep={lastSleep}
           onSleep={sleep}

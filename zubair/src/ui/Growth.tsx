@@ -4,6 +4,70 @@ import type { GrowthMetrics } from '../brain/core/types.js';
 import type { Feelings } from '../brain/lobes/emotion.js';
 import { summarize, WINDOW } from '../brain/core/growth.js';
 
+/* ————— سجلّ المراجعة —————
+ *
+ * أنفع بطاقةٍ على المدى الطويل، وأقلّها إثارةً اليوم. القواعد التي تحكم كلام
+ * زبير مكتوبةٌ بيدٍ — بيدي — ولا سبيل إلى معرفة إن كانت صائبة إلا بجمع شيئين
+ * في سطر: **ماذا قرّرت القاعدة، وماذا فعلتَ أنت بعدها**.
+ *
+ * فإن رأيتَ «أُخفضت ١٢ (وافقتَه ١٠ من ١٢)» فالقاعدة متشدّدة: تجعله يقول
+ * «بظنّي» في مواضع أنت راضٍ عنها. وإن رأيتَ «أُقرّت ٢٠ (وافقتَه ٨ من ٢٠)»
+ * فهي متساهلة. وفي الحالين يُعدَّل الرقم لا يُترك — وربما يُتعلَّم بدل أن
+ * يُكتب.
+ */
+function Arbitration(props: {
+  log: {
+    summaryAr: string;
+    rows: Array<{ action: string; times: number; praised: number; corrected: number }>;
+    recent: Array<{ request: string; owner: string; rank: string; action: string; why: string; said: string; fatherSaid: string | null }>;
+  };
+}) {
+  const { rows, recent } = props.log;
+  return (
+    <div className="card">
+      <h2>سجلّ المراجعة</h2>
+      <p>
+        قبل أن ينطق، تُراجَع جملتُه مرّةً واحدة: تُقَرّ، أو تُردّ إلى الفصّ المالك، أو
+        تُخفَّض إلى «بظنّي»، أو تُسقَط إلى «لا أعرف». وهذا ما جرى — وإلى جانبه حكمُك أنت.
+      </p>
+      {rows.length === 0
+        ? <p className="hint">لم تجرِ مراجعةٌ بعد. تظهر هنا بعد أن يبدأ يُجيب.</p>
+        : (
+          <ul className="moods">
+            {rows.map((r) => {
+              const judged = r.praised + r.corrected;
+              return (
+                <li key={r.action}>
+                  <span>{r.action}</span>
+                  <div className="bar"><i style={{ width: `${judged === 0 ? 0 : (r.praised / judged) * 100}%` }} /></div>
+                  <em>{judged === 0 ? `${r.times}` : `${r.praised}/${judged}`}</em>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      {recent.length > 0 && (
+        <details className="trace">
+          <summary>آخر {recent.length} مراجعة</summary>
+          <ul className="steps">
+            {recent.map((e, i) => (
+              <li key={i}>
+                <b>{e.action}</b>
+                <span>{e.why} — «{e.said}»</span>
+                <em>{e.fatherSaid === 'praise' ? 'أحسنت' : e.fatherSaid === 'correct' ? 'خطأ' : '—'}</em>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <p className="hint">
+        الشريط يقيس نسبة «أحسنت» من أحكامك على كل فعل. فعلٌ تُصحّحه كثيراً قاعدتُه خطأ،
+        وهذا موضع تعديلها.
+      </p>
+    </div>
+  );
+}
+
 export function Growth(props: {
   metrics: GrowthMetrics;
   mood: Feelings;
@@ -12,6 +76,11 @@ export function Growth(props: {
   computeDetails: string;
   storageAr: string;
   dialectAr: string;
+  arbitration: {
+    summaryAr: string;
+    rows: Array<{ action: string; times: number; praised: number; corrected: number }>;
+    recent: Array<{ request: string; owner: string; rank: string; action: string; why: string; said: string; fatherSaid: string | null }>;
+  };
   busy: boolean;
   lastSleep: string | null;
   onSleep: () => void;
@@ -67,6 +136,8 @@ export function Growth(props: {
       )}
 
       <Mood mood={props.mood} list={props.moodList} />
+
+      <Arbitration log={props.arbitration} />
 
       <div className="card">
         <h2>هل يتعلّم فعلاً؟</h2>

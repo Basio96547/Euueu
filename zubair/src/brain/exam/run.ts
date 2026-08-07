@@ -20,6 +20,7 @@ import { Zubair } from '../brain.js';
 import { memoryStorage } from '../core/persist.js';
 import { normalizeArabic } from '../core/text.js';
 import type { Strategy, TickOutput } from '../core/types.js';
+import { RANK_ORDER, type Rank } from '../core/review.js';
 import { EXAM, SECTIONS, type ExamItem, type Section } from './paper.js';
 
 /** البذور الثابتة: عدّةُ أدمغةٍ لا واحد، فلا تُقاس الورقة بحظّ بذرةٍ واحدة. */
@@ -46,6 +47,8 @@ export interface ItemResult {
   reason: string;
   /** أجزم بجملته؟ به يدخل جدول المعايرة */
   asserted: boolean;
+  /** رتبةُ ما قاله — المعايرة الحقيقية تجري عليها لا على الرقم */
+  rank: Rank;
   why: string;
 }
 
@@ -87,6 +90,19 @@ export interface Calibration {
   separation: number;
 }
 
+/* ————— معايرة الرتب —————
+ *
+ * وهذه المعايرة التي تُعتدّ: الرقم لا يفصل صوابه عن خطئه، فقياسُ معايرته
+ * قياسُ شيءٍ لا يقيس شيئاً. والرتبة تدّعي دعوىً واحدةً قابلةً للتكذيب:
+ * **أن ما يقوله يقيناً أصوبُ ممّا يقوله ظنّاً**. فإن لم تصدق، فالرتبة كالرقم.
+ */
+export interface RankScore {
+  rank: Rank;
+  times: number;
+  correct: number;
+  rate: number;
+}
+
 export interface ExamReport {
   seeds: readonly number[];
   passed: number;
@@ -96,6 +112,10 @@ export interface ExamReport {
   calibration: Calibration;
   /** أيعاقب هذا المقياس الامتناع؟ بلا هذا يصير كلُّ تشدّدٍ «تحسّناً» */
   silence: SilenceAudit;
+  /** ورتبُه: أهي مرتَّبةٌ فعلاً — أعلاها أصوبُ من أدناها؟ */
+  ranks: readonly RankScore[];
+  /** أمرتَّبةٌ صعوداً بلا انكسار؟ هذه دعوى الرتبة كلُّها */
+  ranksOrdered: boolean;
   results: readonly ItemResult[];
   ms: number;
 }
@@ -195,7 +215,7 @@ async function runItem(item: ExamItem, seed: number): Promise<ItemResult> {
   return {
     id: item.id, section: item.section, seed, ask: item.ask,
     said: out.text, strategy: out.strategy, confidence: out.confidence,
-    passed, reason, asserted: out.kind === 'answer', why: item.why,
+    passed, reason, asserted: out.kind === 'answer', rank: out.rank, why: item.why,
   };
 }
 
@@ -254,6 +274,26 @@ function calibrate(results: readonly ItemResult[]): Calibration {
   };
 }
 
+function scoreRanks(results: readonly ItemResult[]): { ranks: RankScore[]; ranksOrdered: boolean } {
+  const by = new Map<Rank, { times: number; correct: number }>();
+  for (const r of results) {
+    if (!r.asserted) continue;
+    const row = by.get(r.rank) ?? { times: 0, correct: 0 };
+    row.times++;
+    if (r.passed) row.correct++;
+    by.set(r.rank, row);
+  }
+  const ranks = [...by.entries()]
+    .map(([rank, row]) => ({ rank, ...row, rate: row.times === 0 ? 0 : row.correct / row.times }))
+    .sort((a, b) => RANK_ORDER[a.rank] - RANK_ORDER[b.rank]);
+  let ordered = true;
+  for (let i = 1; i < ranks.length; i++) {
+    // تُقبل المساواة: المطلوب ألّا تنكسر، لا أن تتباعد
+    if ((ranks[i]?.rate ?? 0) + 1e-9 < (ranks[i - 1]?.rate ?? 0)) ordered = false;
+  }
+  return { ranks, ranksOrdered: ordered };
+}
+
 /* ————— الورقة كلها ————— */
 
 export async function runExam(seeds: readonly number[] = SEEDS): Promise<ExamReport> {
@@ -282,6 +322,7 @@ export async function runExam(seeds: readonly number[] = SEEDS): Promise<ExamRep
     sections,
     calibration: calibrate(results),
     silence: auditSilence(results),
+    ...scoreRanks(results),
     results,
     ms: Date.now() - started,
   };
@@ -352,6 +393,25 @@ export function formatReport(report: ExamReport): string {
     lines.push('  ⚠ أقلُّ من ثُلث الورقة يعاقب الامتناع: كلُّ تشدّدٍ سيُقرأ تحسّناً');
   }
 
+  /* الرتب: أعلاها أصوبُ من أدناها؟ هذه دعوى الرتبة كلُّها */
+  lines.push('');
+  lines.push('———— الرتب ————');
+  if (report.ranks.length === 0) {
+    lines.push('  لا جزمَ يُرتَّب');
+  } else {
+    for (const r of report.ranks) {
+      lines.push(`  ${r.rank.padEnd(6)} ${bar(r.rate)} ${r.correct}/${r.times}  ${pct(r.rate)}`);
+    }
+    /* ولا تُقرأ الاستقامة إثباتاً حيث لا خطأ: رتبٌ كلُّها مئةٌ مستقيمةٌ
+     * بالضرورة لا بالدلالة. والدعوى تبقى **غيرَ مكذَّبة** حتى يخطئ فيُقاس. */
+    const anyWrong = report.ranks.some((r) => r.rate < 1);
+    lines.push(!report.ranksOrdered
+      ? '  ⚠ منكسرةُ الترتيب — والرتبةُ التي لا تُرتّب كالرقم الذي لا يُعايَر.'
+      : anyWrong
+        ? '  ومرتَّبةٌ صعوداً: ما يقوله يقيناً أصوبُ ممّا يقوله ظنّاً.'
+        : '  ولم يخطئ في رتبةٍ منها، فدعوى الترتيب لم تُكذَّب بعد ولم تُثبَت.');
+  }
+
   /* المعايرة: هل ٠٫٧ تعني سبعين بالمئة؟ */
   const cal = report.calibration;
   lines.push('');
@@ -409,6 +469,8 @@ export interface Baseline {
   /** كم امتنع عمّا يجب أن يجيبه — هذا الرقم لا يجوز أن يرتفع */
   abstainedOnMustAnswer: number;
   mustAnswerCount: number;
+  /** ورتبُه مرتَّبةٌ صعوداً؟ يُحفَظ كي لا تنكسر بعد أن استقامت */
+  ranksOrdered: boolean;
   /** البنود الساقطة بالاسم: كي يُرى ما تبدّل لا كم تبدّل */
   failed: readonly string[];
 }
@@ -428,6 +490,7 @@ export function baselineOf(report: ExamReport): Baseline {
     confidenceSeparation: report.calibration.separation,
     abstainedOnMustAnswer: report.silence.abstained,
     mustAnswerCount: report.silence.ofMustAnswer,
+    ranksOrdered: report.ranksOrdered,
     failed,
   };
 }

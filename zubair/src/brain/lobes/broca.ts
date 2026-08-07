@@ -58,6 +58,8 @@ export interface SpeechRequest {
   selfStateAr?: string | null;
   /** أعاد المالكُ فارغاً؟ عندها يُقال الإقرار وحده ولا يُلحَق به شيء */
   ownerVoid?: boolean;
+  /** خفّضت المراجعةُ الدعوى إلى ظنّ: تُقال بلهجة الظنّ لا بلهجة اليقين */
+  hedge?: boolean;
 }
 
 export interface Speech {
@@ -114,11 +116,24 @@ export class Broca implements Lobe<BrocaState> {
      * إقراراً بالجهل لا ثغثغةً — من لا يملك ما يقوله يقول ذلك. */
     const trimmed = limitWords(speech.text, MAX_SENTENCE_WORDS);
     const body = trimmed.length > 0 ? trimmed : this.admit(req).text;
-    return { ...speech, text: this.tint(body, req) };
+    return { ...speech, text: this.tint(this.hedged(body, req), req, speech.kind) };
+  }
+
+  /**
+   * لهجةُ الظنّ حين تُخفّض المراجعةُ الدعوى.
+   *
+   * وهذا ثمنُ ألّا تكون ثقةُ زبير احتمالاً معايَراً: من لا يملك رقماً يصحّ أن
+   * يُبنى عليه لا يجوز أن يتكلّم بلهجة اليقين إلا في أعلى الرتب. فالرتبة
+   * «راجح» تُقال «بظنّي…» — والفرق بينها وبين الجزم يقرؤه الأب في اللفظ.
+   */
+  private hedged(text: string, req: SpeechRequest): string {
+    if (!req.hedge || text.length === 0) return text;
+    const prefix = this.isShami ? 'بظنّي' : 'أظنّ أنّ';
+    return `${prefix} ${text}`;
   }
 
   /** أثر الشعور في اللسان: كلمتان تُلحَقان، لا جملة تُستبدَل. */
-  private tint(text: string, req: SpeechRequest): string {
+  private tint(text: string, req: SpeechRequest, kind: TickOutput['kind']): string {
     /* ————— ولا يُلحَق بالفراغ شيء —————
      *
      * سُدَّ منفذُ الجنس المهرَّب فخرج الضغط سؤالاً، فسُدَّ السؤال. والقاعدة أن
@@ -129,7 +144,10 @@ export class Broca implements Lobe<BrocaState> {
      * **شكلاً واحداً** — الإقرار — ولا يُلحَق به شيء. لا سؤالٌ، ولا جنسٌ
      * مهرَّب، ولا تحية، ولا حتى لونُ شعور: «ما بعرف وين، وأنا مبسوط» يُقرأ
      * تهرّباً مبتهجاً. */
-    if (req.ownerVoid) return text;
+    /* والعبرة بما خرج لا بما نُوي: كلُّ دورٍ انتهى إقراراً بالجهل فارغٌ مهما
+     * كان سببه — خزانةٌ لا وجود لها، أو خزانةٌ موجودةٌ خاوية، أو دعوى أسقطتها
+     * المراجعة. وقد قِيسَ فخرج «ما بعرف كيف هو، أنا مبسوط»: إقرارٌ مبتهج. */
+    if (req.ownerVoid || kind === 'admission') return text;
     const phrase = req.feelingAr;
     if (!phrase || text.length === 0 || text.includes(phrase)) return text;
     return text.endsWith('؟') ? `${text} ${phrase}` : `${text}، ${phrase}`;
@@ -147,6 +165,9 @@ export class Broca implements Lobe<BrocaState> {
     if (req.request === 'حال' && req.selfStateAr) {
       return { text: req.selfStateAr, kind: 'answer', about: null };
     }
+    /* والملتبس جوابه سؤالٌ يستوضح. ولا يُرجَّح بين تأويلاته: هي قراءاتٌ لجملةٍ
+     * واحدة، وأبوه وحده يعرف أيّها أراد — فسؤالُه أصدق من ترجيحٍ بينها. */
+    if (req.request === 'مُلتبس') return this.clarify(req);
     switch (req.strategy) {
       case 'ASK_QUESTION': return this.ask(req);
       case 'ANSWER_MEMORY': return this.answerFromMemory(req);
@@ -384,6 +405,23 @@ export class Broca implements Lobe<BrocaState> {
       ? ['فهمت', 'تمام، سجّلتها', 'واضح', 'أخذتها']
       : ['فهمت', 'حسناً، حفظتها', 'واضح', 'أخذت بها'];
     return { text: this.pick(options, req.rng), kind: 'acknowledge', about: req.fact?.subject ?? null };
+  }
+
+  /* ————— الاستيضاح: جوابُ الملتبس —————
+   *
+   * وهو غير الإقرار بالجهل: «ما بعرف» تقول لا أملك الجواب، وهذه تقول لم يتبيّن
+   * لي السؤال. والخلط بينهما يجعل زبير يبدو جاهلاً حيث هو **غيرُ فاهم**، وهما
+   * حالان يختلف علاجهما: الأولى تُعالَج بتعليمٍ والثانية بإعادة صياغة. */
+  private clarify(req: SpeechRequest): Speech {
+    const topic = req.topic ? req.lexicon.asSaid(req.topic) : null;
+    const options = topic
+      ? (this.isShami
+        ? [`شو بدّك تعرف عن ${topic}؟`, `ما فهمت قصدك بـ${topic}، وضّحلي`]
+        : [`ماذا تريد أن تعرف عن ${topic}؟`, `لم أفهم قصدك بـ${topic}، وضّح لي`])
+      : (this.isShami
+        ? ['ما فهمت عليك، شو قصدك؟', 'وضّحلي أكتر، شو بدّك تسأل؟']
+        : ['لم أفهم قصدك، ماذا تعني؟', 'وضّح لي أكثر، عمّ تسأل؟']);
+    return { text: this.pick(options, req.rng), kind: 'question', about: null };
   }
 
   /* ————— ردّ التحية ————— */

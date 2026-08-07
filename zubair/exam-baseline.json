@@ -1,7 +1,7 @@
 {
-  "rate": 0.9878787878787879,
-  "passed": 163,
-  "total": 165,
+  "rate": 0.9885057471264368,
+  "passed": 172,
+  "total": 174,
   "seeds": [
     24301,
     4985,
@@ -17,13 +17,15 @@
     "الاستثناء": 12,
     "السلسلة": 9,
     "اتّساق العبارة": 15,
-    "ما لا يُمتنَع عنه": 29
+    "ما لا يُمتنَع عنه": 29,
+    "الملتبس": 9
   },
   "calibrationError": 0.31697115975634127,
   "confidenceSpread": 0.07942517759192924,
   "confidenceSeparation": null,
   "abstainedOnMustAnswer": 4,
   "mustAnswerCount": 30,
+  "ranksOrdered": true,
   "failed": [
     "ans-05",
     "neg-01"
