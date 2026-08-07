@@ -104,6 +104,15 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     /** أنزل درسُ أبيه في هذه النبضة فعلاً؟ أي: فُهم وحُفظ لا أنه قيل فحسب */
     lessonLanded: boolean;
     /**
+     * أسألك أبوك سؤالاً يطلب معرفة؟ **من النحو لا من المصنِّف**.
+     *
+     * وهذا تصحيحُ خلطٍ كشفه بابُ «ما لا يُمتنَع عنه»: كان «أهو سؤال» يُقرأ من
+     * `intent` المتعلَّم، فإن أخطأ المصنِّف صار «شو تعمل الدرقاوة؟» غيرَ سؤال،
+     * فانفتح بابُ «لا أعرف» على معرفةٍ يملكها — فامتنع عن جوابٍ عنده في ثلثي
+     * البذور. وكونُ الجملة سؤالاً بنيةٌ لا احتمال، ومالكُها النحو.
+     */
+    asksKnowledge: boolean;
+    /**
      * أعنده قاعدةٌ يمتحنها الآن؟ أي: يعرف شيئين من جنسٍ واحد فيسأل عن حدّه.
      *
      * وهذا استثناءٌ من كبح السؤال، وسببه أن الكبح بُني على عطلٍ آخر: كان يردّ
@@ -124,7 +133,10 @@ export class Prefrontal implements Lobe<PrefrontalState> {
     // عن سؤال لم يُسأل. بلا هذا الكبح يبدو زبير مجنوناً لا وليداً، ويضيع تعزيز
     // أبيه على استجابات لا علاقة لها بالموضع
     const teaching = ctx.intent === 'TEACH_FACT' || ctx.intent === 'TEACH_WORD' || ctx.intent === 'TEACH_NAME';
-    const answering = ctx.intent === 'ASK' || ctx.intent === 'CHITCHAT' || ctx.intent === 'UNKNOWN';
+    /* والسؤالُ من النحو أولاً: علامتُه لا تخطئ، والمصنِّف يخطئ. ويبقى
+     * المصنِّف دليلاً فيما لا علامةَ فيه — وذاك حدُّ عمله. */
+    const answering = ctx.asksKnowledge
+      || ctx.intent === 'ASK' || ctx.intent === 'CHITCHAT' || ctx.intent === 'UNKNOWN';
 
     for (const strategy of candidates) {
       switch (strategy) {

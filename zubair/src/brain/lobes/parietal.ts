@@ -428,6 +428,22 @@ export class Parietal implements Lobe<ParietalState> {
    * كلها. وإن كان تحت المكذَّب بديلٌ أقوى منه بعد الهدم انتقلت الغلبة إليه —
    * وهذا تحديداً كيف يُصحّح الطفل معرفته: لا بكلمة واحدة، ولا بلا نهاية.
    */
+  /**
+   * في أي خزانةٍ يعرف هذا الموضوع؟ وnull لمن لا يعرفه في واحدة.
+   *
+   * تقرؤها جملةُ الاستدراك: «لا، المرنجل آلة» تُصحّح ما عنده عن المرنجل، فلا
+   * يُعاد تصنيف «آلة» من جديد — بل تُوضع حيث كانت التي تستدرك عليها. وترتيب
+   * الخزائن هنا ترتيبُ رجحان: الجنس أوّلُ ما يُقصد بالتصحيح، ثم الصفة، ثم
+   * الفعل.
+   */
+  relationOf(subject: string): RelationKind | null {
+    const s = factKey(subject);
+    for (const relation of RELATION_KINDS) {
+      if (this.records.has(recordKey(s, relation))) return relation;
+    }
+    return null;
+  }
+
   contradict(subject: string, wrongObject: string, relation?: RelationKind): void {
     const s = factKey(subject);
     const o = factKey(wrongObject);

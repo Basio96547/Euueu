@@ -77,6 +77,8 @@ export interface Parse {
   pronoun: { word: string; gender: Gender; number: NumberForm } | null;
   /** كلمة العدد إن وُجدت */
   count: number | null;
+  /** أهي جملةُ استدراكٍ تُصحّح ما قبلها؟ «لا، المرنجل آلة» — تُثبِت لا تنفي */
+  corrects: boolean;
 }
 
 /* ————— القوائم المغلقة —————
@@ -315,6 +317,7 @@ export class Syntax implements Lobe<SyntaxState> {
     const empty: Parse = {
       words, kind: 'مفردة', asks: null, negated: false,
       topic: null, comment: null, relation: null, pronoun: null, count: null,
+      corrects: false,
     };
     if (tokens.length === 0) return empty;
 
@@ -338,12 +341,28 @@ export class Syntax implements Lobe<SyntaxState> {
     /* ٢. النفي: يُفحَص بعد الاستفهام لأن «ما» تصلح للاثنين. فإن كانت أول
      * الجملة وبعدها فعل فهي نفي، وإن كانت أولها وبعدها اسم فهي استفهام. */
     let negated = false;
+    let corrects = false;
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!;
       if (!NEGATIONS.has(token)) continue;
       if (token === 'ما' && i === 0 && asks !== null) continue;
       // «لا» وحدها جواب لا نفيٌ في جملة
       if (token === 'لا' && tokens.length === 1) continue;
+      /* ————— «لا» الاستدراك: أداةُ تصحيحٍ لا نفيَ محمول —————
+       *
+       * «لا، المرنجل آلة» يُصحّح: أثبِتْ أنه آلة. و«المرنجل ليس آلة» ينفي.
+       * وكان الاثنان واحداً عنده، فكانت النتيجة أسوأ ما يقع في تعليم: الأب
+       * يصحّح، والابن يتعلّم **نقيض** التصحيح. كشفه بابُ «ما لا يُمتنَع عنه»
+       * في أوّل تشغيله — وهذا وحده يبرّر البابَ كلَّه.
+       *
+       * والفرق علامةٌ لا تخمين: «لا» أوّلَ الجملة يتلوها اسمٌ استدراك، ويتلوها
+       * فعلٌ نفي («لا يطير»، «لا تأكل»). أما «ليس» و«مو» و«مش» فتنفي المحمول
+       * حيثما وقعت، فلا تدخل في هذا الباب.
+       */
+      if (token === 'لا' && i === 0 && tokens.length > 2) {
+        const next = words[1];
+        if (next && next.pos !== 'فعل') { corrects = true; continue; }
+      }
       negated = true;
       break;
     }
@@ -378,7 +397,7 @@ export class Syntax implements Lobe<SyntaxState> {
     const kind = this.sentenceKind(words, asks, negated);
     const { topic, comment, relation } = this.bindSides(words, negated);
 
-    return { words, kind, asks, negated, topic, comment, relation, pronoun, count };
+    return { words, kind, asks, negated, topic, comment, relation, pronoun, count, corrects: corrects && !negated };
   }
 
   private sentenceKind(words: readonly WordForm[], asks: QuestionKind | null, negated: boolean): SentenceKind {
@@ -600,6 +619,18 @@ export class Syntax implements Lobe<SyntaxState> {
       case 'عدد': return 'عدد';
       default: return isAdjective(answer) ? 'صفة' : 'جنس';
     }
+  }
+
+  /**
+   * أهذه الكلمة من **إطار السؤال** لا من مضمونه؟
+   *
+   * «شو تعمل الدرقاوة؟» موضوعُها «الدرقاوة»، و«تعمل» جزءٌ من أداة السؤال كما
+   * «شو». وقد قِيسَ فوقع: جعل الانتباهُ «تعمل» موضوعَ الكلام، فبحث عن أفعال
+   * «تعمل» فلم يجد، فامتنع عن جوابٍ يملكه. والإطار يُستهلَك في استخراج الطلب
+   * فلا يعود مضموناً يُبحث عنه.
+   */
+  framesQuestion(token: string): boolean {
+    return DOING.has(token) || QUESTION_TOOLS.has(token);
   }
 
   /** أصفةٌ هذه الكلمة؟ يقرؤها بروكا كي تسأل عنها سؤال الصفة لا سؤال الاسم. */

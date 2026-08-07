@@ -64,6 +64,40 @@ test('ولا بندٌ كان يمرّ فصار يسقط', async () => {
   assert.deepEqual(fresh, [], `سقط ما كان يمرّ: ${fresh.join('، ')}`);
 });
 
+/* ————— نزاهة المقياس نفسه —————
+ *
+ * وهذا أهمّ ما في هذا الملف، وأسبقُ من كل نسبةٍ فيه.
+ *
+ * كلُّ قانونٍ أُضيف — الفراغ، النوع، الغريزة — يزيد امتناع زبير. فإن لم يكن في
+ * الورقة بندٌ **يسقط** إذا قال «لا أعرف»، صارت سلّماً في اتّجاهٍ واحد: كلُّ
+ * تشدّدٍ يرفع النسبة، حتى يبلغ نظاماً يمتنع عن كل شيء ويسجّل مئةً على ما تبقّى.
+ * ونحن مقبلون على خطواتٍ كلُّها تزيد الحذر — فالنزاهة تُحرَس قبلها لا بعدها. */
+
+test('أكثرُ الورقة يعاقب الامتناع — وإلا فكلُّ تشدّدٍ يُقرأ تحسّناً', async () => {
+  const report = await once();
+  const { punished, saved } = report.silence;
+  assert.ok(
+    punished.length >= saved.length * 2,
+    `${punished.length} بنداً يُسقطها الصمت مقابل ${saved.length} ينجو بها — المقياس يميل إلى الصمت`,
+  );
+});
+
+test('ولا بندَ وُسم «لا يُمتنَع عنه» ثم نجا بالصمت', async () => {
+  const report = await once();
+  /* العلامة نيّةٌ حتى تُدقَّق: يُقيَّم على كل بندٍ صمتٌ مصطنع، فإن نجا به بندٌ
+   * موسومٌ فالعلامة كاذبة ولا تحرس شيئاً. */
+  assert.deepEqual(report.silence.mislabelled, []);
+});
+
+test('ولم يزدد امتناعه عمّا يجب أن يجيبه', async () => {
+  const report = await once();
+  assert.ok(
+    report.silence.abstained <= baseline.abstainedOnMustAnswer,
+    `امتنع عن ${report.silence.abstained} بعد أن كان ${baseline.abstainedOnMustAnswer}`,
+  );
+  assert.equal(report.silence.ofMustAnswer, baseline.mustAnswerCount);
+});
+
 /* ————— المعايرة —————
  *
  * لا يُطالَب اليوم بأن تكون ثقته احتمالاً — الأساس المحفوظ يشهد أنها ليست

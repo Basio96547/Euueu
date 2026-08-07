@@ -56,6 +56,8 @@ export interface SpeechRequest {
   request?: Request;
   /** جواب الجزيرة عن حاله — مالكُ طلبِ «حال» وحده. بلاه يُجيب الجُداري عن سؤالٍ ليس له */
   selfStateAr?: string | null;
+  /** أعاد المالكُ فارغاً؟ عندها يُقال الإقرار وحده ولا يُلحَق به شيء */
+  ownerVoid?: boolean;
 }
 
 export interface Speech {
@@ -117,6 +119,17 @@ export class Broca implements Lobe<BrocaState> {
 
   /** أثر الشعور في اللسان: كلمتان تُلحَقان، لا جملة تُستبدَل. */
   private tint(text: string, req: SpeechRequest): string {
+    /* ————— ولا يُلحَق بالفراغ شيء —————
+     *
+     * سُدَّ منفذُ الجنس المهرَّب فخرج الضغط سؤالاً، فسُدَّ السؤال. والقاعدة أن
+     * النظام يُفضّل إنتاج مخرَجٍ على إنتاج إقرار، فكلّما سُدّ منفذ وجد آخر —
+     * ويُكتب قانونٌ خامسٌ وسادس واحداً واحداً بلا نهاية.
+     *
+     * فالفئة كلُّها تُغلق بقاعدةٍ واحدة: دورٌ عاد فيه المالك فارغاً يُخرج
+     * **شكلاً واحداً** — الإقرار — ولا يُلحَق به شيء. لا سؤالٌ، ولا جنسٌ
+     * مهرَّب، ولا تحية، ولا حتى لونُ شعور: «ما بعرف وين، وأنا مبسوط» يُقرأ
+     * تهرّباً مبتهجاً. */
+    if (req.ownerVoid) return text;
     const phrase = req.feelingAr;
     if (!phrase || text.length === 0 || text.includes(phrase)) return text;
     return text.endsWith('؟') ? `${text} ${phrase}` : `${text}، ${phrase}`;

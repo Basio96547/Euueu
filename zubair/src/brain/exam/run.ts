@@ -94,6 +94,8 @@ export interface ExamReport {
   rate: number;
   sections: readonly SectionScore[];
   calibration: Calibration;
+  /** أيعاقب هذا المقياس الامتناع؟ بلا هذا يصير كلُّ تشدّدٍ «تحسّناً» */
+  silence: SilenceAudit;
   results: readonly ItemResult[];
   ms: number;
 }
@@ -126,6 +128,56 @@ function judgeItem(item: ExamItem, out: TickOutput): { passed: boolean; reason: 
     }
   }
   return { passed: true, reason: '' };
+}
+
+/* ————— تدقيق الصمت —————
+ *
+ * أخطر ما يصيب امتحاناً كهذا أن يصير **سلّماً في اتّجاهٍ واحد**: كلُّ قانونٍ
+ * يزيد امتناعه يرفع النسبة، حتى يبلغ نظاماً يمتنع عن كل شيء ويسجّل مئةً على
+ * ما تبقّى. ونحن مقبلون على خطواتٍ كلُّها تزيد الحذر — فالمقياس يجب أن يكون
+ * نزيهاً **قبلها** لا بعدها.
+ *
+ * فيُقيَّم على كل بندٍ صمتٌ مصطنع: ماذا لو أجاب «ما بعرف» إقراراً؟ فإن نجا
+ * البند بذلك فهو بندٌ لا يعاقب الامتناع. والعدّ يُطبع في التقرير، ويُحرَس
+ * بحدٍّ أدنى في الاختبار — كي لا تُكتب النزاهة نيّةً وتُنسى.
+ */
+
+const SILENCE = 'ما بعرف، ما عندي جواب';
+
+function silenceSaves(item: ExamItem): boolean {
+  const pretend = { text: SILENCE, strategy: 'ADMIT' as Strategy };
+  return judgeItem(item, pretend as TickOutput).passed;
+}
+
+export interface SilenceAudit {
+  /** بنودٌ ينجو بها الصمت — والامتناعُ فيها مطلوبٌ أو مقبول */
+  saved: readonly string[];
+  /** وبنودٌ يُسقطها الصمت — وهي وحدها ما يجعل المقياس ذا اتّجاهين */
+  punished: readonly string[];
+  /** ما وُسم `mustAnswer` ثم نجا بالصمت: علامةٌ كاذبة، وهذا يكشفها */
+  mislabelled: readonly string[];
+  /** كم مرّة امتنع فعلاً عن بندٍ لا يُمتنَع عنه */
+  abstained: number;
+  /** من أصل كم إجابة على بنود لا يُمتنَع عنها */
+  ofMustAnswer: number;
+}
+
+function auditSilence(results: readonly ItemResult[]): SilenceAudit {
+  const saved: string[] = [];
+  const punished: string[] = [];
+  const mislabelled: string[] = [];
+  for (const item of EXAM) {
+    if (silenceSaves(item)) {
+      saved.push(item.id);
+      if (item.mustAnswer) mislabelled.push(item.id);
+    } else {
+      punished.push(item.id);
+    }
+  }
+  const must = new Set(EXAM.filter((i) => i.mustAnswer).map((i) => i.id));
+  const mine = results.filter((r) => must.has(r.id));
+  const abstained = mine.filter((r) => WITHHOLDING.has(r.strategy)).length;
+  return { saved, punished, mislabelled, abstained, ofMustAnswer: mine.length };
 }
 
 /** بندٌ واحد على دماغٍ واحدٍ جديد. */
@@ -229,6 +281,7 @@ export async function runExam(seeds: readonly number[] = SEEDS): Promise<ExamRep
     rate: results.length === 0 ? 0 : passed / results.length,
     sections,
     calibration: calibrate(results),
+    silence: auditSilence(results),
     results,
     ms: Date.now() - started,
   };
@@ -276,6 +329,27 @@ export function formatReport(report: ExamReport): string {
       lines.push(`    قال: ${first.said}`);
       lines.push(`    ${first.reason}`);
     }
+  }
+
+  /* نزاهة المقياس: هل يعاقب الصمت أصلاً؟ */
+  const sil = report.silence;
+  lines.push('');
+  lines.push('———— تدقيق الصمت ————');
+  lines.push(`${sil.punished.length} بنداً يُسقطها الصمت، و${sil.saved.length} ينجو بها`);
+  if (sil.mislabelled.length > 0) {
+    lines.push(`  ⚠ وُسمت «لا يُمتنَع عنها» ثم نجت بالصمت: ${sil.mislabelled.join('، ')}`);
+  }
+  const unbuilt = EXAM.filter((i) => i.unbuilt).map((i) => i.id);
+  if (unbuilt.length > 0) {
+    lines.push(`  «صائبةٌ لأنها غير مبنيّة» — تسقط يوم تُبنى الخزانة، وذاك تقدّم: ${unbuilt.join('، ')}`);
+  }
+  lines.push(
+    sil.ofMustAnswer === 0
+      ? '  لا بندَ يُمتحَن فيه الجواب — المقياس سلّمٌ باتّجاهٍ واحد'
+      : `  امتنع عن ${sil.abstained} من ${sil.ofMustAnswer} إجابةً كان يجب أن يجيبها`,
+  );
+  if (sil.punished.length * 3 < EXAM.length) {
+    lines.push('  ⚠ أقلُّ من ثُلث الورقة يعاقب الامتناع: كلُّ تشدّدٍ سيُقرأ تحسّناً');
   }
 
   /* المعايرة: هل ٠٫٧ تعني سبعين بالمئة؟ */
@@ -332,6 +406,9 @@ export interface Baseline {
   /** تشتّت ثقته وفصلُها: يُحفظان كي يُعرَف اليوم الذي تصير فيه ثقته كميةً حقيقية */
   confidenceSpread: number;
   confidenceSeparation: number;
+  /** كم امتنع عمّا يجب أن يجيبه — هذا الرقم لا يجوز أن يرتفع */
+  abstainedOnMustAnswer: number;
+  mustAnswerCount: number;
   /** البنود الساقطة بالاسم: كي يُرى ما تبدّل لا كم تبدّل */
   failed: readonly string[];
 }
@@ -349,6 +426,8 @@ export function baselineOf(report: ExamReport): Baseline {
     calibrationError: report.calibration.error,
     confidenceSpread: report.calibration.spread,
     confidenceSeparation: report.calibration.separation,
+    abstainedOnMustAnswer: report.silence.abstained,
+    mustAnswerCount: report.silence.ofMustAnswer,
     failed,
   };
 }

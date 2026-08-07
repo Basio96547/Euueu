@@ -37,7 +37,7 @@ import { AuditoryCortex, type AuditoryPercept } from './lobes/auditoryCortex.js'
 import { Somatosensory, type SomaticPercept } from './lobes/somatosensory.js';
 import { Inferotemporal, type Recognition } from './lobes/inferotemporal.js';
 import { Syntax, type RelationKind } from './lobes/syntax.js';
-import { instinctMaySpeak, rowOf, typeFits, voidIsFinal } from './core/ownership.js';
+import { ASKS_KNOWLEDGE, instinctMaySpeak, rowOf, typeFits, voidIsFinal } from './core/ownership.js';
 import {
   transduceAudio, transduceBody, transduceVision,
   type RawAudio, type RawBody, type RawFrame, type RawTouch,
@@ -636,7 +636,31 @@ export class Zubair {
       const relation = this.parietal.refineRelation(
         subject, object, parse.relation ?? ellipsis?.relation ?? 'جنس',
       );
-      this.parietal.learnFact(subject, object, this.ticks, 'أبوه', relation);
+      /* ————— الاستدراك يُصحّح في خزانته لا في خزانةٍ مجاورة —————
+       *
+       * «المرنجل أداة» ثم «لا، المرنجل آلة»: الثانية استدراكٌ على الأولى، فلا
+       * تُحفظ إلى جانبها بل تحلّ محلّها. وبلا هذا يقع أسوأ ما في تعليم — الأب
+       * يصحّح، والجواب يبقى الخطأ الأول:
+       *
+       *   قِيس فخرج «آلة» إلى خزانة الصفات (لأن «آلة» لم تكن جنساً لشيءٍ عنده
+       *   بعد)، وبقيت «أداة» في خزانة الأجناس. ثم سُئل «شو المرنجل؟» فقرأ
+       *   الأجناس فقال «أداة» — أي أنه سمع التصحيح، وحفظه، وأجاب بنقيضه.
+       *
+       * فالاستدراك يُلزَم بخزانة ما يستدركه: إن كان للموضوع محمولٌ في خزانةٍ،
+       * فالتصحيح لها هي، ولا يُعاد تصنيفه من جديد. */
+      const corrected = parse.corrects
+        ? this.parietal.relationOf(subject) : null;
+      const target = corrected ?? relation;
+      if (corrected !== null) {
+        const old = this.parietal.lookup(subject, corrected);
+        if (old) this.parietal.contradict(subject, old.object, corrected);
+        trace.push({
+          lobe: this.parietal.name, ar: this.parietal.ar,
+          note: `استدراك: يُصحّح ما في خزانة «${corrected}»`,
+          where: 'none', ms: 0,
+        });
+      }
+      this.parietal.learnFact(subject, object, this.ticks, 'أبوه', target);
       this.lessons++;
       this.lessonsSinceSleep++;
       // ترابط هيبي: طرفا الحقيقة يتقاربان في تمثيله، فيصير «قطة» و«حيوان»
@@ -796,8 +820,26 @@ export class Zubair {
       });
     }
 
-    const generalized = !fact && !ownerVoid && topic
+    /* والتعميم يمرّ على قانون النوع كما يمرّ المحفوظ.
+     *
+     * وهذا سدُّ ثغرةٍ كُشفت بالفحص لا بالنظر: الاستدعاء المحفوظ **مفهرسٌ
+     * بالعلاقة**، فالبحث في خزانة الأفعال لا يُخرج جنساً أصلاً — أي أن قانون
+     * النوع لم يكن يعمل في تلك الحالات، بل العمودُ وحده. لكنّ التعميم ليس
+     * مفهرساً: يُخرج ما يُشبه الموضوعَ من أي خزانة. فهو **المنفذ الوحيد** الذي
+     * يستطيع أن يُسلّم جواباً بوسمٍ غير وسم الطلب — وكان مفتوحاً. */
+    let generalized = !fact && !ownerVoid && topic
       ? this.parietal.generalize(topic, this.lexicon) : null;
+    if (generalized && parse.asks !== null) {
+      const kind = this.syntax.answerKind(generalized.fact.object, wanted);
+      if (!typeFits(request, kind)) {
+        trace.push({
+          lobe: this.syntax.name, ar: this.syntax.ar,
+          note: `تعميمٌ وسمُه «${kind}» والطلب «${request}» — فلا يُقال`,
+          where: 'cpu', ms: 0,
+        });
+        generalized = null;
+      }
+    }
 
     /* أنزل الدرس فعلاً؟ يُقاس بما حُفظ لا بما قيل: أبٌ يُعلّم جملةً لم يفهمها
      * ابنه لم يُعلّمه شيئاً بعد. وعليه وحده يُكبَح «علّمني» و«شو هذا؟». */
@@ -864,6 +906,7 @@ export class Zubair {
       /* ولا يمتحن قاعدةً في وجه سؤال: مَن سُئل يُجيب. الامتحان يأتي بعد الدرس
        * أو في الكلام العادي، وهو موضعه عند الطفل أيضاً. */
       ruleToTest: akin !== null && understanding.intent !== 'ASK',
+      asksKnowledge: parse.asks !== null && ASKS_KNOWLEDGE.has(request),
     }));
 
     /* ————— قانونا الفراغ والغريزة على المسموحات —————
@@ -941,6 +984,7 @@ export class Zubair {
       /* جدول الملكية: نوع الطلب، وجوابُ مالكه إن كان المالك غير الجُداري */
       request,
       selfStateAr: request === 'حال' ? this.insula.howAmI(intero, this.broca.speaksShami) : null,
+      ownerVoid,
     }));
 
     /* ١٤. المخيخ: الإتقان ومنع التكرار */
@@ -1015,6 +1059,9 @@ export class Zubair {
        * فخرج «ماذا أيضاً عن هيك؟» — جُعلت «هيك» موضوع الحوار لأنها لم تكن في
        * القائمة. والقوائم تُنسى، وقسمُ الكلمة لا يُنسى. */
       if (this.syntax.classify(token).pos === 'حرف') continue;
+      /* وإطارُ السؤال ليس موضوعَه: «شو تعمل الدرقاوة؟» موضوعُها «الدرقاوة»،
+       * و«تعمل» أداةٌ استُهلكت في استخراج الطلب. */
+      if (percept.isQuestion && this.syntax.framesQuestion(token)) continue;
       const w = weights[i] ?? 0;
       if (w > bestWeight) {
         bestWeight = w;
